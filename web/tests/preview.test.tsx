@@ -86,6 +86,29 @@ describe('preview expansion', () => {
   });
 });
 
+describe('live region isolation', () => {
+  it('puts the preview under an aria-live off container closer than the list region', () => {
+    render(<FileList files={[entry('1', 'a.pdf')]} />);
+    const pre = screen.getByLabelText('Markdown preview of a.pdf');
+    const nearest = pre.closest('[aria-live]');
+    expect(nearest).toHaveAttribute('aria-live', 'off');
+    expect(nearest?.tagName).not.toBe('UL');
+    expect(nearest?.closest('ul')).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('announces the copy failure from exactly one live region', async () => {
+    writeText.mockRejectedValue(new Error('denied'));
+    execCommand.mockReturnValue(false);
+    render(<FileList files={[entry('1', 'a.pdf')]} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Copy Markdown' }));
+    });
+    const message = screen.getByText('Copy failed — select the preview text instead');
+    expect(message.closest('[aria-live],[role=status]')).toBe(message);
+    expect(message).toHaveAttribute('role', 'status');
+  });
+});
+
 describe('copy', () => {
   it('writes out to the clipboard and flips the label for 1.5 s', async () => {
     vi.useFakeTimers();
