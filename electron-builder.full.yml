@@ -1,0 +1,31 @@
+appId: dev.nievesjesus.distill
+productName: distill
+directories:
+  output: release/full
+files:
+  - dist/**
+  - package.json
+  - node_modules/**
+asarUnpack:
+  - node_modules/@llamaindex/**
+  - node_modules/onnxruntime-node/**
+  - node_modules/sharp/**
+  - node_modules/@img/**
+extraResources:
+  - from: .cache/tessdata
+    to: tessdata
+mac:
+  target:
+    target: dmg
+    arch: [arm64, x64]
+  identity: null
+win:
+  target:
+    target: nsis
+    arch: [x64]
+linux:
+  target:
+    target: AppImage
+    arch: [x64]
+artifactName: Distill-full-${version}-${os}-${arch}.${ext}
+publish: null

@@ -77,12 +77,27 @@ Counts use the `o200k_base` encoding (via `gpt-tokenizer`), computed in your bro
 
 Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. Distill can make two one-time downloads. First, the first OCR of an image or scan downloads about 15 MB of Tesseract English data (`eng.traineddata`) from GitHub, unless tessdata is already present. To avoid it, point `DISTILL_TESSDATA` or `TESSDATA_PREFIX` at a local tessdata directory (`DISTILL_OCR_LANG` sets the OCR language, default `eng`), or use the Docker image, which ships the data. Second, the LLMLingua model download, only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later.
 
+## Desktop app
+
+Distill also ships as a desktop app for macOS (arm64 and x64, `.dmg`), Windows (x64, `.exe` installer) and Linux (x64, `.AppImage`). Downloads are on the [GitHub Releases](https://github.com/nievesjesus/distill/releases) page once published. It runs the same local server and UI as `npx distillmd` in its own window.
+
+| Variant | What it includes | Size |
+|---------|------------------|------|
+| `Distill-lite-*` | Everything except the LLMLingua-2 runtime. The switch shows "not installed". | Smaller |
+| `Distill-full-*` | Adds the LLMLingua-2 runtime (onnxruntime and the model tooling). | Much larger |
+
+The installers are not signed yet, so the operating system warns the first time:
+
+- **macOS:** right-click the app and choose **Open**, then confirm **Open** in the dialog.
+- **Windows:** in the SmartScreen dialog click **More info**, then **Run anyway**.
+
+Office files (DOCX, PPTX, XLSX) still need LibreOffice installed on your machine. OCR data (`eng.traineddata`) is bundled, so the desktop app never downloads it. The desktop app has no auto-update.
+
 ## Roadmap
 
 - MCP server so any agent can convert documents
 - CLI for converting files from the terminal
 - Hooks so Claude Code and OpenCode read the distilled Markdown instead of the binary
-- Desktop app: coming soon
 - A slimmer npm install without the LLMLingua runtime
 
 ## Development

@@ -4,3 +4,5 @@ coverage/
 .superpowers/
 playwright-report/
 test-results/
+.cache/
+release/

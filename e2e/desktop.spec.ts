@@ -20,7 +20,8 @@ test('desktop shell loads the UI, converts a PDF through the LiteParse fork and 
   const pdfPath = join(workDir, 'sample-report.pdf');
   writeFileSync(pdfPath, makeSamplePdf(sampleLines()));
 
-  const app = await electron.launch({ args: ['.'] });
+  const packagedApp = process.env.DISTILL_APP_PATH;
+  const app = await electron.launch(packagedApp ? { executablePath: packagedApp } : { args: ['.'] });
   const child = app.process();
   const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
 
@@ -28,6 +29,12 @@ test('desktop shell loads the UI, converts a PDF through the LiteParse fork and 
     const page = await app.firstWindow();
     await expect(page).toHaveTitle('distill');
     await expect(page.getByText('Fewer tokens')).toBeVisible();
+
+    const expectedLingua = process.env.DISTILL_EXPECT_LINGUA;
+    if (expectedLingua) {
+      const health = await page.evaluate(() => fetch('/api/health').then((response) => response.json()));
+      expect(health.lingua.installed).toBe(expectedLingua === 'installed');
+    }
 
     await page.locator('input[type="file"]').setInputFiles(pdfPath);
     const row = page.getByRole('listitem').filter({ hasText: 'sample-report.pdf' });
