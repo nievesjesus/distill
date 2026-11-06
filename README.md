@@ -88,7 +88,9 @@ Distill also ships as a desktop app for macOS (arm64 and x64, `.dmg`), Windows (
 
 The installers are not signed yet, so the operating system warns the first time:
 
-- **macOS:** right-click the app and choose **Open**, then confirm **Open** in the dialog.
+- **macOS 15 and later:** open the app once and dismiss the warning, then go to System Settings > Privacy & Security and click **Open Anyway**.
+- **macOS 14 and earlier:** right-click the app and choose **Open**, then confirm **Open** in the dialog.
+- **"The app is damaged":** run `xattr -dr com.apple.quarantine /Applications/distill.app` and open it again.
 - **Windows:** in the SmartScreen dialog click **More info**, then **Run anyway**.
 
 Office files (DOCX, PPTX, XLSX) still need LibreOffice installed on your machine. OCR data (`eng.traineddata`) is bundled, so the desktop app never downloads it. The desktop app has no auto-update.
