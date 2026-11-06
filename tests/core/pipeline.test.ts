@@ -47,6 +47,14 @@ describe('runBoosters', () => {
     expect(out).toContain(fence);
   });
 
+  it.each([
+    '[Edit this page](https://gh/x/intro.md)\n\nA\n\n[Edit this page](https://gh/x/setup.md)\n\nB\n\n[Edit this page](https://gh/x/usage.md)',
+    '![Logo](a.png)\n\nA\n\n![Logo](b.png)\n\nB\n\n![Logo](c.png)',
+  ])('is idempotent when media makes lines identical', (doc) => {
+    const once = runBoosters(doc, DEFAULT_ACTIVE);
+    expect(runBoosters(once, DEFAULT_ACTIVE)).toBe(once);
+  });
+
   it('normalizes CRLF to LF when a booster runs', () => {
     const out = runBoosters('a  b\r\n\r\n\r\nc\r\n', new Set<LocalBoosterId>(['ws']));
     expect(out).toBe('a b\n\nc\n');

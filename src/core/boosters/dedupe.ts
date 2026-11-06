@@ -1,13 +1,20 @@
+import { slimProse } from './media';
 import { mapProse } from './segments';
 
 const MAX_LENGTH = 120;
-const STRUCTURAL_START = /^(#|\||[-*+>]|\d+\.)/;
+const STRUCTURAL_START = /^(#|\||[-*+>]|\d+[.)])/;
+const DEEP_INDENT = /^( {4}|\t)/;
+const UNESCAPED_PIPE = /(?<!\\)\|/;
+const PAGE_INDICATOR = /\b(page|pg|p\.|pág\.?|pagina|página)\s*\d+|\b\d+\s*(of|de|\/)\s*\d+\b/i;
 const MIN_REPEATS = 3;
 
 function signatureOf(line: string): string | null {
   const trimmed = line.trim();
-  if (trimmed === '' || trimmed.length > MAX_LENGTH || STRUCTURAL_START.test(trimmed)) return null;
-  return trimmed.replace(/\d+/g, '#').replace(/\s+/g, ' ');
+  if (trimmed === '' || trimmed.length > MAX_LENGTH) return null;
+  if (STRUCTURAL_START.test(trimmed) || DEEP_INDENT.test(line) || UNESCAPED_PIPE.test(line)) return null;
+  const slim = slimProse(trimmed);
+  const comparable = PAGE_INDICATOR.test(slim) ? slim.replace(/\d+/g, '#') : slim;
+  return comparable.replace(/\s+/g, ' ').trim();
 }
 
 export function dropRepeatedBoilerplate(md: string): string {
