@@ -429,3 +429,74 @@ e2e/distill.spec.ts          Playwright
 - [ ] **Paso 5:** escribe el `README.md` en inglés con: el hook de una línea, `npx distillmd`, Docker, formatos y el requisito de LibreOffice, qué hace cada booster (incluido que "Slim images and links" quita URLs), cómo se cuentan los tokens (o200k), privacidad (local, sin telemetría), el roadmap (MCP, CLI, hooks), un hueco para el GIF y la licencia. No inventes cifras de rendimiento.
 - [ ] **Paso 6:** verifica `docker build -t distill . && docker run --rm -p 4321:4321 distill` y que `curl -s localhost:4321/api/health` devuelva `"libreoffice":true`.
 - [ ] **Paso 7: Commit** con `chore: e2e, docker, ci, readme`.
+
+### Tarea 13: App de escritorio (Electron)
+
+> Agregada el 2026-11-06 por decisión del usuario (spec §9.1). Depende de las Tareas 7 a 12: carga la misma UI y el mismo servidor.
+
+**Archivos:**
+- Crear: `desktop/main.ts`, `desktop/window.ts`, `desktop/tsup.desktop.config.ts`, `tests/desktop/window.test.ts`, `e2e/desktop.spec.ts`
+- Modificar: `package.json` (scripts `build:desktop` y `desktop`; dev dep `electron`)
+
+**Interfaces:**
+- Consume: `startServer({ port: 0, host: '127.0.0.1', maxBytes })` de `src/server/start.ts`, que devuelve `{ url, close() }`.
+- Produce:
+  - `windowOptions(): BrowserWindowConstructorOptions`. Es una función pura: `width: 760, height: 860, minWidth: 420, minHeight: 560, title: 'distill', backgroundColor: '#0B0B10', show: false` y `webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }`.
+  - `isAllowedExternal(url: string): boolean`: true solo si el protocolo es `https:`.
+  - `isSameOrigin(target: string, appUrl: string): boolean`.
+  - `dist/desktop/main.js` (ESM), que es el `main` del paquete Electron.
+
+- [ ] **Paso 1: pruebas que fallan** (unitarias, sin Electron):
+  ```ts
+  expect(windowOptions()).toMatchObject({ width: 760, height: 860, minWidth: 420, minHeight: 560, backgroundColor: '#0B0B10', show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  expect(isAllowedExternal('https://www.libreoffice.org/download/')).toBe(true);
+  expect(isAllowedExternal('http://evil.example')).toBe(false); expect(isAllowedExternal('file:///etc/passwd')).toBe(false); expect(isAllowedExternal('javascript:alert(1)')).toBe(false);
+  expect(isSameOrigin('http://127.0.0.1:5123/x', 'http://127.0.0.1:5123/')).toBe(true);
+  expect(isSameOrigin('http://127.0.0.1:9999/', 'http://127.0.0.1:5123/')).toBe(false);
+  ```
+- [ ] **Paso 2:** corre las pruebas. Esperado: FALLAN.
+- [ ] **Paso 3:** implementa `desktop/window.ts` y `desktop/main.ts`. El main hace esto:
+  - `app.requestSingleInstanceLock()`; si no lo obtiene, `app.quit()`; en `second-instance`, restaura y enfoca la ventana.
+  - En `ready`: `startServer` en el puerto 0 con 100 MB, crea la ventana, `loadURL(url)` y la muestra en `ready-to-show`.
+  - `will-navigate`: `preventDefault` si el destino no es del mismo origen, y lo abre con `shell.openExternal` solo si `isAllowedExternal`.
+  - `setWindowOpenHandler`: abre el link externo permitido y devuelve `{ action: 'deny' }`.
+  - `window-all-closed`: `await close()` y luego `app.quit()`, en todas las plataformas.
+  - Si `startServer` falla: `dialog.showErrorBox('distill could not start', message)` y `app.quit()`.
+  - Antes de `startServer` asigna `process.env.ELECTRON_RUN_AS_NODE` solo si la prueba del Paso 5 muestra que el `fork()` de LiteParse lo necesita. Registra el hallazgo en el reporte.
+  - Build: `tsup` con su propia config para `desktop/main.ts` → `dist/desktop/main.js` (esm, node20, `electron` y las dependencias externas, `clean: false`).
+  - Scripts: `build:desktop` = `npm run build && tsup --config desktop/tsup.desktop.config.ts`; `desktop` = `npm run build:desktop && electron dist/desktop/main.js`.
+- [ ] **Paso 4:** corre las pruebas unitarias. Esperado: PASAN.
+- [ ] **Paso 5: humo E2E** en `e2e/desktop.spec.ts` con `_electron.launch({ args: ['dist/desktop/main.js'] })` de Playwright. La ventana carga, el título es "distill" y el texto "Fewer tokens" está visible. Además, suelta el PDF de muestra (`makeSamplePdf`) en el input del Dropzone y espera a que la fila muestre un `%` de ahorro: eso prueba que el `fork()` de LiteParse funciona dentro de Electron. Al cerrar la app, el proceso termina en menos de 5 s. Esperado: PASA.
+- [ ] **Paso 6: Commit** con `feat(desktop): Electron shell around the local server`.
+
+### Tarea 14: Instaladores lite/full y release
+
+> Agregada el 2026-11-06 (spec §9.1). Depende de la Tarea 13.
+
+**Archivos:**
+- Crear: `electron-builder.lite.yml`, `electron-builder.full.yml`, `.github/workflows/release.yml`, `scripts/check-variant.mjs`
+- Modificar: `package.json` (scripts `dist:lite` y `dist:full`; dev dep `electron-builder`), `README.md` (sección Desktop)
+
+**Interfaces:**
+- Consume: `dist/desktop/main.js`, `dist/cli.js` y `dist/web` (Tarea 13).
+- Produce, por variante, artefactos `Distill-<lite|full>-${version}-${os}-${arch}.${ext}`.
+
+- [ ] **Paso 1:** escribe `electron-builder.lite.yml` y `electron-builder.full.yml`, que comparten la base:
+  - `appId: dev.nievesjesus.distill` y `productName: distill`
+  - `directories.output: release/<variante>`
+  - `files: ["dist/**", "package.json", "node_modules/**"]`
+  - `asarUnpack: ["node_modules/@llamaindex/**"]`; la full agrega además `node_modules/onnxruntime-node/**` y `node_modules/sharp/**`
+  - `mac: { target: dmg, arch: [arm64, x64], identity: null }`, `win: { target: nsis, arch: [x64] }`, `linux: { target: AppImage, arch: [x64] }`
+  - `artifactName` según el patrón de arriba
+  - `publish: null`
+  - La lite agrega a `files` las exclusiones `"!node_modules/@atjsh/**"`, `"!node_modules/@huggingface/**"`, `"!node_modules/js-tiktoken/**"`, `"!node_modules/onnxruntime-*/**"` y `"!node_modules/sharp/**"`.
+- [ ] **Paso 2:** `scripts/check-variant.mjs <ruta-al-resources/app.asar.unpacked-o-app> <lite|full>` verifica que la variante lite no contenga `@atjsh/llmlingua-2` ni `onnxruntime-node`, que la full sí los tenga y que las dos tengan el `.node` de liteparse de su plataforma. Termina con código 1 si algo falla.
+- [ ] **Paso 3:** corre localmente `npm run dist:lite -- --mac --arm64 --dir` y `npm run dist:full -- --mac --arm64 --dir` (`--dir` deja la app sin empaquetar, más rápido), luego `node scripts/check-variant.mjs` sobre cada una. Abre la app lite empaquetada con `_electron.launch({ executablePath })` y repite el humo de la Tarea 13: soltar el PDF y ver el `%`. Esperado: PASA.
+- [ ] **Paso 4:** escribe `release.yml`:
+  - Se dispara en `push` de tags `v*` y con `workflow_dispatch`.
+  - Matriz: `macos-14` (arm64), `macos-13` (x64), `windows-latest` (x64) y `ubuntu-latest` (x64), con Node 22.
+  - Pasos: `npm ci`, `npm run check:deps`, `npm run build:desktop`, `npm run dist:lite`, `npm run dist:full` y `check-variant`, y sube `release/**/Distill-*` como artefactos.
+  - Un job final con `softprops/action-gh-release` (versión fijada) crea el Release en **borrador** (`draft: true`) con todos los instaladores. Nunca publica solo.
+  - `permissions: contents: write`, únicamente en ese job.
+- [ ] **Paso 5:** agrega al README una sección "Desktop app" con las descargas lite y full, la diferencia entre las dos (LLMLingua-2), cómo abrir una app sin firmar la primera vez en macOS (clic derecho → Abrir) y en Windows (SmartScreen → More info → Run anyway), y el requisito de LibreOffice para archivos Office.
+- [ ] **Paso 6: Commit** con `build(desktop): lite/full installers and draft release workflow`.

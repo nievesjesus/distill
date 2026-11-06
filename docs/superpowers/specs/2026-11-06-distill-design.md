@@ -25,7 +25,7 @@ Tiene tres caras sobre el mismo núcleo:
 
 | Fase | Entrega | Publicable |
 |------|---------|------------|
-| 1 | Núcleo (parse + boosters + tokens) y web | Sí: `npx distillmd`, imagen Docker |
+| 1 | Núcleo (parse + boosters + tokens), web y app de escritorio | Sí: `npx distillmd`, imagen Docker, instaladores Electron *lite* y *full* |
 | 2 | `distillmd mcp` (stdio y HTTP) y `distillmd convert` (CLI) | Sí |
 | 3 | `distillmd hooks install --claude \| --opencode` | Sí |
 
@@ -171,6 +171,24 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 - Repositorio: `github.com/nievesjesus/distill`.
 - Docker: `ghcr.io/nievesjesus/distill`, basada en `node:22-slim` con LibreOffice (writer, calc, impress) y los datos de tesseract en inglés y español. Se ejecuta con `docker run -p 4321:4321`, y dentro del contenedor escucha en `0.0.0.0`.
 - Licencia: Apache-2.0, compatible con LiteParse.
+
+### 9.1 App de escritorio (Electron) — agregado el 2026-11-06
+
+El usuario pidió un binario que se descarga y se ejecuta. Un ejecutable de un solo archivo (Node SEA, `bun --compile`, `pkg`) no sirve: LiteParse carga un addon nativo (`liteparse.<plataforma>.node` + `libpdfium`) que tiene que existir como archivo en disco, y su pool hace `fork()` de `pool-worker.js`, así que necesita un runtime de Node. Por eso la app de escritorio usa Electron, que trae Node integrado.
+
+- **Proceso principal:** importa `startServer` del mismo paquete, levanta el servidor en `127.0.0.1` con puerto 0 (libre) y abre una `BrowserWindow` que carga esa URL. Usa el mismo servidor y la misma UI que `npx distillmd`; no hay un segundo código de UI.
+- **Ventana:** 760×860 por defecto, mínimo 420×560, título "distill" y fondo `#0B0B10` desde el primer frame (sin destello blanco). Instancia única: abrir la app de nuevo enfoca la ventana existente. Al cerrar la ventana se cierra el servidor y la app sale, también en macOS.
+- **Seguridad:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, sin preload. La ventana no puede navegar fuera de su origen: los links externos (GitHub, LibreOffice) se abren en el navegador del sistema con `shell.openExternal`, y solo si son `https:`. `setWindowOpenHandler` deniega las ventanas nuevas.
+- **LiteParse dentro de Electron:** el `fork()` del pool debe arrancar el binario de Electron en modo Node (`ELECTRON_RUN_AS_NODE`). Los archivos nativos y `pool-worker.js` van fuera del asar (`asarUnpack`). Una prueba de humo en la app empaquetada lo valida.
+- **Variantes:**
+  - *lite* excluye `@atjsh/llmlingua-2`, `@huggingface/transformers`, `js-tiktoken`, `onnxruntime-*` y `sharp`; la UI muestra LLMLingua-2 como "not installed".
+  - *full* los incluye.
+  - Artefactos: `Distill-<lite|full>-<versión>-<os>-<arch>.<dmg|exe|AppImage>`.
+- **Plataformas:** macOS arm64 y x64 (`.dmg`), Windows x64 (instalador NSIS `.exe`), Linux x64 (`.AppImage`).
+- **Firma:** la v0.1 sale sin firmar. El README explica cómo abrirla la primera vez: clic derecho → Abrir en macOS, "Más información → Ejecutar de todas formas" en Windows. La firma y notarización quedan para cuando existan las cuentas.
+- **Publicación:** un workflow de GitHub Actions que corre al empujar un tag `v*` construye la matriz y sube los instaladores a un GitHub Release en borrador. Nada se publica sin que el usuario lo revise.
+- **Sin auto-update en la v0.1** (fuera de alcance).
+- LibreOffice no va incluido. La app lo detecta igual que la web y explica cómo instalarlo.
 - El README va en inglés e incluye un GIF de 10 segundos (soltar archivo → −30%) para el lanzamiento.
 
 ## 10. Pruebas
@@ -182,6 +200,7 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 
 ## 11. Fuera de alcance (v1)
 
+Auto-update de la app de escritorio; firma y notarización de los instaladores; LibreOffice incluido en la app.
 Subir a la nube o tener cuentas; editar el Markdown; procesar URLs remotas; contraseñas de PDF; traducir la UI; pedir el `%` de progreso por página; tokenizers específicos de cada proveedor; app de escritorio.
 
 ## 12. Riesgos
