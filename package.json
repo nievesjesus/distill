@@ -26,8 +26,10 @@
     "vitest": "^5.1.0"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.6",
     "@llamaindex/liteparse": "^2.18.0",
-    "gpt-tokenizer": "^4.1.0"
+    "gpt-tokenizer": "^4.1.0",
+    "hono": "^4.13.16"
   },
   "optionalDependencies": {
     "@atjsh/llmlingua-2": "^3.0.0",
