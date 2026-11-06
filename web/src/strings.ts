@@ -18,6 +18,16 @@ export const S = {
   lossyNote: 'Lossy: a local model removes low-value words. Downloads once, then runs offline.',
   brand: 'distill',
   fileInput: 'Choose files to distill',
+  boosters: (count: number) => `${count} ${count === 1 ? 'booster' : 'boosters'}`,
+  off: 'Off',
+  files: 'Files',
+  queued: 'Queued',
+  parsing: 'Parsing',
+  ocr: 'OCR',
+  tokensSuffix: 'tok',
+  unknownKind: '?',
+  footerLine: (raw: string, out: string, done: number, total: number) =>
+    `tokens · ${raw} → ${out} · ${done}/${total} files`,
   unreachable: 'Cannot reach distill. Is it still running?',
   unexpectedResponse: (status: number) => `Unexpected response (status ${status})`,
 } as const;
