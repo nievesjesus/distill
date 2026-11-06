@@ -75,7 +75,7 @@ si LLMLingua-2 está activo: POST /api/compress { text, rate } ← texto comprim
 - La vista JSON + boxes requiere una segunda pasada con `outputFormat: 'json'`, que se pide bajo demanda (`GET /api/files/:id/json`) y nunca en la conversión normal.
 - **Formatos:** PDF e imágenes (PNG, JPG, TIFF, WebP) funcionan sin nada más. DOCX, PPTX, XLSX y ODF **requieren LibreOffice**. Al arrancar se detecta `soffice` en el PATH. Si falta, la UI acepta el archivo, lo marca con error "Office files need LibreOffice" y muestra cómo instalarlo; no falla en silencio. La imagen Docker incluye LibreOffice.
 - PDF con contraseña: se muestra un error claro. Pedir la contraseña queda fuera de la v1.
-- **OCR y tessdata (agregado el 2026-11-06):** LiteParse trae Tesseract dentro de su binario. Si no se le pasa `tessdataPath` ni existe `TESSDATA_PREFIX`, la primera vez que hace OCR descarga `eng.traineddata` (~15 MB) de `github.com/tesseract-ocr/tessdata_best`. Distill lee `DISTILL_TESSDATA` (→ `tessdataPath`) y `DISTILL_OCR_LANG` (→ `ocrLanguage`, por defecto `eng`). La imagen Docker apunta las dos al tessdata del sistema, así que no descarga nada. Incluir el tessdata en la app de escritorio queda pendiente (Tarea 13/14).
+- **OCR y tessdata (agregado el 2026-11-06):** LiteParse trae Tesseract dentro de su binario. Si no se le pasa `tessdataPath` ni existe `TESSDATA_PREFIX`, la primera vez que hace OCR descarga `eng.traineddata` (~15 MB) de `github.com/tesseract-ocr/tessdata_best`. Distill lee `DISTILL_TESSDATA` (→ `tessdataPath`) y `DISTILL_OCR_LANG` (→ `ocrLanguage`, por defecto `eng`). La imagen Docker apunta las dos al tessdata del sistema, así que no descarga nada. La app de escritorio trae `eng.traineddata` incluido (descargado una sola vez al construir, con SHA-256 fijo) y apunta `DISTILL_TESSDATA` a él, así que tampoco descarga nada.
 
 ### 4.2 Boosters
 
@@ -186,7 +186,7 @@ El usuario pidió un binario que se descarga y se ejecuta. Un ejecutable de un s
   - *full* los incluye.
   - Artefactos: `Distill-<lite|full>-<versión>-<os>-<arch>.<dmg|exe|AppImage>`.
 - **Plataformas:** macOS arm64 y x64 (`.dmg`), Windows x64 (instalador NSIS `.exe`), Linux x64 (`.AppImage`).
-- **Firma:** la v0.1 sale sin firmar. El README explica cómo abrirla la primera vez: clic derecho → Abrir en macOS, "Más información → Ejecutar de todas formas" en Windows. La firma y notarización quedan para cuando existan las cuentas.
+- **Firma:** la v0.1 sale sin Developer ID ni notarización. En macOS lleva firma *ad hoc* (`identity: "-"`), porque sin ninguna firma Apple Silicon la reporta como "dañada". El README explica cómo abrirla la primera vez: en macOS 15+, Configuración del Sistema → Privacidad y seguridad → "Abrir de todas formas"; en macOS 14 o anterior, clic derecho → Abrir; si macOS dice "dañada", `xattr -dr com.apple.quarantine`. En Windows, "Más información → Ejecutar de todas formas". La firma con Developer ID y la notarización quedan para cuando existan las cuentas.
 - **Publicación:** un workflow de GitHub Actions que corre al empujar un tag `v*` construye la matriz y sube los instaladores a un GitHub Release en borrador. Nada se publica sin que el usuario lo revise.
 - **Sin auto-update en la v0.1** (fuera de alcance).
 - LibreOffice no va incluido. La app lo detecta igual que la web y explica cómo instalarlo.
