@@ -15,6 +15,7 @@ interface FileRowProps {
   onToggle?: () => void;
 }
 
+const LIBREOFFICE_URL = 'https://www.libreoffice.org/download/';
 const COPIED_MS = 1500;
 const FAILED_MS = 3000;
 
@@ -23,11 +24,18 @@ type CopyState = 'idle' | 'copied' | 'failed';
 function Tokens({ file }: FileRowProps) {
   if (file.rawTokens === undefined || file.outTokens === undefined) return null;
   const saved = savedPercent(file.rawTokens, file.outTokens);
+  const pending = file.compressing ? <span className="file-compressing">{S.compressing}</span> : null;
   if (saved === 0) {
-    return <span className="file-tokens">{shortCount(file.rawTokens)} {S.tokensSuffix}</span>;
+    return (
+      <>
+        {pending}
+        <span className="file-tokens">{shortCount(file.rawTokens)} {S.tokensSuffix}</span>
+      </>
+    );
   }
   return (
     <>
+      {pending}
       <span className="file-tokens">
         {shortCount(file.rawTokens)} → {shortCount(file.outTokens)}
       </span>
@@ -38,7 +46,19 @@ function Tokens({ file }: FileRowProps) {
 
 function Status({ file }: FileRowProps) {
   if (file.status === 'error' && file.error) {
-    return <span key="error" className="file-error">{ERROR_MESSAGES[file.error.code]}</span>;
+    return (
+      <span key="error" className="file-error">
+        {ERROR_MESSAGES[file.error.code]}
+        {file.error.code === 'needs_libreoffice' ? (
+          <>
+            {' '}
+            <a href={LIBREOFFICE_URL} target="_blank" rel="noopener noreferrer">
+              {S.getLibreOffice}
+            </a>
+          </>
+        ) : null}
+      </span>
+    );
   }
   if (file.status === 'queued') return <span key="queued" className="file-status">{S.queued}</span>;
   if (file.status === 'parsing') {
@@ -141,7 +161,7 @@ export function FileRow({ file, expanded = false, detailed = false, onToggle }: 
         )}
         {isDone ? <DoneActions file={file} /> : null}
       </div>
-      {isOpen ? <Preview id={previewId} name={file.name} text={file.out ?? ''} detailed={detailed} /> : null}
+      {isOpen ? <Preview id={previewId} name={file.name} text={file.out ?? ''} detailed={detailed} serverId={file.serverId} rawTokens={file.rawTokens} outTokens={file.outTokens} /> : null}
     </li>
   );
 }

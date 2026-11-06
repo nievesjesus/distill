@@ -22,8 +22,8 @@ export function zipName(date: Date = new Date()): string {
   return `distill-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.zip`;
 }
 
-export function downloadText(name: string, text: string): void {
-  saveBlob(name, new Blob([text], { type: MARKDOWN_TYPE }));
+export function downloadText(name: string, text: string, type: string = MARKDOWN_TYPE): void {
+  saveBlob(name, new Blob([text], { type }));
 }
 
 export async function downloadZip(entries: { name: string; text: string }[]): Promise<void> {

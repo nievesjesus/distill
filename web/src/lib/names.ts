@@ -13,6 +13,10 @@ export function mdName(original: string): string {
   return `${stem}.md`;
 }
 
+export function jsonName(original: string): string {
+  return mdName(original).replace(/\.md$/, '.json');
+}
+
 export function uniqueNames(names: string[]): string[] {
   const taken = new Set<string>();
   return names.map((name) => {

@@ -1,4 +1,6 @@
+import { useRef, useState } from 'react';
 import { S } from '../strings';
+import { ConnectPanel } from './ConnectPanel';
 
 export type ViewMode = 'compact' | 'detailed';
 
@@ -10,6 +12,14 @@ interface HeaderProps {
 const GITHUB_URL = 'https://github.com/nievesjesus/distill';
 
 export function Header({ mode, onModeChange }: HeaderProps) {
+  const [connectOpen, setConnectOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  const closeConnect = () => {
+    setConnectOpen(false);
+    trigger.current?.focus();
+  };
+
   return (
     <header className="header">
       <div className="brand">
@@ -30,13 +40,13 @@ export function Header({ mode, onModeChange }: HeaderProps) {
             {S.detailed}
           </button>
         </div>
-        <a className="icon-link" href="#connect" aria-label={S.connect}>
+        <button ref={trigger} type="button" className="icon-link" aria-haspopup="dialog" aria-label={S.connect} onClick={() => setConnectOpen(true)}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M9 7H6a3 3 0 0 0 0 6h3" />
             <path d="M15 7h3a3 3 0 0 1 0 6h-3" />
             <path d="M8 10h8" />
           </svg>
-        </a>
+        </button>
         <a className="icon-link" href={GITHUB_URL} aria-label={S.github} target="_blank" rel="noreferrer">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M9 19c-4 1.3-4-2-6-2.5" />
@@ -44,6 +54,7 @@ export function Header({ mode, onModeChange }: HeaderProps) {
           </svg>
         </a>
       </div>
+      <ConnectPanel open={connectOpen} onClose={closeConnect} />
     </header>
   );
 }

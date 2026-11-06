@@ -18,6 +18,6 @@ describe('FileRow', () => {
     expect(error).not.toBeNull();
     expect(error).not.toBe(previous);
     expect(previous.isConnected).toBe(false);
-    expect(error).toHaveTextContent('This file type is not supported.');
+    expect(error).toHaveTextContent('Unsupported file type');
   });
 });

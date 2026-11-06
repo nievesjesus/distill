@@ -13,7 +13,7 @@ function stubServer() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
-      if (url === '/api/health') return Response.json({ version: '1', liteparseVersion: '1', libreoffice: false, maxBytes: 100000 });
+      if (url === '/api/health') return Response.json({ version: '1', liteparseVersion: '1', libreoffice: false, maxBytes: 100000, lingua: { installed: true, model: 'tinybert', state: 'ready', progress: 1 } });
       const name = ((init?.body as FormData).get('file') as File).name;
       return Response.json({ id: name, name, kind: 'PDF', pages: 1, markdown: RAW, ms: 1 });
     }),
@@ -85,7 +85,7 @@ describe('App', () => {
   it('shows a visible error for an unsupported file and still finishes the others', async () => {
     render(<App />);
     drop(['notes.xyz', 'a.pdf']);
-    await waitFor(() => expect(screen.getByText('This file type is not supported.')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Unsupported file type')).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText(/1\/2 files/)).toBeInTheDocument());
   });
 
@@ -128,8 +128,8 @@ describe('App', () => {
     render(<App />);
     drop(['notes.xyz']);
     const announcer = document.querySelector('[role=status]') as HTMLElement;
-    await waitFor(() => expect(announcer).toHaveTextContent('notes.xyz: This file type is not supported.'));
-    const message = await screen.findByText('This file type is not supported.');
+    await waitFor(() => expect(announcer).toHaveTextContent('notes.xyz: Unsupported file type'));
+    const message = await screen.findByText('Unsupported file type');
     expect(message.tagName).toBe('SPAN');
     expect(message).toHaveClass('file-error');
   });

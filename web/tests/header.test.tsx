@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { Header } from '../src/components/Header';
 
 describe('Header', () => {
-  it('renders the brand and both icon links with accessible names', () => {
+  it('renders the brand and the connect button and the GitHub link with accessible names', () => {
     render(<Header mode="compact" onModeChange={() => {}} />);
     expect(screen.getByText('distill')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Connect your agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect your agent' })).toBeInTheDocument();
     const github = screen.getByRole('link', { name: 'Source on GitHub' });
     expect(github).toHaveAttribute('href', 'https://github.com/nievesjesus/distill');
   });

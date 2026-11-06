@@ -15,7 +15,7 @@ const [taglineStart, taglineAccent, taglineEnd] = S.tagline;
 
 function AppBody() {
   const { settings, update, toggleBooster, toggleLingua } = useSettings();
-  const { files, add, healthError } = useFiles(settings);
+  const { files, add, healthError, health, linguaFailed, retryLingua } = useFiles(settings);
   const announce = useAnnounce();
   const announced = useRef(new Map<string, 'done' | 'error'>());
 
@@ -31,6 +31,18 @@ function AppBody() {
       }
     }
   }, [files, announce]);
+
+  useEffect(() => {
+    if (linguaFailed) announce(S.linguaFailed);
+  }, [linguaFailed, announce]);
+
+  const linguaState = health?.lingua?.state;
+  const previousLinguaState = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const previous = previousLinguaState.current;
+    previousLinguaState.current = linguaState;
+    if (linguaState === 'ready' && previous !== undefined && previous !== 'ready') announce(S.linguaReady);
+  }, [linguaState, announce]);
 
   const mode: ViewMode = settings.detailed ? 'detailed' : 'compact';
 
@@ -55,6 +67,10 @@ function AppBody() {
           onOptionsOpenChange={(optionsOpen) => update({ optionsOpen })}
           onToggleBooster={toggleBooster}
           onToggleLingua={toggleLingua}
+          health={health}
+          linguaFailed={linguaFailed}
+          onLinguaChange={(patch) => update({ lingua: { ...settings.lingua, ...patch } })}
+          onRetryLingua={retryLingua}
         />
         <FileList files={files} detailed={settings.detailed} />
         <Footer files={files} />
