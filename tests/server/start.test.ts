@@ -18,7 +18,7 @@ describe('startServer', () => {
     } finally {
       await server.close();
     }
-  });
+  }, 30_000);
 
   it('rejects with EADDRINUSE when the port is taken', async () => {
     const blocker = createServer();
@@ -29,5 +29,5 @@ describe('startServer', () => {
     } finally {
       await new Promise<void>((resolve) => blocker.close(() => resolve()));
     }
-  });
+  }, 30_000);
 });

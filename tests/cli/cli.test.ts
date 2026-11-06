@@ -14,6 +14,10 @@ describe('distillmd binary', () => {
 
   it('serves /api/health on an ephemeral port and exits on SIGTERM', async () => {
     const child = spawn('node', ['dist/cli.js', '--port', '0', '--no-open'], { cwd: root });
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
     const exited = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
     try {
       const url = await new Promise<string>((resolve, reject) => {
@@ -23,7 +27,7 @@ describe('distillmd binary', () => {
           const match = /distill running at (\S+)/.exec(out);
           if (match) resolve(match[1]);
         });
-        child.once('exit', () => reject(new Error(`exited early: ${out}`)));
+        child.once('exit', () => reject(new Error(`exited early: ${out} ${stderr}`)));
       });
       const res = await fetch(`${url}/api/health`);
       expect(res.status).toBe(200);
@@ -32,5 +36,5 @@ describe('distillmd binary', () => {
       child.kill('SIGTERM');
     }
     expect(await exited).toBe(0);
-  }, 60_000);
+  }, 30_000);
 });

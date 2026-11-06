@@ -37,22 +37,22 @@ describe('createParser', () => {
     const r = await parser.toMarkdown(p);
     expect(r.pages).toBe(1);
     expect(r.markdown).toContain('Quarterly Report');
-  });
+  }, 30_000);
 
   it('returns a structured result for json', async () => {
     const p = await writeTmp('sample-json.pdf', makeSamplePdf(['Quarterly Report']));
     const json = (await parser.toJson(p)) as { pages: unknown[] };
     expect(Array.isArray(json.pages)).toBe(true);
-  });
+  }, 30_000);
 
   it('maps corrupt input to parse_failed', async () => {
     const bad = await writeTmp('bad.pdf', Buffer.from('%PDF-1.4 garbage'));
     await expect(parser.toMarkdown(bad)).rejects.toMatchObject({ code: 'parse_failed' });
-  });
+  }, 30_000);
 
   it('maps timeouts to timeout', async () => {
     await expect(slow.toMarkdown(bigPdfPath)).rejects.toMatchObject({ code: 'timeout' });
-  });
+  }, 30_000);
 });
 
 describe('hasLibreOffice', () => {

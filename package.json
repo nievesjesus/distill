@@ -18,7 +18,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "vite build && tsup",
-    "dev:web": "vite"
+    "dev:web": "vite",
+    "check:deps": "node scripts/check-lock.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -28,14 +29,14 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
+    "@huggingface/transformers": "^4.3.2",
     "@llamaindex/liteparse": "^2.18.0",
-    "commander": "^15.0.0",
+    "commander": "^14.0.0",
     "gpt-tokenizer": "^4.1.0",
-    "hono": "^4.13.16"
+    "hono": "^4.13.16",
+    "js-tiktoken": "^1.0.21"
   },
   "optionalDependencies": {
-    "@atjsh/llmlingua-2": "^3.0.0",
-    "@huggingface/transformers": "^4.3.2",
-    "js-tiktoken": "^1.0.21"
+    "@atjsh/llmlingua-2": "^3.0.0"
   }
 }
