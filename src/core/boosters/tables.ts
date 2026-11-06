@@ -20,8 +20,9 @@ function compactSeparatorCell(cell: string): string {
 }
 
 function compactRow(line: string, isSeparator: boolean): string {
+  const indent = line.slice(0, line.length - line.trimStart().length);
   const cells = splitCells(line);
-  return `|${(isSeparator ? cells.map(compactSeparatorCell) : cells).join('|')}|`;
+  return `${indent}|${(isSeparator ? cells.map(compactSeparatorCell) : cells).join('|')}|`;
 }
 
 function startsTable(lines: string[], index: number): boolean {

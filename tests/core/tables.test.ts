@@ -32,6 +32,17 @@ describe('compactTables', () => {
     expect(compactTables('| a \\| b | c |\n|---|---|\n| 1 | 2 |')).toBe('|a \\| b|c|\n|-|-|\n|1|2|');
   });
 
+  it('keeps the indentation of a table inside a list item', () => {
+    expect(compactTables('- item\n\n  | a   | b   |\n  |-----|-----|\n  | 1   | 2   |\n- next')).toBe(
+      '- item\n\n  |a|b|\n  |-|-|\n  |1|2|\n- next',
+    );
+  });
+
+  it('keeps the indentation of pipe rows in an indented code block', () => {
+    const out = compactTables('para\n\n    | a | b |\n    |---|---|');
+    expect(out.split('\n').slice(2).every((line) => line.startsWith('    |'))).toBe(true);
+  });
+
   it('does not touch a table inside a fence', () => {
     const md = '```\n| a   | b   |\n|-----|-----|\n```';
     expect(compactTables(md)).toBe(md);
