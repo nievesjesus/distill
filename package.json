@@ -28,5 +28,10 @@
   "dependencies": {
     "@llamaindex/liteparse": "^2.18.0",
     "gpt-tokenizer": "^4.1.0"
+  },
+  "optionalDependencies": {
+    "@atjsh/llmlingua-2": "^3.0.0",
+    "@huggingface/transformers": "^4.3.2",
+    "js-tiktoken": "^1.0.21"
   }
 }
