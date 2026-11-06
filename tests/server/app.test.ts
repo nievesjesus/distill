@@ -279,6 +279,23 @@ describe('server app', () => {
     expect(((await res.json()) as ApiError).code).toBe('lingua_unavailable');
   });
 
+  it('does not answer an aborted compress request with a 500 ApiError', async () => {
+    const { app } = setup({
+      installed: true,
+      lingua: {
+        async compress(_text, opts) {
+          if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+          return 'x';
+        },
+      },
+    });
+    const controller = new AbortController();
+    controller.abort();
+    const res = await app.request('/api/compress', { ...jsonPost({ text: 'hi', rate: 0.5 }), signal: controller.signal });
+    expect([res.status, await res.clone().text()]).toEqual([499, '']);
+    expect(res.headers.get('content-type') ?? '').not.toContain('application/json');
+  });
+
   it('POST /api/compress returns compressed text', async () => {
     const { app } = setup({ installed: true });
     const res = await app.request('/api/compress', jsonPost({ text: 'hi', rate: 0.5 }));

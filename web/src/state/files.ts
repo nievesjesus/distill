@@ -94,6 +94,8 @@ export function useFiles(settings: Settings): FilesApi {
   const [retryNonce, setRetryNonce] = useState(0);
   const linguaKeys = useRef(new Map<string, string>());
   const linguaTickets = useRef(new Map<string, number>());
+  const linguaControllers = useRef(new Map<string, AbortController>());
+  const linguaStarted = useRef(new Set<string>());
   const linguaTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const compressCache = useRef(new Map<string, Compressed>());
   const previousParams = useRef('');
@@ -104,10 +106,13 @@ export function useFiles(settings: Settings): FilesApi {
   useEffect(() => {
     mounted.current = true;
     const timers = linguaTimers.current;
+    const controllers = linguaControllers.current;
     return () => {
       mounted.current = false;
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
+      for (const controller of controllers.values()) controller.abort();
+      controllers.clear();
     };
   }, []);
 
@@ -237,6 +242,9 @@ export function useFiles(settings: Settings): FilesApi {
       if (!linguaActive) {
         if (linguaKeys.current.has(id)) {
           linguaKeys.current.delete(id);
+          linguaStarted.current.delete(id);
+          linguaControllers.current.get(id)?.abort();
+          linguaControllers.current.delete(id);
           linguaTickets.current.set(id, (linguaTickets.current.get(id) ?? 0) + 1);
           const pending = linguaTimers.current.get(id);
           if (pending) clearTimeout(pending);
@@ -253,6 +261,9 @@ export function useFiles(settings: Settings): FilesApi {
       linguaKeys.current.set(id, key);
       const ticket = (linguaTickets.current.get(id) ?? 0) + 1;
       linguaTickets.current.set(id, ticket);
+      linguaControllers.current.get(id)?.abort();
+      const controller = new AbortController();
+      linguaControllers.current.set(id, controller);
       const pending = linguaTimers.current.get(id);
       if (pending) clearTimeout(pending);
       linguaTimers.current.delete(id);
@@ -273,7 +284,7 @@ export function useFiles(settings: Settings): FilesApi {
         linguaTimers.current.delete(id);
         const state = health?.lingua?.state;
         if (state === 'idle' || state === 'error') setPollRequested(true);
-        compress(localOut, rate, model)
+        compress(localOut, rate, model, controller.signal)
           .then(async (compressed) => {
             if (isStale()) return;
             const counted = await distill(compressed, []);
@@ -292,7 +303,9 @@ export function useFiles(settings: Settings): FilesApi {
           });
       };
 
-      if (paramsChanged) linguaTimers.current.set(id, setTimeout(run, LINGUA_DEBOUNCE_MS));
+      const debounced = linguaStarted.current.has(id);
+      linguaStarted.current.add(id);
+      if (debounced) linguaTimers.current.set(id, setTimeout(run, LINGUA_DEBOUNCE_MS));
       else run();
     }
 
@@ -323,6 +336,7 @@ export function useFiles(settings: Settings): FilesApi {
 
   const retryLingua = useCallback(() => {
     linguaKeys.current.clear();
+    linguaStarted.current.clear();
     compressCache.current.clear();
     setLinguaFailed(false);
     setRetryNonce((current) => current + 1);

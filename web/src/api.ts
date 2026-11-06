@@ -46,11 +46,12 @@ export async function getJson(id: string): Promise<unknown> {
   return (await request(`/api/files/${encodeURIComponent(id)}/json`)).json();
 }
 
-export async function compress(text: string, rate: number, model: LinguaModel): Promise<string> {
+export async function compress(text: string, rate: number, model: LinguaModel, signal?: AbortSignal): Promise<string> {
   const response = await request('/api/compress', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ text, rate, model }),
+    signal,
   });
   const body: { text: string } = await response.json();
   return body.text;

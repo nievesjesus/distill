@@ -52,6 +52,37 @@ function deferred<T>() {
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
+describe('createLingua abort', () => {
+  it('stops between chunks once the signal is aborted', async () => {
+    const fake = makeFake();
+    const l = createLingua({ cacheDir: '/tmp/x', load: fake.load });
+    const controller = new AbortController();
+    const total = (await import('../../src/node/lingua')).chunkText(longText).length;
+    const originalLoad = fake.load;
+    const wrapped = createLingua({
+      cacheDir: '/tmp/x',
+      load: async () => {
+        const mod = (await originalLoad()) as any;
+        const inner = mod.LLMLingua2.WithBERTMultilingual;
+        mod.LLMLingua2.WithBERTMultilingual = async (name: string, options: any) => {
+          const built = await inner(name, options);
+          const original = built.promptCompressor.compress;
+          built.promptCompressor.compress = async (text: string, o: { rate: number }) => {
+            controller.abort();
+            return original(text, o);
+          };
+          return built;
+        };
+        return mod;
+      },
+    });
+    await expect(wrapped.compress(longText, { rate: 0.6, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(total).toBeGreaterThan(1);
+    expect(fake.calls.length).toBeLessThan(total);
+    expect(l.status().installed).toBe(true);
+  });
+});
+
 describe('createLingua', () => {
   it('reports not installed when import fails', async () => {
     const l = createLingua({ cacheDir: '/tmp/x', load: () => Promise.reject(new Error('missing')) });

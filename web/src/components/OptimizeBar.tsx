@@ -38,7 +38,9 @@ export function OptimizeBar({
   const linguaStatus = health?.lingua;
   const installed = linguaStatus?.installed === true;
   const { optimize, optionsOpen, detailed, active, lingua } = settings;
-  const count = active.length + (lingua.on ? 1 : 0);
+  const linguaStatus0 = health?.lingua;
+  const linguaEffective = lingua.on && (linguaStatus0 === undefined || linguaStatus0.installed === true);
+  const count = active.length + (linguaEffective ? 1 : 0);
 
   return (
     <div className="optimize">
@@ -65,7 +67,7 @@ export function OptimizeBar({
       <div id={listId} className="booster-list" data-dim={!optimize} hidden={!optionsOpen}>
         {BOOSTERS.map((booster) => {
           const isLingua = booster.id === 'lingua';
-          const checked = isLingua ? lingua.on : active.includes(booster.id as LocalBoosterId);
+          const checked = isLingua ? linguaEffective : active.includes(booster.id as LocalBoosterId);
           const unavailable = isLingua && linguaStatus !== undefined && !installed;
           const onClick = () => {
             if (isLingua) onToggleLingua();
@@ -104,8 +106,8 @@ export function OptimizeBar({
             {S.linguaInstallHint}
           </p>
         ) : null}
-        {lingua.on && optimize ? <p className="lossy-note">{S.lossyNote}</p> : null}
-        {lingua.on && optimize && linguaStatus?.state === 'downloading' ? (
+        {linguaEffective && optimize ? <p className="lossy-note">{S.lossyNote}</p> : null}
+        {linguaEffective && optimize && linguaStatus?.state === 'downloading' ? (
           <div className="lingua-download">
             <p className="lingua-line">{S.linguaDownloading(Math.round(linguaStatus.progress * 100))}</p>
             <span className="lingua-bar" aria-hidden="true">
@@ -113,7 +115,7 @@ export function OptimizeBar({
             </span>
           </div>
         ) : null}
-        {lingua.on && optimize && linguaStatus?.state === 'error' ? (
+        {linguaEffective && optimize && linguaStatus?.state === 'error' ? (
           <p className="lingua-line">
             {S.linguaDownloadFailed}{' '}
             <button type="button" className="text-button" onClick={onRetryLingua}>

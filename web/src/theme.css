@@ -140,6 +140,10 @@ button {
 }
 
 .icon-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;

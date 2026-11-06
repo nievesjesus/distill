@@ -18,6 +18,7 @@ interface Server {
   healthCalls: number;
   compressCalls: { text: string; rate: number; model: string }[];
   jsonCalls: string[];
+  signals: (AbortSignal | null | undefined)[];
 }
 
 let server: Server;
@@ -41,6 +42,7 @@ function stubServer() {
       if (url === '/api/compress') {
         const body = JSON.parse(String(init?.body));
         server.compressCalls.push(body);
+        server.signals.push(init?.signal);
         return server.compress(body);
       }
       if (url.endsWith('/json')) {
@@ -104,6 +106,7 @@ beforeEach(() => {
     healthCalls: 0,
     compressCalls: [],
     jsonCalls: [],
+    signals: [],
   };
   stubServer();
 });
@@ -294,6 +297,54 @@ describe('LLMLingua-2', () => {
     fireEvent.change(slider, { target: { value: '0.6' } });
     await advance(400);
     expect(server.compressCalls.map((call) => call.rate)).toEqual([0.6, 0.7]);
+  });
+
+  it('compresses once after the debounce when boosters are toggled three times quickly', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    preset({ optionsOpen: true, lingua: { on: true, model: 'tinybert', rate: 0.6 } });
+    render(<App />);
+    await flush();
+    drop(['a.pdf']);
+    await flush();
+    await flush();
+    expect(server.compressCalls).toHaveLength(1);
+    for (const name of ['Compact tables', 'Collapse whitespace', 'Slim images and links']) {
+      fireEvent.click(screen.getByRole('switch', { name }));
+      await advance(50);
+    }
+    expect(server.compressCalls).toHaveLength(1);
+    await advance(400);
+    expect(server.compressCalls).toHaveLength(2);
+    await advance(2000);
+    expect(server.compressCalls).toHaveLength(2);
+  });
+
+  it('aborts the previous compress request when its ticket goes stale and shows no failure', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    preset({ detailed: true, optionsOpen: true, lingua: { on: true, model: 'tinybert', rate: 0.6 } });
+    server.compress = () => new Promise<Response>(() => undefined);
+    render(<App />);
+    await flush();
+    drop(['a.pdf']);
+    await flush();
+    await flush();
+    const first = server.signals[0] as AbortSignal;
+    expect(first.aborted).toBe(false);
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '0.7' } });
+    await advance(400);
+    expect(first.aborted).toBe(true);
+    expect(server.signals[1]?.aborted).toBe(false);
+    expect(screen.queryByText('LLMLingua-2 failed — showing lossless output')).toBeNull();
+  });
+
+  it('shows lingua as off when persisted on but not installed', async () => {
+    preset({ optionsOpen: true, lingua: { on: true, model: 'tinybert', rate: 0.6 } });
+    server.lingua = installed({ installed: false, state: 'idle', progress: 0 });
+    render(<App />);
+    expect(await screen.findByRole('button', { name: '4 boosters' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: /LLMLingua-2/ })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByText(/Lossy: a local model/)).toBeNull();
+    expect(JSON.parse(localStorage.getItem('distill:settings') ?? '{}').lingua.on).toBe(true);
   });
 
   it('keeps the row done with lossless output on compress failure and announces once', async () => {

@@ -5,7 +5,7 @@ import type { LinguaModel, LinguaStatus } from '../core/types';
 
 export interface Lingua {
   status(): LinguaStatus;
-  compress(text: string, opts: { rate: number; model?: LinguaModel }): Promise<string>;
+  compress(text: string, opts: { rate: number; model?: LinguaModel; signal?: AbortSignal }): Promise<string>;
   probe(): Promise<boolean>;
 }
 
@@ -191,7 +191,7 @@ export function createLingua(opts: LinguaOptions): Lingua {
       state.installed = await resolvePackages();
       return state.installed;
     },
-    async compress(text, { rate, model = 'tinybert' }) {
+    async compress(text, { rate, model = 'tinybert', signal }) {
       if (!(rate >= MIN_RATE && rate <= MAX_RATE)) {
         throw new RangeError(`rate must be between ${MIN_RATE} and ${MAX_RATE}`);
       }
@@ -199,7 +199,11 @@ export function createLingua(opts: LinguaOptions): Lingua {
       if (chunks.length === 0) return '';
       const compressor = await ensure(model);
       const out: string[] = [];
-      for (const chunk of chunks) out.push(await compressor.compress(chunk, { rate }));
+      for (const chunk of chunks) {
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        out.push(await compressor.compress(chunk, { rate }));
+      }
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       return out.join('\n\n');
     },
   };

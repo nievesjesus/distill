@@ -185,10 +185,15 @@ export function createApp(deps: AppDeps): Hono {
       return fail(c, 'bad_request', 'Unknown model');
     }
     try {
-      const compressed = await deps.lingua.compress(text, { rate, model: model as LinguaModel | undefined });
+      const compressed = await deps.lingua.compress(text, {
+        rate,
+        model: model as LinguaModel | undefined,
+        signal: c.req.raw.signal,
+      });
       return c.json({ text: compressed });
     } catch (error) {
       if (error instanceof RangeError) return fail(c, 'bad_request', error.message);
+      if (error instanceof DOMException && error.name === 'AbortError') return new Response(null, { status: 499 });
       throw error;
     }
   });
