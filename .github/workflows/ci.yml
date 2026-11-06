@@ -51,7 +51,7 @@ jobs:
       - name: Wait for health
         run: |
           for i in $(seq 1 60); do
-            if curl -sf localhost:4321/api/health > health.json; then break; fi
+            if curl -sf --max-time 10 localhost:4321/api/health > health.json; then break; fi
             sleep 2
           done
           cat health.json
@@ -59,7 +59,7 @@ jobs:
       - name: Parse a sample PDF
         run: |
           npx tsx scripts/make-sample-pdf.ts "$RUNNER_TEMP/sample.pdf"
-          curl -sf -F "file=@$RUNNER_TEMP/sample.pdf;type=application/pdf" localhost:4321/api/parse > parse.json
+          curl --fail-with-body --max-time 10 -F "file=@$RUNNER_TEMP/sample.pdf;type=application/pdf" localhost:4321/api/parse > parse.json || { cat parse.json; exit 1; }
           cat parse.json
           node -e "const r=JSON.parse(require('fs').readFileSync('parse.json','utf8')); if(!r.markdown||!r.markdown.trim()) process.exit(1)"
       - name: Stop container

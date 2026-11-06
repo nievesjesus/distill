@@ -2,7 +2,7 @@
 
 Documents in. Fewer tokens out.
 
-Distill turns PDFs, Office files and images into token-lean Markdown for LLMs. It parses with [LiteParse](https://github.com/run-llama/liteparse) and then runs a chain of small, deterministic "boosters" that strip tokens without changing what the document says. Everything runs on your machine.
+Distill turns PDFs, Office files and images into token-lean Markdown for LLMs. It parses with [LiteParse](https://github.com/run-llama/liteparse) and then runs a chain of small, deterministic "boosters" that drop formatting, repeats and link targets, not content. Everything runs on your machine.
 
 <!-- GIF: drop a file, see the saving (about 10 seconds) -->
 
