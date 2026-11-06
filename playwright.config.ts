@@ -4,6 +4,7 @@ const origin = 'http://127.0.0.1:4399';
 
 export default defineConfig({
   testDir: 'e2e',
+  testIgnore: 'desktop.spec.ts',
   fullyParallel: false,
   reporter: 'list',
   use: { baseURL: origin },

@@ -20,7 +20,10 @@
     "build": "vite build --config web/vite.config.ts && tsup",
     "dev:web": "vite --config web/vite.config.ts",
     "check:deps": "node scripts/check-lock.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:desktop": "npm run build && tsup --config desktop/tsup.desktop.config.ts",
+    "desktop": "npm run build:desktop && electron .",
+    "test:desktop": "playwright test --config playwright.desktop.config.ts"
   },
   "devDependencies": {
     "@fontsource/inter": "^5.3.0",
@@ -33,6 +36,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
+    "electron": "^45.2.3",
     "fflate": "^0.8.3",
     "jsdom": "^29.1.1",
     "react": "^19.3.1",
@@ -54,5 +58,6 @@
   },
   "optionalDependencies": {
     "@atjsh/llmlingua-2": "^3.0.0"
-  }
+  },
+  "main": "dist/desktop/main.js"
 }
