@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { unzipSync, strFromU8 } from 'fflate';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FileList } from '../src/components/FileList';
+import { AnnouncerProvider } from '../src/state/announcer';
 import { Footer } from '../src/components/Footer';
 import type { FileEntry } from '../src/state/files';
 
@@ -32,22 +33,22 @@ afterEach(() => {
 describe('preview expansion', () => {
   it('opens the first done row by default and shows out text', () => {
     render(<FileList files={[entry('1', 'a.pdf'), entry('2', 'b.pdf')]} />);
-    expect(screen.getByLabelText('Markdown preview of a.pdf')).toHaveTextContent('out of a.pdf');
-    expect(screen.queryByLabelText('Markdown preview of b.pdf')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Markdown preview of a.pdf' })).toHaveTextContent('out of a.pdf');
+    expect(screen.queryByRole('region', { name: 'Markdown preview of b.pdf' })).toBeNull();
   });
 
   it('expands one row at a time', () => {
     render(<FileList files={[entry('1', 'a.pdf'), entry('2', 'b.pdf')]} />);
     fireEvent.click(screen.getByRole('button', { name: /b\.pdf/ }));
-    expect(screen.queryByLabelText('Markdown preview of a.pdf')).toBeNull();
-    expect(screen.getByLabelText('Markdown preview of b.pdf')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Markdown preview of a.pdf' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Markdown preview of b.pdf' })).toBeInTheDocument();
   });
 
   it('links the toggle to the preview with aria-expanded and aria-controls', () => {
     render(<FileList files={[entry('1', 'a.pdf')]} />);
     const toggle = screen.getByRole('button', { name: /a\.pdf/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const preview = screen.getByLabelText('Markdown preview of a.pdf');
+    const preview = screen.getByRole('region', { name: 'Markdown preview of a.pdf' });
     expect(toggle.getAttribute('aria-controls')).toBe(preview.id);
     expect(preview).toHaveAttribute('tabindex', '0');
   });
@@ -56,17 +57,17 @@ describe('preview expansion', () => {
     const first = entry('1', 'a.pdf');
     const { rerender } = render(<FileList files={[first]} />);
     fireEvent.click(screen.getByRole('button', { name: /a\.pdf/ }));
-    expect(screen.queryByLabelText('Markdown preview of a.pdf')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Markdown preview of a.pdf' })).toBeNull();
     rerender(<FileList files={[first, entry('2', 'b.pdf')]} />);
-    expect(screen.queryByLabelText(/Markdown preview/)).toBeNull();
+    expect(screen.queryByRole('region')).toBeNull();
   });
 
   it('opens the first row that reaches done after earlier rows were not done', () => {
     const queued = entry('1', 'a.pdf', { status: 'queued', out: undefined });
     const { rerender } = render(<FileList files={[queued]} />);
-    expect(screen.queryByLabelText(/Markdown preview/)).toBeNull();
+    expect(screen.queryByRole('region')).toBeNull();
     rerender(<FileList files={[entry('1', 'a.pdf')]} />);
-    expect(screen.getByLabelText('Markdown preview of a.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Markdown preview of a.pdf' })).toBeInTheDocument();
   });
 
   it('does not let error or pending rows expand', () => {
@@ -83,29 +84,6 @@ describe('preview expansion', () => {
   it('uses the taller preview in detailed mode', () => {
     render(<FileList files={[entry('1', 'a.pdf')]} detailed />);
     expect(document.querySelector('.preview')).toHaveAttribute('data-detailed', 'true');
-  });
-});
-
-describe('live region isolation', () => {
-  it('puts the preview under an aria-live off container closer than the list region', () => {
-    render(<FileList files={[entry('1', 'a.pdf')]} />);
-    const pre = screen.getByLabelText('Markdown preview of a.pdf');
-    const nearest = pre.closest('[aria-live]');
-    expect(nearest).toHaveAttribute('aria-live', 'off');
-    expect(nearest?.tagName).not.toBe('UL');
-    expect(nearest?.closest('ul')).toHaveAttribute('aria-live', 'polite');
-  });
-
-  it('announces the copy failure from exactly one live region', async () => {
-    writeText.mockRejectedValue(new Error('denied'));
-    execCommand.mockReturnValue(false);
-    render(<FileList files={[entry('1', 'a.pdf')]} />);
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy Markdown' }));
-    });
-    const message = screen.getByText('Copy failed — select the preview text instead');
-    expect(message.closest('[aria-live],[role=status]')).toBe(message);
-    expect(message).toHaveAttribute('role', 'status');
   });
 });
 
@@ -133,6 +111,25 @@ describe('copy', () => {
     expect(execCommand).toHaveBeenCalledWith('copy');
     expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
     expect(document.querySelector('textarea')).toBeNull();
+  });
+
+  it('announces a copy failure while the visible message has no role', async () => {
+    vi.useFakeTimers();
+    writeText.mockRejectedValue(new Error('denied'));
+    execCommand.mockReturnValue(false);
+    render(
+      <AnnouncerProvider>
+        <FileList files={[entry('1', 'a.pdf')]} />
+      </AnnouncerProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Copy Markdown' }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(60);
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Copy failed — select the preview text instead');
+    expect(screen.getByText('Copy failed — select the preview text instead', { selector: 'p' })).not.toHaveAttribute('role');
   });
 
   it('shows the failure message for 3 s when both paths fail', async () => {

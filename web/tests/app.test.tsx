@@ -103,12 +103,32 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Requests from this origin are not allowed.'));
   });
 
-  it('keeps the file list live region quiet and renders errors as their own element', async () => {
+  it('has one status announcer before any file and no live region on the list', async () => {
     render(<App />);
+    expect(document.querySelectorAll('[role=status]')).toHaveLength(1);
     drop(['notes.xyz']);
     const list = await screen.findByRole('list', { name: 'Files' });
-    expect(list).toHaveAttribute('aria-live', 'polite');
-    expect(list).toHaveAttribute('aria-relevant', 'additions');
+    expect(list).not.toHaveAttribute('aria-live');
+    expect(document.querySelectorAll('[role=status]')).toHaveLength(1);
+  });
+
+  it('announces a finished row once and ignores later booster toggles', async () => {
+    render(<App />);
+    drop(['a.pdf']);
+    const announcer = document.querySelector('[role=status]') as HTMLElement;
+    await waitFor(() => expect(announcer).toHaveTextContent('a.pdf ready, −20%'));
+    fireEvent.click(screen.getByRole('button', { name: '4 boosters' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Compact tables' }));
+    await waitFor(() => expect(screen.getByText(/tokens · 2\.0k → 1\.7k/)).toBeInTheDocument());
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(announcer).toHaveTextContent('a.pdf ready, −20%');
+  });
+
+  it('announces an unsupported file error and renders it as its own element', async () => {
+    render(<App />);
+    drop(['notes.xyz']);
+    const announcer = document.querySelector('[role=status]') as HTMLElement;
+    await waitFor(() => expect(announcer).toHaveTextContent('notes.xyz: This file type is not supported.'));
     const message = await screen.findByText('This file type is not supported.');
     expect(message.tagName).toBe('SPAN');
     expect(message).toHaveClass('file-error');

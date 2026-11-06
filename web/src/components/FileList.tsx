@@ -21,7 +21,7 @@ export function FileList({ files, detailed = false }: FileListProps) {
 
   if (files.length === 0) return null;
   return (
-    <ul className="file-list" aria-label={S.files} aria-live="polite" aria-relevant="additions">
+    <ul className="file-list" aria-label={S.files}>
       {files.map((file) => (
         <FileRow
           key={file.localId}

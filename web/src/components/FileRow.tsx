@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { savedPercent, shortCount } from '@core/format';
+import { useAnnounce } from '../state/announcer';
 import { copyText } from '../lib/clipboard';
 import { downloadText } from '../lib/download';
 import { mdName } from '../lib/names';
@@ -54,6 +55,7 @@ function Status({ file }: FileRowProps) {
 }
 
 function useCopy(text: string) {
+  const announce = useAnnounce();
   const [state, setState] = useState<CopyState>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -68,6 +70,7 @@ function useCopy(text: string) {
     const ok = await copyText(text);
     if (timer.current) clearTimeout(timer.current);
     setState(ok ? 'copied' : 'failed');
+    if (!ok) announce(S.copyFailed);
     timer.current = setTimeout(() => setState('idle'), ok ? COPIED_MS : FAILED_MS);
   };
 
@@ -112,7 +115,7 @@ function DoneActions({ file }: { file: FileEntry }) {
         </svg>
       </button>
       {state === 'failed' ? (
-        <p className="copy-failed" role="status">
+        <p className="copy-failed">
           {S.copyFailed}
         </p>
       ) : null}

@@ -12,6 +12,7 @@ export const S = {
   downloadAll: 'Download all',
   copy: 'Copy Markdown',
   copied: 'Copied',
+  announceReady: (name: string, pct: number) => (pct > 0 ? `${name} ready, −${pct}%` : `${name} ready`),
   copyFailed: 'Copy failed — select the preview text instead',
   download: 'Download Markdown',
   previewLabel: (name: string) => `Markdown preview of ${name}`,
