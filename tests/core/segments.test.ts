@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapProse } from '@core/boosters/segments';
+import { mapProse } from '@core/boosters/segments.js';
 
 const up = (s: string) => s.toUpperCase();
 const sample = [
