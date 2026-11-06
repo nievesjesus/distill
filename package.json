@@ -1,0 +1,27 @@
+{
+  "name": "distillmd",
+  "version": "0.1.0",
+  "description": "Turn documents into token-lean Markdown using LiteParse",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "distillmd": "dist/cli.js",
+    "distill": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build && tsup",
+    "dev:web": "vite"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
