@@ -19,12 +19,14 @@
     "typecheck": "tsc --noEmit",
     "build": "vite build --config web/vite.config.ts && tsup",
     "dev:web": "vite --config web/vite.config.ts",
-    "check:deps": "node scripts/check-lock.mjs"
+    "check:deps": "node scripts/check-lock.mjs",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/space-grotesk": "^5.3.0",
+    "@playwright/test": "^1.65.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.6",

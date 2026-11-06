@@ -1,0 +1,100 @@
+# distill
+
+Documents in. Fewer tokens out.
+
+Distill turns PDFs, Office files and images into token-lean Markdown for LLMs. It parses with [LiteParse](https://github.com/run-llama/liteparse) and then runs a chain of small, deterministic "boosters" that strip tokens without changing what the document says. Everything runs on your machine.
+
+<!-- GIF: drop a file, see the saving (about 10 seconds) -->
+
+## Quick start
+
+```bash
+npx distillmd
+```
+
+This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop files in, read the Markdown, copy it or download it (a single `.md` or a ZIP of all of them).
+
+Options:
+
+```bash
+npx distillmd --port 4321 --host 127.0.0.1 --no-open --max-size 100
+```
+
+The server only listens on loopback by default. Passing `--host 0.0.0.0` exposes it to your network and disables the loopback check, so only do that on a network you trust.
+
+`npx distillmd` currently installs the LLMLingua runtime (about 400 MB, mostly onnxruntime) as part of the package. A slimmer install is planned.
+
+## Docker
+
+```bash
+docker run --rm -p 4321:4321 ghcr.io/nievesjesus/distill
+```
+
+The image is based on `node:22-slim` and bundles LibreOffice (Writer, Calc, Impress) and the Tesseract English and Spanish language data, so every supported format works out of the box. Inside the container the server listens on `0.0.0.0`.
+
+To build it yourself:
+
+```bash
+docker build -t distill .
+docker run --rm -p 4321:4321 distill
+```
+
+## Supported formats
+
+| Format | Needs |
+|--------|-------|
+| PDF | nothing else |
+| Images (PNG, JPG, TIFF, WebP) | nothing else, OCR is built in |
+| DOCX, PPTX, XLSX, ODF | [LibreOffice](https://www.libreoffice.org/download/) on your `PATH` (`soffice`) |
+
+If LibreOffice is missing, Distill still accepts an Office file and shows an explicit "Office files need LibreOffice" error instead of failing silently. The Docker image already includes it. Password-protected PDFs are reported as an error; asking for the password is not supported yet.
+
+Parsing quality is whatever LiteParse gives you. It varies on dense tables and on complex scans, and Distill does not try to fix that.
+
+## Boosters
+
+Boosters run in a fixed order and each one is a pure, idempotent function over the Markdown. None of them touches fenced code blocks or front-matter. "Optimize for LLMs" is the master switch; the individual boosters are in the Detailed view.
+
+| Booster | What it does | Loss |
+|---------|--------------|------|
+| Drop repeated boilerplate | Removes short non-structural lines (not headings, table rows or list items) that appear 3 or more times, keeping the first | No information lost |
+| Slim images and links | `![alt](path)` becomes `[alt]` and `[text](url)` becomes `text` | **Drops image paths and URLs** |
+| Compact tables | Removes alignment padding from GFM tables | None |
+| Collapse whitespace | Collapses blank-line runs, trailing spaces and double spaces outside code | None |
+| LLMLingua-2 | A local model removes low-value words | **Lossy**, off by default |
+
+The first four are on by default. If you need link targets, turn off "Slim images and links".
+
+LLMLingua-2 is optional and experimental. It is marked as lossy in the UI, the model (TinyBERT by default, about 57 MB) is downloaded the first time you enable it into `~/.cache/distillmd/models`, and after that it runs offline. If its runtime is not installed, the switch is disabled and says "not installed".
+
+## How tokens are counted
+
+Counts use the `o200k_base` encoding (via `gpt-tokenizer`), computed in your browser. Other models, such as Claude or Gemini, tokenize differently, so absolute counts are approximate. The percentage saved is comparable across tokenizers.
+
+## Privacy
+
+Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. The only network request Distill can make is the one-time LLMLingua model download, and only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later.
+
+## Roadmap
+
+- MCP server so any agent can convert documents
+- CLI for converting files from the terminal
+- Hooks so Claude Code and OpenCode read the distilled Markdown instead of the binary
+- Desktop app: coming soon
+- A slimmer npm install without the LLMLingua runtime
+
+## Development
+
+```bash
+npm ci
+npm test
+npm run typecheck
+npm run build
+npm run test:e2e
+```
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
+
+Built on [LiteParse](https://github.com/run-llama/liteparse) by LlamaIndex.
