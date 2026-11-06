@@ -240,6 +240,14 @@ button {
 }
 
 @media (max-width: 640px) {
+  .preview {
+    padding-left: 0;
+  }
+
+  .copy-failed {
+    margin-left: 0;
+  }
+
   .segmented button {
     min-height: 44px;
     padding: 0 14px;
@@ -436,6 +444,55 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.file-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.is-copied {
+  color: var(--accent);
+}
+
+.copy-failed {
+  flex-basis: 100%;
+  margin: 0 0 4px 44px;
+  font-size: 11px;
+  color: var(--lossy);
+}
+
+.file-row {
+  flex-wrap: wrap;
+}
+
+.preview {
+  padding: 0 0 10px 44px;
+}
+
+.preview-text {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 120px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--code);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview[data-detailed='true'] .preview-text {
+  max-height: 260px;
 }
 
 .kind {

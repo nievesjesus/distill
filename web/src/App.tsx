@@ -37,7 +37,7 @@ export function App() {
           onToggleBooster={toggleBooster}
           onToggleLingua={toggleLingua}
         />
-        <FileList files={files} />
+        <FileList files={files} detailed={settings.detailed} />
         <Footer files={files} />
       </div>
     </div>

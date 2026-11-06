@@ -1,5 +1,7 @@
 import { savedPercent, shortCount } from '@core/format';
 import type { FileEntry } from '../state/files';
+import { downloadZip } from '../lib/download';
+import { mdName, uniqueNames } from '../lib/names';
 import { S } from '../strings';
 
 interface FooterProps {
@@ -14,13 +16,18 @@ export function Footer({ files }: FooterProps) {
   const out = measured.reduce((sum, file) => sum + (file.outTokens ?? 0), 0);
   const saved = savedPercent(raw, out);
 
+  const downloadAll = () => {
+    const names = uniqueNames(done.map((file) => mdName(file.name)));
+    void downloadZip(done.map((file, index) => ({ name: names[index], text: file.out ?? '' })));
+  };
+
   return (
     <footer className="footer">
       <div className="footer-total">
         <span className="footer-pct">{saved > 0 ? `−${saved}%` : '0%'}</span>
         <span className="footer-line">{S.footerLine(shortCount(raw), shortCount(out), done.length, files.length)}</span>
       </div>
-      <button type="button" className="download-all" disabled>
+      <button type="button" className="download-all" disabled={done.length === 0} onClick={downloadAll}>
         {S.downloadAll}
       </button>
     </footer>
