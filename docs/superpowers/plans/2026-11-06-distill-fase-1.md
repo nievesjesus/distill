@@ -500,3 +500,54 @@ e2e/distill.spec.ts          Playwright
   - `permissions: contents: write`, únicamente en ese job.
 - [ ] **Paso 5:** agrega al README una sección "Desktop app" con las descargas lite y full, la diferencia entre las dos (LLMLingua-2), cómo abrir una app sin firmar la primera vez en macOS (clic derecho → Abrir) y en Windows (SmartScreen → More info → Run anyway), y el requisito de LibreOffice para archivos Office.
 - [ ] **Paso 6: Commit** con `build(desktop): lite/full installers and draft release workflow`.
+
+### Tarea 15: Ventana nativa y layout fluido en la app de escritorio
+
+> Agregada el 2026-11-06 a pedido del usuario: "la ventana se tiene que comportar como una ventana nativa, ser más fluida al sizing de la ventana, ajustable, con un min height". Depende de las Tareas 13 y 14.
+
+**Archivos:**
+- Crear: `desktop/window-state.ts`, `tests/desktop/window-state.test.ts`, `web/src/lib/shell.ts`, `tests/web/shell.test.ts` (o la carpeta de tests web que ya use el repo)
+- Modificar: `desktop/window.ts`, `desktop/main.ts`, `tests/desktop/window.test.ts`, `web/src/main.tsx`, `web/src/App.tsx`, `web/src/components/Header.tsx`, `web/src/theme.css`, `e2e/desktop.spec.ts`
+
+**Comportamiento esperado:**
+
+1. **Tamaño y límites de la ventana** (`windowOptions(platform)`):
+   - Por defecto 640 × 780 y mínimos `minWidth: 440` y `minHeight: 520`. A ese mínimo, todo sigue usable sin scroll horizontal y con el footer visible.
+   - Se queda `show: false` + `ready-to-show` y `backgroundColor: '#0B0B10'` para que no haya flash blanco al abrir ni al redimensionar.
+2. **Barra de título integrada**, como las apps nativas modernas:
+   - macOS: `titleBarStyle: 'hiddenInset'`, con los semáforos alineados verticalmente al centro de la barra superior.
+   - Windows: `titleBarStyle: 'hidden'` + `titleBarOverlay: { color: '#0B0B10', symbolColor: '#A0A0AE', height: 40 }`.
+   - Linux: marco nativo, sin cambios.
+3. **Recordar posición y tamaño** (`desktop/window-state.ts`):
+   - Guardar `{ x, y, width, height, maximized, fullScreen }` en `app.getPath('userData')/window-state.json`. Se toma de `getNormalBounds()` al cerrar la ventana, y también con debounce (~500 ms) en `resize`/`move`. La escritura es atómica (temporal + rename).
+   - Una función pura `restoreBounds(saved, workAreas, defaults, mins)`:
+     - Si el JSON falta o es inválido, usa los defaults centrados.
+     - Si el rectángulo guardado ya no cae en ningún display (monitor desconectado), lo recentra en el principal.
+     - Recorta el tamaño al área de trabajo y nunca baja de los mínimos.
+     - Al abrir, restaura el estado maximizado o de pantalla completa.
+4. **Shell de escritorio en la web.** `main.ts` carga `appUrl + '?shell=desktop&platform=<process.platform>'`. `web/src/lib/shell.ts` lee esos parámetros, pone `data-shell="desktop"` y `data-platform` en `<html>` y no hace nada en el navegador. El guard de navegación sigue aceptando la URL (mismo origen).
+5. **Layout de app con scroll interno** (solo bajo `[data-shell='desktop']`; la web en el navegador queda como está):
+   - `html`, `body` y `#root` a 100% de alto; `body` con `overflow: hidden` y `overscroll-behavior: none` (sin rebote ni scroll de página).
+   - La barra superior (marca, Compact/Detailed, Connect, GitHub) es una franja de 40 px a todo el ancho y arrastrable (`-webkit-app-region: drag`). Sus controles interactivos usan `no-drag`. Deja libre la zona de los semáforos en macOS (~78 px a la izquierda) y la de los controles del overlay en Windows (`env(titlebar-area-x/width)`, con fallback de 140 px a la derecha). El contenido de la barra se alinea con la columna.
+   - Debajo va una zona fija con tagline, dropzone y barra de optimización. Luego la **lista de archivos como único contenedor con scroll** (`flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable`) y el **footer fijo abajo** (siempre visible, con borde superior `--border-soft`).
+   - **Ancho fluido:** la columna usa todo el ancho menos 16 px de margen por lado, hasta un máximo de 720 px (en el navegador sigue en 520). La densidad tipográfica no cambia: mismas fuentes, filas de 34 px y controles de 24–30 px. Los previews crecen con la ventana (`max-height: min(45vh, 480px)` en Detailed y `min(28vh, 240px)` en Compact).
+   - Con la ventana baja (alto ≤ 600 px) el tagline se oculta para dejar espacio a la lista. Debajo de 440 px nunca se llega, por el mínimo.
+   - Sensación nativa: `user-select: none` en la barra, el dropzone, la barra de optimización y el footer (el texto del preview sigue seleccionable), `cursor: default` en los botones (los links sí conservan `pointer`) y nada de transiciones en propiedades de layout.
+6. **Soltar archivos en cualquier parte de la ventana.** Un archivo que se suelta fuera del dropzone va al mismo `add` (el dropzone se resalta mientras se arrastra sobre la ventana) y nunca navega a `file://`. Aplica también en el navegador.
+7. **Zoom:** se bloquea el pinch-zoom (`webContents.setVisualZoomLevelLimits(1, 1)`). El zoom de menú (Cmd +/-) sigue funcionando.
+
+- [ ] **Paso 1 (TDD):**
+  - Tests de `restoreBounds`: JSON ausente o corrupto, fuera de pantalla, más grande que el área de trabajo, por debajo de los mínimos, maximizado.
+  - Tests de `windowOptions` para darwin, win32 y linux.
+  - Test de `shell.ts`: con el query pone los atributos; sin el query no toca nada.
+  - Test del drop global: llama a `add` y hace `preventDefault`.
+- [ ] **Paso 2:** implementa `window-state.ts`, `windowOptions(platform)` y el cableado en `main.ts`.
+- [ ] **Paso 3:** implementa el shell y el CSS del layout de escritorio, y mueve el Header a la barra superior sin cambiar su contenido ni sus textos.
+- [ ] **Paso 4:** amplía `e2e/desktop.spec.ts` (sin romper el humo actual):
+  - Fija 440×520 (`setSize`) y verifica que `getSize()` respete el mínimo, que no haya scroll horizontal (`scrollWidth <= clientWidth`), que el body no haga scroll y que el footer quede dentro del viewport.
+  - Con 12 archivos agregados, la lista hace scroll interno y el footer sigue visible.
+  - A 1280×900 la columna mide 720 px y está centrada.
+  - Persistencia: lanza con un `userData` temporal, redimensiona, cierra, relanza y comprueba que el tamaño se restaura.
+  - Guarda capturas a 440×520, 640×780 y 1280×900 en `test-results/desktop-*.png`.
+- [ ] **Paso 5:** `npm run typecheck`, `npm test`, `npm run test:e2e` y `npm run test:desktop` en verde.
+- [ ] **Paso 6: Commit** con `feat(desktop): native window sizing, remembered bounds and fluid app layout`.
