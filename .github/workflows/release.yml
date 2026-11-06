@@ -19,18 +19,22 @@ jobs:
       matrix:
         include:
           - os: macos-14
+            target: mac dmg
             resources: mac-arm64/distill.app/Contents/Resources
             platform: mac
             arch: arm64
-          - os: macos-13
+          - os: macos-15-intel
+            target: mac dmg
             resources: mac/distill.app/Contents/Resources
             platform: mac
             arch: x64
           - os: windows-latest
+            target: win nsis
             resources: win-unpacked/resources
             platform: win
             arch: x64
           - os: ubuntu-latest
+            target: linux AppImage
             resources: linux-unpacked/resources
             platform: linux
             arch: x64
@@ -43,8 +47,20 @@ jobs:
       - run: npm ci
       - run: npm run check:deps
       - run: npm run build:desktop
-      - run: npm run dist:lite -- --${{ matrix.platform }} --${{ matrix.arch }}
-      - run: npm run dist:full -- --${{ matrix.platform }} --${{ matrix.arch }}
+      - run: npm run dist:lite -- --${{ matrix.target }} --${{ matrix.arch }}
+      - run: npm run dist:full -- --${{ matrix.target }} --${{ matrix.arch }}
+      - name: Fail on artifacts for another arch
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          bad=0
+          for f in release/**/Distill-*.dmg release/**/Distill-*.exe release/**/Distill-*.AppImage; do
+            case "$f" in
+              *-${{ matrix.arch }}.*) ;;
+              *) echo "unexpected artifact: $f"; bad=1 ;;
+            esac
+          done
+          exit $bad
       - name: Verify lite variant
         shell: bash
         run: node scripts/check-variant.mjs "release/lite/${{ matrix.resources }}" lite
