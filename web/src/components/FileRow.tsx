@@ -24,12 +24,12 @@ function Tokens({ file }: FileRowProps) {
 
 function Status({ file }: FileRowProps) {
   if (file.status === 'error' && file.error) {
-    return <span className="file-error">{ERROR_MESSAGES[file.error.code]}</span>;
+    return <span key="error" className="file-error">{ERROR_MESSAGES[file.error.code]}</span>;
   }
-  if (file.status === 'queued') return <span className="file-status">{S.queued}</span>;
+  if (file.status === 'queued') return <span key="queued" className="file-status">{S.queued}</span>;
   if (file.status === 'parsing') {
     return (
-      <span className="file-status">
+      <span key="parsing" className="file-status">
         <span className="progress" aria-hidden="true">
           <span className="progress-bar" />
         </span>
@@ -37,7 +37,7 @@ function Status({ file }: FileRowProps) {
       </span>
     );
   }
-  return <Tokens file={file} />;
+  return <Tokens key="done" file={file} />;
 }
 
 export function FileRow({ file }: FileRowProps) {
