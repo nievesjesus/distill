@@ -11,6 +11,7 @@ import { createParser } from '../node/parse';
 import { createApp } from './app';
 import { createStore } from './store';
 
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const MAX_STORED_FILES = 50;
 const MAX_STORED_BYTES = 200 * 1024 * 1024;
 
@@ -52,6 +53,7 @@ export async function startServer(opts: {
       version,
       liteparseVersion,
       webRoot: existsSync(webRoot) ? webRoot : undefined,
+      guardLoopback: LOOPBACK_HOSTS.has(opts.host.toLowerCase()),
     });
 
     const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {

@@ -25,6 +25,7 @@ function setup(
     maxBytes?: number;
     libreoffice?: boolean;
     webRoot?: string;
+    guardLoopback?: boolean;
   } = {},
 ): Harness {
   const paths: string[] = [];
@@ -61,6 +62,7 @@ function setup(
     version: '1.2.3',
     liteparseVersion: '4.5.6',
     webRoot: opts.webRoot,
+    guardLoopback: opts.guardLoopback ?? false,
   });
   return { app, paths, jsonPaths, store, lingua };
 }
@@ -331,5 +333,100 @@ describe('server app', () => {
     const { app } = setup();
     const res = await app.request('/anything');
     expect(res.status).toBe(404);
+  });
+
+  it('rejects a streamed multipart body without Content-Length over the limit', async () => {
+    const { app, paths } = setup({ maxBytes: 10 });
+    const form = new FormData();
+    form.append('file', new File([new Uint8Array(3 * 1024 * 1024)], 'big.pdf'));
+    const encoded = new Request('http://localhost/x', { method: 'POST', body: form });
+    const contentType = encoded.headers.get('content-type') as string;
+    const bytes = new Uint8Array(await encoded.arrayBuffer());
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let offset = 0; offset < bytes.length; offset += 65536) controller.enqueue(bytes.slice(offset, offset + 65536));
+        controller.close();
+      },
+    });
+    const res = await app.request('/api/parse', {
+      method: 'POST',
+      headers: { 'content-type': contentType },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as ApiError).code).toBe('too_large');
+    expect(paths).toHaveLength(0);
+  });
+
+  it('rejects an oversized compress body with 413', async () => {
+    const { app } = setup({ installed: true });
+    const res = await app.request('/api/compress', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain', 'content-length': String(30_000_000) },
+      body: 'x',
+    });
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as ApiError).code).toBe('too_large');
+  });
+
+  it('returns 503 for compress without reading the body when lingua is missing', async () => {
+    const { app } = setup({ installed: false });
+    const stream = new ReadableStream<Uint8Array>({
+      pull() {
+        throw new Error('body was read');
+      },
+    });
+    const res = await app.request('/api/compress', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(res.status).toBe(503);
+  });
+
+  describe('loopback guard', () => {
+    const blockedBody = { code: 'forbidden', message: 'Request blocked: distill only accepts local requests' };
+
+    it('blocks a foreign Host header', async () => {
+      const { app } = setup({ guardLoopback: true });
+      const res = await app.request('/api/health', { headers: { host: 'evil.example:4321' } });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual(blockedBody);
+    });
+
+    it.each(['localhost:5173', '127.0.0.1:4321', '[::1]:4321'])('allows Host %s', async (host) => {
+      const { app } = setup({ guardLoopback: true });
+      const res = await app.request('/api/health', { headers: { host } });
+      expect(res.status).toBe(200);
+    });
+
+    it('blocks a POST with a foreign Origin', async () => {
+      const { app } = setup({ guardLoopback: true });
+      const init = upload('a.pdf');
+      const res = await app.request('/api/parse', { ...init, headers: { host: 'localhost:4321', origin: 'https://evil.example' } });
+      expect(res.status).toBe(403);
+    });
+
+    it('allows a POST with a loopback Origin', async () => {
+      const { app } = setup({ guardLoopback: true });
+      const init = upload('a.pdf');
+      const res = await app.request('/api/parse', { ...init, headers: { host: '127.0.0.1:4321', origin: 'http://127.0.0.1:4321' } });
+      expect(res.status).toBe(200);
+    });
+
+    it('allows a POST without Origin', async () => {
+      const { app } = setup({ guardLoopback: true });
+      const init = upload('a.pdf');
+      const res = await app.request('/api/parse', { ...init, headers: { host: 'localhost:4321' } });
+      expect(res.status).toBe(200);
+    });
+
+    it('allows any Host when guardLoopback is false', async () => {
+      const { app } = setup({ guardLoopback: false });
+      const res = await app.request('/api/health', { headers: { host: 'evil.example' } });
+      expect(res.status).toBe(200);
+    });
   });
 });

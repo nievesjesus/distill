@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { detectKind, needsLibreOffice } from '../core/kind';
@@ -22,10 +23,13 @@ export interface AppDeps {
   version: string;
   liteparseVersion: string;
   webRoot?: string;
+  guardLoopback: boolean;
 }
 
 const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 const MAX_COMPRESS_CHARS = 5_000_000;
+const MAX_COMPRESS_BODY_BYTES = MAX_COMPRESS_CHARS * 4 + MULTIPART_OVERHEAD_BYTES;
+const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const LINGUA_MODELS: ReadonlySet<string> = new Set<LinguaModel>(['tinybert', 'mobilebert', 'xlm-roberta']);
 
 const STATUS_BY_CODE: Record<ErrorCode, ContentfulStatusCode> = {
@@ -38,11 +42,26 @@ const STATUS_BY_CODE: Record<ErrorCode, ContentfulStatusCode> = {
   parse_failed: 422,
   timeout: 504,
   lingua_unavailable: 503,
+  forbidden: 403,
 };
 
 function fail(c: Context, code: ErrorCode, message: string) {
   const body: ApiError = { code, message };
   return c.json(body, STATUS_BY_CODE[code]);
+}
+
+function hostnameOf(hostHeader: string): string {
+  if (hostHeader.startsWith('[')) return hostHeader.slice(0, hostHeader.indexOf(']') + 1).toLowerCase();
+  return hostHeader.split(':')[0]?.toLowerCase() ?? '';
+}
+
+function originHostname(origin: string): string | null {
+  try {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    return hostname.includes(':') ? `[${hostname.replace(/^\[|\]$/g, '')}]` : hostname;
+  } catch {
+    return null;
+  }
 }
 
 function extensionOf(filename: string): string {
@@ -68,6 +87,19 @@ export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
   const tooLarge = () => `File exceeds the ${deps.maxBytes} byte limit`;
 
+  if (deps.guardLoopback) {
+    const blocked = (c: Context) => fail(c, 'forbidden', 'Request blocked: distill only accepts local requests');
+    app.use('*', async (c, next) => {
+      if (!LOOPBACK_HOSTNAMES.has(hostnameOf(c.req.header('host') ?? ''))) return blocked(c);
+      const origin = c.req.header('origin');
+      if (c.req.method === 'POST' && origin !== undefined) {
+        const hostname = originHostname(origin);
+        if (hostname === null || !LOOPBACK_HOSTNAMES.has(hostname)) return blocked(c);
+      }
+      return next();
+    });
+  }
+
   app.onError((error, c) => {
     if (error instanceof DistillError) return fail(c, error.code, error.message);
     const body: ApiError = { code: 'parse_failed', message: 'Unexpected server error' };
@@ -85,11 +117,12 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(body);
   });
 
+  app.post(
+    '/api/parse',
+    bodyLimit({ maxSize: deps.maxBytes + MULTIPART_OVERHEAD_BYTES, onError: (c) => fail(c, 'too_large', tooLarge()) }),
+  );
+
   app.post('/api/parse', async (c) => {
-    const declared = Number(c.req.header('content-length'));
-    if (Number.isFinite(declared) && declared > deps.maxBytes + MULTIPART_OVERHEAD_BYTES) {
-      return fail(c, 'too_large', tooLarge());
-    }
     let form: FormData;
     try {
       form = await c.req.formData();
@@ -127,6 +160,15 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(json as object);
   });
 
+  app.post(
+    '/api/compress',
+    async (c, next) => {
+      if (!deps.lingua.status().installed) return fail(c, 'lingua_unavailable', 'LLMLingua-2 is not installed');
+      return next();
+    },
+    bodyLimit({ maxSize: MAX_COMPRESS_BODY_BYTES, onError: (c) => fail(c, 'too_large', 'Request body is too large') }),
+  );
+
   app.post('/api/compress', async (c) => {
     let payload: unknown;
     try {
@@ -142,7 +184,6 @@ export function createApp(deps: AppDeps): Hono {
     if (model !== undefined && (typeof model !== 'string' || !LINGUA_MODELS.has(model))) {
       return fail(c, 'bad_request', 'Unknown model');
     }
-    if (!deps.lingua.status().installed) return fail(c, 'lingua_unavailable', 'LLMLingua-2 is not installed');
     try {
       const compressed = await deps.lingua.compress(text, { rate, model: model as LinguaModel | undefined });
       return c.json({ text: compressed });
