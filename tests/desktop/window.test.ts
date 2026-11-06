@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAllowedExternal, isSameOrigin, tessdataDir, windowOptions } from '../../desktop/window';
+import { isAllowedExternal, isPermissionAllowed, isSameOrigin, tessdataDir, windowOptions } from '../../desktop/window';
 
 describe('windowOptions', () => {
   it('uses the hardened distill window defaults', () => {
@@ -60,4 +60,17 @@ describe('tessdataDir', () => {
   it('is undefined when packaged without the data', () => {
     expect(tessdataDir(true, resources, () => false)).toBeUndefined();
   });
+});
+
+describe('isPermissionAllowed', () => {
+  it('allows only sanitized clipboard writes', () => {
+    expect(isPermissionAllowed('clipboard-sanitized-write')).toBe(true);
+  });
+
+  it.each(['media', 'geolocation', 'notifications', 'clipboard-read', 'openExternal', 'fullscreen', 'midi'])(
+    'denies %s',
+    (permission) => {
+      expect(isPermissionAllowed(permission)).toBe(false);
+    },
+  );
 });

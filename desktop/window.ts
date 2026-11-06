@@ -39,3 +39,7 @@ export function tessdataDir(
   const dir = join(resourcesPath, 'tessdata');
   return exists(join(dir, 'eng.traineddata')) ? dir : undefined;
 }
+
+export function isPermissionAllowed(permission: string): boolean {
+  return permission === 'clipboard-sanitized-write';
+}
