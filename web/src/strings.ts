@@ -1,0 +1,36 @@
+import type { ErrorCode } from '@core/types';
+
+export const S = {
+  tagline: ['Documents in. ', 'Fewer tokens', ' out.'],
+  drop: 'Drop files here',
+  or: 'or',
+  browse: 'browse',
+  formats: 'PDF · DOCX · PPTX · XLSX · images · parsed locally',
+  optimize: 'Optimize for LLMs',
+  compact: 'Compact',
+  detailed: 'Detailed',
+  downloadAll: 'Download all',
+  copy: 'Copy Markdown',
+  copied: 'Copied',
+  download: 'Download Markdown',
+  connect: 'Connect your agent',
+  github: 'Source on GitHub',
+  lossyNote: 'Lossy: a local model removes low-value words. Downloads once, then runs offline.',
+  brand: 'distill',
+  fileInput: 'Choose files to distill',
+  unreachable: 'Cannot reach distill. Is it still running?',
+  unexpectedResponse: (status: number) => `Unexpected response (status ${status})`,
+} as const;
+
+export const ERROR_MESSAGES: Record<ErrorCode, string> = {
+  unsupported_type: 'This file type is not supported.',
+  needs_libreoffice: 'Install LibreOffice to convert this file type.',
+  too_large: 'This file is larger than the size limit.',
+  password_protected: 'This file is password protected.',
+  timeout: 'Parsing took too long and was stopped.',
+  parse_failed: 'This file could not be parsed.',
+  bad_request: 'The request was not valid.',
+  not_found: 'This file is no longer available. Drop it again.',
+  lingua_unavailable: 'The local compression model is not available.',
+  forbidden: 'Requests from this origin are not allowed.',
+};

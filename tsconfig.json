@@ -4,10 +4,24 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "WebWorker"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "WebWorker"
+    ],
     "skipLibCheck": true,
     "noEmit": true,
-    "paths": { "@core/*": ["./src/core/*"] }
+    "paths": {
+      "@core/*": [
+        "./src/core/*"
+      ]
+    },
+    "jsx": "react-jsx"
   },
-  "include": ["src", "tests", "vitest.config.ts"]
+  "include": [
+    "src",
+    "tests",
+    "web",
+    "vitest.config.ts"
+  ]
 }
