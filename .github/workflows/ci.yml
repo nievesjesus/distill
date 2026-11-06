@@ -2,10 +2,14 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
+
+env:
+  ONNXRUNTIME_NODE_INSTALL: skip
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -32,3 +36,32 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: docker build -t distill:ci .
+      - run: docker run -d --rm -p 4321:4321 --name distill-ci distill:ci
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf localhost:4321/api/health > health.json; then break; fi
+            sleep 2
+          done
+          cat health.json
+          grep -q '"libreoffice":true' health.json
+      - name: Parse a sample PDF
+        run: |
+          npx tsx scripts/make-sample-pdf.ts "$RUNNER_TEMP/sample.pdf"
+          curl -sf -F "file=@$RUNNER_TEMP/sample.pdf;type=application/pdf" localhost:4321/api/parse > parse.json
+          cat parse.json
+          node -e "const r=JSON.parse(require('fs').readFileSync('parse.json','utf8')); if(!r.markdown||!r.markdown.trim()) process.exit(1)"
+      - name: Stop container
+        if: always()
+        run: docker stop distill-ci || true

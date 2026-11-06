@@ -30,6 +30,14 @@ export function mapError(error: unknown, path = ''): DistillError {
   return new DistillError(code, reason.slice(0, MAX_MESSAGE_LENGTH), { cause: error });
 }
 
+export function parserOptionsFromEnv(env: NodeJS.ProcessEnv): { ocrLanguage: string; tessdataPath?: string } {
+  const tessdataPath = env.DISTILL_TESSDATA;
+  return {
+    ocrLanguage: env.DISTILL_OCR_LANG || 'eng',
+    ...(tessdataPath ? { tessdataPath } : {}),
+  };
+}
+
 export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {}): Parser {
   const poolSize = opts.poolSize ?? Math.min(4, availableParallelism());
   const parseTimeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -40,6 +48,7 @@ export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {
       extractLinks: true,
       keepHeadersFooters: false,
       ocrEnabled: true,
+      ...parserOptionsFromEnv(process.env),
       quiet: true,
       poolSize,
       parseTimeoutMs,

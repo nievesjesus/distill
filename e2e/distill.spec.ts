@@ -4,11 +4,11 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { makeSamplePdf } from '../tests/fixtures/make-pdf';
 
-const PAGE_HEADER = 'Example Co. — Report   Page 1 of 3';
+const PAGE_HEADER = 'Example Co. - Report   Page 1 of 3';
 
 function sampleLines(): string[] {
   const lines: string[] = [];
-  for (let page = 0; page < 6; page += 1) {
+  for (let page = 0; page < 3; page += 1) {
     lines.push(PAGE_HEADER, '', '', '', 'Quarterly summary of revenue and costs for the period.', '', '', '');
     lines.push('Item        Amount        Notes', 'Revenue     1200          steady', 'Costs       800           flat', '', '', '');
   }

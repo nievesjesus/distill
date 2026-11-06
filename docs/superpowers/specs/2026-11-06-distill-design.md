@@ -18,7 +18,7 @@ Tiene tres caras sobre el mismo núcleo:
 **Éxito significa:**
 - `npx distillmd` abre la web en un solo comando, sin configurar nada, y un PDF se convierte en segundos.
 - El ahorro de tokens se ve claro y es real: se mide con un tokenizer real, no se estima.
-- Todo corre en la máquina del usuario: ningún archivo sale de ella y no hay telemetría.
+- Todo corre en la máquina del usuario: ningún archivo sale de ella y no hay telemetría. Las únicas descargas son de datos, nunca de documentos: el modelo de LLMLingua-2, si el usuario lo activa, y los datos de Tesseract en inglés (~15 MB, desde GitHub) la primera vez que se hace OCR, salvo que ya existan en local (§4.1). El README lo dice tal cual.
 - La UI es compacta por defecto, con los detalles a un clic, y se ve bien en una captura para X.
 
 ## 2. Fases
@@ -75,6 +75,7 @@ si LLMLingua-2 está activo: POST /api/compress { text, rate } ← texto comprim
 - La vista JSON + boxes requiere una segunda pasada con `outputFormat: 'json'`, que se pide bajo demanda (`GET /api/files/:id/json`) y nunca en la conversión normal.
 - **Formatos:** PDF e imágenes (PNG, JPG, TIFF, WebP) funcionan sin nada más. DOCX, PPTX, XLSX y ODF **requieren LibreOffice**. Al arrancar se detecta `soffice` en el PATH. Si falta, la UI acepta el archivo, lo marca con error "Office files need LibreOffice" y muestra cómo instalarlo; no falla en silencio. La imagen Docker incluye LibreOffice.
 - PDF con contraseña: se muestra un error claro. Pedir la contraseña queda fuera de la v1.
+- **OCR y tessdata (agregado el 2026-11-06):** LiteParse trae Tesseract dentro de su binario. Si no se le pasa `tessdataPath` ni existe `TESSDATA_PREFIX`, la primera vez que hace OCR descarga `eng.traineddata` (~15 MB) de `github.com/tesseract-ocr/tessdata_best`. Distill lee `DISTILL_TESSDATA` (→ `tessdataPath`) y `DISTILL_OCR_LANG` (→ `ocrLanguage`, por defecto `eng`). La imagen Docker apunta las dos al tessdata del sistema, así que no descarga nada. Incluir el tessdata en la app de escritorio queda pendiente (Tarea 13/14).
 
 ### 4.2 Boosters
 

@@ -22,7 +22,7 @@ npx distillmd --port 4321 --host 127.0.0.1 --no-open --max-size 100
 
 The server only listens on loopback by default. Passing `--host 0.0.0.0` exposes it to your network and disables the loopback check, so only do that on a network you trust.
 
-`npx distillmd` currently installs the LLMLingua runtime (about 400 MB, mostly onnxruntime) as part of the package. A slimmer install is planned.
+`npx distillmd` currently installs the LLMLingua runtime (several hundred MB, mostly onnxruntime) as part of the package. A slimmer install is planned.
 
 ## Docker
 
@@ -30,7 +30,9 @@ The server only listens on loopback by default. Passing `--host 0.0.0.0` exposes
 docker run --rm -p 4321:4321 ghcr.io/nievesjesus/distill
 ```
 
-The image is based on `node:22-slim` and bundles LibreOffice (Writer, Calc, Impress) and the Tesseract English and Spanish language data, so every supported format works out of the box. Inside the container the server listens on `0.0.0.0`.
+(once published; until then, build the image yourself as shown below)
+
+The image is based on `node:22-bookworm-slim` and bundles LibreOffice (Writer, Calc, Impress) and the Tesseract English language data, with `TESSDATA_PREFIX` and `DISTILL_TESSDATA` pointing at it, so every supported format works out of the box without any download. Inside the container the server listens on `0.0.0.0`.
 
 To build it yourself:
 
@@ -44,7 +46,7 @@ docker run --rm -p 4321:4321 distill
 | Format | Needs |
 |--------|-------|
 | PDF | nothing else |
-| Images (PNG, JPG, TIFF, WebP) | nothing else, OCR is built in |
+| Images (PNG, JPG, TIFF, WebP) | nothing else, OCR is built in (see Privacy for the one-time English data download) |
 | DOCX, PPTX, XLSX, ODF | [LibreOffice](https://www.libreoffice.org/download/) on your `PATH` (`soffice`) |
 
 If LibreOffice is missing, Distill still accepts an Office file and shows an explicit "Office files need LibreOffice" error instead of failing silently. The Docker image already includes it. Password-protected PDFs are reported as an error; asking for the password is not supported yet.
@@ -63,7 +65,7 @@ Boosters run in a fixed order and each one is a pure, idempotent function over t
 | Collapse whitespace | Collapses blank-line runs, trailing spaces and double spaces outside code | None |
 | LLMLingua-2 | A local model removes low-value words | **Lossy**, off by default |
 
-The first four are on by default. If you need link targets, turn off "Slim images and links".
+The first four are on by default. They drop only formatting, repeats and link targets, not content words. If you need link targets, turn off "Slim images and links".
 
 LLMLingua-2 is optional and experimental. It is marked as lossy in the UI, the model (TinyBERT by default, about 57 MB) is downloaded the first time you enable it into `~/.cache/distillmd/models`, and after that it runs offline. If its runtime is not installed, the switch is disabled and says "not installed".
 
@@ -73,7 +75,7 @@ Counts use the `o200k_base` encoding (via `gpt-tokenizer`), computed in your bro
 
 ## Privacy
 
-Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. The only network request Distill can make is the one-time LLMLingua model download, and only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later.
+Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. Distill can make two one-time downloads. First, the first OCR of an image or scan downloads about 15 MB of Tesseract English data (`eng.traineddata`) from GitHub, unless tessdata is already present. To avoid it, point `DISTILL_TESSDATA` or `TESSDATA_PREFIX` at a local tessdata directory (`DISTILL_OCR_LANG` sets the OCR language, default `eng`), or use the Docker image, which ships the data. Second, the LLMLingua model download, only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later.
 
 ## Roadmap
 
