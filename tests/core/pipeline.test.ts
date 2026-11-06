@@ -50,6 +50,10 @@ describe('runBoosters', () => {
   it.each([
     '[Edit this page](https://gh/x/intro.md)\n\nA\n\n[Edit this page](https://gh/x/setup.md)\n\nB\n\n[Edit this page](https://gh/x/usage.md)',
     '![Logo](a.png)\n\nA\n\n![Logo](b.png)\n\nB\n\n![Logo](c.png)',
+    [1, 2, 3]
+      .map((n) => `[Edit this page](https://github.com/example-org/docs/blob/main/section-${n}/intro-and-overview.md)`)
+      .join('\nx\n'),
+    [1, 2, 3].map((n) => `Example Co. — Annual Report${' '.repeat(110)}Page ${n} of 3`).join('\nx\n'),
   ])('is idempotent when media makes lines identical', (doc) => {
     const once = runBoosters(doc, DEFAULT_ACTIVE);
     expect(runBoosters(once, DEFAULT_ACTIVE)).toBe(once);

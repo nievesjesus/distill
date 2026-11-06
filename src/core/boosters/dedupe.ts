@@ -5,16 +5,26 @@ const MAX_LENGTH = 120;
 const STRUCTURAL_START = /^(#|\||[-*+>]|\d+[.)])/;
 const DEEP_INDENT = /^( {4}|\t)/;
 const UNESCAPED_PIPE = /(?<!\\)\|/;
-const PAGE_INDICATOR = /\b(page|pg|p\.|pág\.?|pagina|página)\s*\d+|\b\d+\s*(of|de|\/)\s*\d+\b/i;
+const INDICATOR =
+  '(?:\\b(?:page|pg|p\\.|pág\\.?|pagina|página)\\s*\\d+(?:\\s*(?:of|de|/)\\s*\\d+)?|(?<![\\d/])\\d+\\s*(?:of|de|/)\\s*\\d+(?!/\\d))';
+const SEPARATOR = '[\\s—–|·:-]';
+const LEADING_INDICATOR = new RegExp(`^(${INDICATOR})(?=${SEPARATOR}|$)`, 'i');
+const TRAILING_INDICATOR = new RegExp(`(?<=^|${SEPARATOR})(${INDICATOR})$`, 'i');
 const MIN_REPEATS = 3;
+
+function maskDigits(indicator: string): string {
+  return indicator.replace(/\d+/g, '#');
+}
 
 function signatureOf(line: string): string | null {
   const trimmed = line.trim();
-  if (trimmed === '' || trimmed.length > MAX_LENGTH) return null;
+  if (trimmed === '') return null;
   if (STRUCTURAL_START.test(trimmed) || DEEP_INDENT.test(line) || UNESCAPED_PIPE.test(line)) return null;
-  const slim = slimProse(trimmed);
-  const comparable = PAGE_INDICATOR.test(slim) ? slim.replace(/\d+/g, '#') : slim;
-  return comparable.replace(/\s+/g, ' ').trim();
+  const collapsed = slimProse(trimmed).replace(/\s+/g, ' ').trim();
+  const signature = collapsed
+    .replace(LEADING_INDICATOR, maskDigits)
+    .replace(TRAILING_INDICATOR, maskDigits);
+  return signature.length > MAX_LENGTH ? null : signature;
 }
 
 export function dropRepeatedBoilerplate(md: string): string {
