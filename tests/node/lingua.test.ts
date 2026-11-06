@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createLingua } from '../../src/node/lingua';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createLingua, findPackageRoot, packagesInstalled, resolveScoped } from '../../src/node/lingua';
 import { countTokens } from '../../src/core/tokens';
 
 interface FakeCall { text: string; rate: number }
@@ -384,5 +387,62 @@ describe('createLingua', () => {
     expect(f.calls.every((c) => countTokens(c.text) <= 512)).toBe(true);
     const out = await l.compress(longText, { rate: 0.9 });
     expect(out).toContain('\n\n');
+  });
+});
+
+describe('scoped package resolution', () => {
+  const makePkg = (dir: string, name: string) => {
+    const pkgDir = join(dir, 'node_modules', name);
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name, version: '1.0.0', main: 'index.js' }));
+    writeFileSync(join(pkgDir, 'index.js'), 'module.exports = {};');
+  };
+  const makeApp = (tmp: string) => {
+    const app = join(tmp, 'app');
+    mkdirSync(join(app, 'dist'), { recursive: true });
+    writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'distillmd' }));
+    return app;
+  };
+  const names = ['@atjsh/llmlingua-2', 'js-tiktoken'];
+
+  it('ignores packages planted in an ancestor node_modules', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'distill-scope-'));
+    try {
+      names.forEach((name) => makePkg(tmp, name));
+      const app = makeApp(tmp);
+      expect(findPackageRoot(join(app, 'dist'))).toBe(app);
+      expect(packagesInstalled(names, app)).toBe(false);
+      expect(resolveScoped('js-tiktoken', app)).toBeUndefined();
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('finds packages inside the app node_modules', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'distill-scope-'));
+    try {
+      const app = makeApp(tmp);
+      names.forEach((name) => makePkg(app, name));
+      expect(packagesInstalled(names, app)).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts hoisted siblings when installed under node_modules', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'distill-scope-'));
+    try {
+      names.forEach((name) => makePkg(tmp, name));
+      const installed = join(tmp, 'node_modules', 'distillmd');
+      mkdirSync(installed, { recursive: true });
+      writeFileSync(join(installed, 'package.json'), JSON.stringify({ name: 'distillmd' }));
+      expect(packagesInstalled(names, installed)).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('reports not installed without a package root', () => {
+    expect(packagesInstalled(names, undefined)).toBe(false);
   });
 });
