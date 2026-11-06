@@ -11,14 +11,23 @@ export interface Parser {
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_MESSAGE_LENGTH = 200;
 
-function mapError(error: unknown): DistillError {
+const WORKER_DIED_PREFIX = /^liteparse worker process died while parsing .*?: /s;
+
+function extractReason(message: string, path: string): string {
+  let reason = message.replace(WORKER_DIED_PREFIX, '');
+  if (path) reason = reason.split(path).join('');
+  return reason.trim();
+}
+
+export function mapError(error: unknown, path = ''): DistillError {
   if (error instanceof DistillError) return error;
   if (error instanceof ParseTimeoutError) {
-    return new DistillError('timeout', error.message, { cause: error });
+    return new DistillError('timeout', error.message.split(error.source).join('').trim() || 'parse timed out', { cause: error });
   }
-  const message = error instanceof Error ? error.message : String(error);
-  const code = /password|encrypted/i.test(message) ? 'password_protected' : 'parse_failed';
-  return new DistillError(code, message.slice(0, MAX_MESSAGE_LENGTH), { cause: error });
+  const raw = error instanceof Error ? error.message : String(error);
+  const reason = extractReason(raw, path);
+  const code = /password|encrypted/i.test(reason) ? 'password_protected' : 'parse_failed';
+  return new DistillError(code, reason.slice(0, MAX_MESSAGE_LENGTH), { cause: error });
 }
 
 export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {}): Parser {
@@ -45,7 +54,7 @@ export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {
         const result = await markdownParser.parse(path);
         return { markdown: result.text, pages: result.totalPages };
       } catch (error) {
-        throw mapError(error);
+        throw mapError(error, path);
       }
     },
     async toJson(path) {
@@ -54,7 +63,7 @@ export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {
         const result = await jsonParser.parse(path);
         return result;
       } catch (error) {
-        throw mapError(error);
+        throw mapError(error, path);
       }
     },
     close() {
