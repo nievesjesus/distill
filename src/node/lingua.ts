@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { countTokens } from '../core/tokens';
 import type { LinguaModel, LinguaStatus } from '../core/types';
@@ -5,11 +6,13 @@ import type { LinguaModel, LinguaStatus } from '../core/types';
 export interface Lingua {
   status(): LinguaStatus;
   compress(text: string, opts: { rate: number; model?: LinguaModel }): Promise<string>;
+  probe(): Promise<boolean>;
 }
 
 export interface LinguaOptions {
   cacheDir: string;
   load?: () => Promise<unknown>;
+  resolvePackages?: () => Promise<boolean>;
 }
 
 interface Compressor {
@@ -53,6 +56,25 @@ async function defaultLoad(): Promise<LinguaModule> {
     },
     createTokenizer: () => new tiktoken.Tiktoken(ranks.default),
   };
+}
+
+const REQUIRED_PACKAGES = ['@atjsh/llmlingua-2', '@huggingface/transformers', 'js-tiktoken'];
+
+async function defaultResolvePackages(): Promise<boolean> {
+  const require = createRequire(import.meta.url);
+  const resolveOne = (name: string): void => {
+    if (typeof import.meta.resolve === 'function') {
+      import.meta.resolve(name);
+      return;
+    }
+    require.resolve(name);
+  };
+  try {
+    REQUIRED_PACKAGES.forEach(resolveOne);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function hardSplit(piece: string): string[] {
@@ -100,31 +122,33 @@ export function chunkText(text: string): string[] {
 
 export function createLingua(opts: LinguaOptions): Lingua {
   const load = opts.load ?? defaultLoad;
+  const resolvePackages = opts.resolvePackages ?? defaultResolvePackages;
   const modelsDir = join(opts.cacheDir, 'models');
   const state: LinguaStatus = { installed: true, model: 'tinybert', state: 'idle', progress: 0 };
   let module: LinguaModule | undefined;
-  let initModel: LinguaModel | undefined;
-  let initPromise: Promise<Compressor> | undefined;
+  let current: { model: LinguaModel; promise: Promise<Compressor> } | undefined;
 
-  function onProgress(event: ProgressEvent): void {
-    const aggregate = event.status === 'progress_total' || event.status === 'progress';
-    if (!aggregate || typeof event.progress !== 'number') return;
-    state.progress = Math.min(1, Math.max(0, event.progress / 100));
+  function progressReporter(isCurrent: () => boolean): (event: ProgressEvent) => void {
+    let sawTotal = false;
+    return (event) => {
+      if (!isCurrent() || typeof event.progress !== 'number') return;
+      if (event.status === 'progress_total') sawTotal = true;
+      else if (event.status !== 'progress' || sawTotal) return;
+      state.progress = Math.max(state.progress, Math.min(1, Math.max(0, event.progress / 100)));
+    };
   }
 
-  async function initialize(model: LinguaModel): Promise<Compressor> {
-    state.model = model;
-    state.state = 'downloading';
-    state.progress = 0;
+  async function initialize(model: LinguaModel, isCurrent: () => boolean): Promise<Compressor> {
     try {
       if (!module) {
         try {
           module = (await load()) as LinguaModule;
         } catch (error) {
-          state.installed = false;
+          if (isCurrent()) state.installed = false;
           throw error;
         }
       }
+      if (isCurrent()) state.installed = true;
       module.configure(modelsDir);
       const isXlm = model === 'xlm-roberta';
       const factory = isXlm ? module.LLMLingua2.WithXLMRoBERTa : module.LLMLingua2.WithBERTMultilingual;
@@ -132,31 +156,41 @@ export function createLingua(opts: LinguaOptions): Lingua {
         transformerJSConfig: { device: 'cpu', dtype: 'fp32' },
         oaiTokenizer: module.createTokenizer(),
         modelSpecificOptions: {
-          progress_callback: onProgress,
+          progress_callback: progressReporter(isCurrent),
           ...(isXlm ? { use_external_data_format: { 'model.onnx': 1 } } : {}),
         },
       });
-      state.state = 'ready';
-      state.progress = 1;
+      if (isCurrent()) {
+        state.state = 'ready';
+        state.progress = 1;
+      }
       return promptCompressor;
     } catch (error) {
-      state.state = 'error';
-      initPromise = undefined;
-      initModel = undefined;
+      if (isCurrent()) {
+        state.state = 'error';
+        current = undefined;
+      }
       throw error;
     }
   }
 
   function ensure(model: LinguaModel): Promise<Compressor> {
-    if (!initPromise || initModel !== model) {
-      initModel = model;
-      initPromise = initialize(model);
-    }
-    return initPromise;
+    if (current && current.model === model) return current.promise;
+    state.model = model;
+    state.state = 'downloading';
+    state.progress = 0;
+    const entry = { model, promise: undefined as unknown as Promise<Compressor> };
+    current = entry;
+    entry.promise = initialize(model, () => current === entry);
+    return entry.promise;
   }
 
   return {
     status: () => ({ ...state }),
+    async probe() {
+      state.installed = await resolvePackages();
+      return state.installed;
+    },
     async compress(text, { rate, model = 'tinybert' }) {
       if (!(rate >= MIN_RATE && rate <= MAX_RATE)) {
         throw new RangeError(`rate must be between ${MIN_RATE} and ${MAX_RATE}`);

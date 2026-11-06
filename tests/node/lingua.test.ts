@@ -40,6 +40,18 @@ function makeFake() {
 const paragraph = (n: number) => `Paragraph ${n}: ` + 'the quick brown fox jumps over the lazy dog. '.repeat(40);
 const longText = Array.from({ length: 12 }, (_, i) => paragraph(i)).join('\n\n');
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+
 describe('createLingua', () => {
   it('reports not installed when import fails', async () => {
     const l = createLingua({ cacheDir: '/tmp/x', load: () => Promise.reject(new Error('missing')) });
@@ -172,6 +184,141 @@ describe('createLingua', () => {
     lingua = createLingua({ cacheDir: '/tmp/x', load });
     await lingua.compress('hello', { rate: 0.5 });
     expect(mid).toBe(0.5);
+  });
+
+  it('follows the aggregate and never decreases when per-file events follow it', async () => {
+    let lingua: ReturnType<typeof createLingua>;
+    const seen: number[] = [];
+    const load = async () => ({
+      LLMLingua2: {
+        WithBERTMultilingual: async (_n: string, options: any) => {
+          const cb = options.modelSpecificOptions.progress_callback;
+          const events = [
+            { status: 'progress_total', progress: 5 },
+            { status: 'progress', file: 'a.onnx', progress: 50 },
+            { status: 'progress_total', progress: 50 },
+            { status: 'progress', file: 'a.onnx', progress: 100 },
+            { status: 'progress_total', progress: 55 },
+            { status: 'progress', file: 'b.json', progress: 10 },
+            { status: 'progress_total', progress: 100 },
+            { status: 'progress', file: 'b.json', progress: 100 },
+          ];
+          for (const e of events) {
+            cb(e);
+            seen.push(lingua.status().progress);
+          }
+          return { promptCompressor: { compress: async (t: string) => t } };
+        },
+        WithXLMRoBERTa: async () => {
+          throw new Error('unused');
+        },
+      },
+      configure: () => undefined,
+      createTokenizer: () => ({}),
+    });
+    lingua = createLingua({ cacheDir: '/tmp/x', load });
+    await lingua.compress('hello', { rate: 0.5 });
+    expect(seen).toEqual([0.05, 0.05, 0.5, 0.5, 0.55, 0.55, 1, 1]);
+  });
+
+  it('ignores a stale init that succeeds after the model was switched', async () => {
+    const tiny = deferred<{ promptCompressor: { compress: (t: string) => Promise<string> } }>();
+    const mobile = deferred<{ promptCompressor: { compress: (t: string) => Promise<string> } }>();
+    let mobileCb: any;
+    const load = async () => ({
+      LLMLingua2: {
+        WithBERTMultilingual: (name: string, options: any) => {
+          if (name.includes('tinybert')) return tiny.promise;
+          mobileCb = options.modelSpecificOptions.progress_callback;
+          return mobile.promise;
+        },
+        WithXLMRoBERTa: async () => {
+          throw new Error('unused');
+        },
+      },
+      configure: () => undefined,
+      createTokenizer: () => ({}),
+    });
+    const l = createLingua({ cacheDir: '/tmp/x', load });
+    const first = l.compress('one', { rate: 0.5 });
+    await tick();
+    const second = l.compress('two', { rate: 0.5, model: 'mobilebert' });
+    await tick();
+    mobileCb({ status: 'progress_total', progress: 30 });
+    tiny.resolve({ promptCompressor: { compress: async (t) => t } });
+    await first;
+    expect(l.status()).toEqual({ installed: true, model: 'mobilebert', state: 'downloading', progress: 0.3 });
+    mobile.resolve({ promptCompressor: { compress: async (t) => t } });
+    await second;
+    expect(l.status()).toMatchObject({ model: 'mobilebert', state: 'ready', progress: 1 });
+  });
+
+  it('ignores a stale init that fails after the model was switched', async () => {
+    const tiny = deferred<never>();
+    const mobile = deferred<{ promptCompressor: { compress: (t: string) => Promise<string> } }>();
+    let mobileInits = 0;
+    const load = async () => ({
+      LLMLingua2: {
+        WithBERTMultilingual: (name: string) => {
+          if (name.includes('tinybert')) return tiny.promise;
+          mobileInits += 1;
+          return mobile.promise;
+        },
+        WithXLMRoBERTa: async () => {
+          throw new Error('unused');
+        },
+      },
+      configure: () => undefined,
+      createTokenizer: () => ({}),
+    });
+    const l = createLingua({ cacheDir: '/tmp/x', load });
+    const first = l.compress('one', { rate: 0.5 });
+    const firstResult = first.catch((e: Error) => e.message);
+    await tick();
+    const second = l.compress('two', { rate: 0.5, model: 'mobilebert' });
+    await tick();
+    tiny.reject(new Error('stale boom'));
+    expect(await firstResult).toBe('stale boom');
+    expect(l.status()).toMatchObject({ model: 'mobilebert', state: 'downloading' });
+    const third = l.compress('three', { rate: 0.5, model: 'mobilebert' });
+    mobile.resolve({ promptCompressor: { compress: async (t) => t } });
+    await Promise.all([second, third]);
+    expect(mobileInits).toBe(1);
+    expect(l.status().state).toBe('ready');
+  });
+
+  it('probe returning false marks not installed while idle', async () => {
+    const f = makeFake();
+    const l = createLingua({ cacheDir: '/tmp/x', load: f.load, resolvePackages: async () => false });
+    await expect(l.probe()).resolves.toBe(false);
+    expect(l.status()).toMatchObject({ installed: false, state: 'idle' });
+    expect(f.counts().loads).toBe(0);
+  });
+
+  it('probe returning true keeps installed', async () => {
+    const f = makeFake();
+    const l = createLingua({ cacheDir: '/tmp/x', load: f.load, resolvePackages: async () => true });
+    await expect(l.probe()).resolves.toBe(true);
+    expect(l.status()).toMatchObject({ installed: true, state: 'idle' });
+  });
+
+  it('default probe resolves the installed optional packages', async () => {
+    const l = createLingua({ cacheDir: '/tmp/x', load: makeFake().load });
+    await expect(l.probe()).resolves.toBe(true);
+  });
+
+  it('installed returns to true after a failed load is followed by a successful one', async () => {
+    const f = makeFake();
+    let calls = 0;
+    const load = () => {
+      calls += 1;
+      return calls === 1 ? Promise.reject(new Error('missing')) : f.load();
+    };
+    const l = createLingua({ cacheDir: '/tmp/x', load });
+    await expect(l.compress('hello', { rate: 0.5 })).rejects.toThrow('missing');
+    expect(l.status().installed).toBe(false);
+    await l.compress('hello', { rate: 0.5 });
+    expect(l.status()).toMatchObject({ installed: true, state: 'ready' });
   });
 
   it('sets error on init failure and retries on the next call', async () => {
