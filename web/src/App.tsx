@@ -27,7 +27,7 @@ export function App() {
         <Dropzone onFiles={add} />
         {healthError ? (
           <p className="app-error" role="alert">
-            {ERROR_MESSAGES[healthError.code]} {healthError.message}
+            {healthError.message === S.unreachable ? S.unreachable : ERROR_MESSAGES[healthError.code]}
           </p>
         ) : null}
         <OptimizeBar

@@ -94,7 +94,24 @@ describe('App', () => {
       throw new TypeError('Failed to fetch');
     }));
     render(<App />);
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Cannot reach distill'));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Cannot reach distill. Is it still running?'));
+  });
+
+  it('shows only the mapped message when health answers forbidden', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ code: 'forbidden', message: 'Origin blocked' }, { status: 403 })));
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Requests from this origin are not allowed.'));
+  });
+
+  it('keeps the file list live region quiet and renders errors as their own element', async () => {
+    render(<App />);
+    drop(['notes.xyz']);
+    const list = await screen.findByRole('list', { name: 'Files' });
+    expect(list).toHaveAttribute('aria-live', 'polite');
+    expect(list).toHaveAttribute('aria-relevant', 'additions');
+    const message = await screen.findByText('This file type is not supported.');
+    expect(message.tagName).toBe('SPAN');
+    expect(message).toHaveClass('file-error');
   });
 
   it('lifts Compact and Detailed into persisted settings', () => {
