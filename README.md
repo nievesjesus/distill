@@ -151,14 +151,14 @@ Each file prints a summary such as `report.pdf → report.md  5.7k → 4.6k toke
 **Desktop:** installers for macOS (arm64, x64), Windows (x64) and Linux (x64) are on [GitHub Releases](https://github.com/nievesjesus/distill/releases). `Distill-lite-*` has everything except LLMLingua-2; `Distill-full-*` bundles its runtime.
 
 <details>
-<summary>The installers are not signed yet: how to open them the first time</summary>
+<summary>Unsigned installers: how to open them the first time</summary>
 
 - **macOS 15 and later:** open the app once and dismiss the warning, then go to System Settings > Privacy & Security and click **Open Anyway**.
 - **macOS 14 and earlier:** right-click the app, choose **Open**, then confirm **Open**.
 - **"The app is damaged":** run `xattr -dr com.apple.quarantine /Applications/distill.app` and open it again.
 - **Windows:** in the SmartScreen dialog click **More info**, then **Run anyway**.
 
-The desktop app has no auto-update. OCR data is bundled; Office files still need LibreOffice installed.
+Release builds are signed when the signing certificates are configured; if your installer is unsigned, the steps above apply. The desktop app has no auto-update. OCR data is bundled; Office files still need LibreOffice installed.
 </details>
 
 **Docker:** LibreOffice and the English OCR data are included, so every format works out of the box.
