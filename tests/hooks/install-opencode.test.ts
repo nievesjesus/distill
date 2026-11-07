@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -12,7 +12,7 @@ interface Plugin {
   }>;
 }
 
-async function loadPlugin(script: string, ctx?: unknown) {
+async function loadPlugin(script: string, ctx: unknown = { directory: fixtures }) {
   const dir = mkdtempSync(join(tmpdir(), 'distill-oc-'));
   const bin = join(dir, 'fake-distill');
   writeFileSync(bin, script);
@@ -106,6 +106,39 @@ describe('opencodePluginSource', () => {
     await before({ tool: 'read' }, output);
     expect(output.args.filePath).toBe(join(fixtures, 'missing.pdf'));
     expect(existsSync(marker)).toBe(false);
+  });
+
+  it('never spawns for a path outside the project', async () => {
+    const marker = join(fixtures, 'spawned-outside');
+    const outsideDir = mkdtempSync(join(tmpdir(), 'distill-oc-outside-'));
+    const outside = join(outsideDir, 'o.pdf');
+    writeFileSync(outside, 'x');
+    const before = await loadPlugin(`#!/bin/sh\ntouch ${marker}\necho '{"path":"/cache/out/x.md"}'\n`);
+    const output = { args: { filePath: outside } };
+    await before({ tool: 'read' }, output);
+    expect(output.args.filePath).toBe(outside);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('never spawns for a symlink inside the project that points outside', async () => {
+    const marker = join(fixtures, 'spawned-link');
+    const outsideDir = mkdtempSync(join(tmpdir(), 'distill-oc-outside-'));
+    const target = join(outsideDir, 'o.pdf');
+    writeFileSync(target, 'x');
+    const link = join(fixtures, 'link.pdf');
+    symlinkSync(target, link);
+    const before = await loadPlugin(`#!/bin/sh\ntouch ${marker}\necho '{"path":"/cache/out/x.md"}'\n`);
+    const output = { args: { filePath: link } };
+    await before({ tool: 'read' }, output);
+    expect(output.args.filePath).toBe(link);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('converts a file inside the project', async () => {
+    const before = await loadPlugin(OK);
+    const output = { args: { filePath: real('inside/k.pdf') } };
+    await before({ tool: 'read' }, output);
+    expect(output.args.filePath).toBe('/cache/out/x.md');
   });
 
   it('survives missing args', async () => {
