@@ -34,7 +34,8 @@
     "prepare:lingua": "node scripts/prepare-lingua.mjs",
     "check:variant": "node scripts/check-variant.mjs",
     "make:icon": "node scripts/make-icon.mjs",
-    "marketing": "node scripts/marketing/make-demo-docs.mjs && node scripts/marketing/screenshots.mjs && node scripts/marketing/banner.mjs"
+    "marketing": "node scripts/marketing/make-demo-docs.mjs && node scripts/marketing/screenshots.mjs && node scripts/marketing/banner.mjs",
+    "marketing:measure": "node scripts/marketing/measure-claude.mjs"
   },
   "devDependencies": {
     "@atjsh/llmlingua-2": "3.0.0",
