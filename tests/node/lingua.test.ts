@@ -461,7 +461,7 @@ describe('lingua roots', () => {
     try {
       run(tmp);
     } finally {
-      rmSync(tmp, { recursive: true, force: true });
+      rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   };
 
@@ -589,7 +589,7 @@ describe('lingua roots', () => {
       await l.probe();
       expect(l.status()).toMatchObject({ installed: false, installable: false, unsupportedReason: 'nope' });
     } finally {
-      rmSync(tmp, { recursive: true, force: true });
+      rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 
@@ -608,7 +608,7 @@ describe('lingua roots', () => {
       await expect(none.probe()).resolves.toBe(false);
       expect(none.status()).toMatchObject({ installed: false, installable: true });
     } finally {
-      rmSync(tmp, { recursive: true, force: true });
+      rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 });

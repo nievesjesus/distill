@@ -78,7 +78,7 @@ describe('saved state file', () => {
       expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(state);
       expect(readdirSync(join(dir, 'nested'))).toEqual(['window-state.json']);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 
@@ -89,7 +89,7 @@ describe('saved state file', () => {
       writeFileSync(join(dir, 'corrupt.json'), '{"x": 1, "y"');
       expect(readSavedState(join(dir, 'corrupt.json'))).toBeUndefined();
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 });

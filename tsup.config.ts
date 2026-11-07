@@ -5,7 +5,7 @@ export default defineConfig({
   entry: { cli: 'src/cli/index.ts' },
   format: ['esm'],
   platform: 'node',
-  target: 'node20',
+  target: 'node22',
   banner: { js: '#!/usr/bin/env node' },
   splitting: true,
   clean: ['!web/**', '!desktop/**'],

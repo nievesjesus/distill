@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  rmSync(base, { recursive: true, force: true });
+  rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe('rootResolver', () => {

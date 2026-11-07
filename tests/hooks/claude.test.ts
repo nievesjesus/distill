@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  rmSync(base, { recursive: true, force: true });
+  rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 const payload = (toolInput: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
