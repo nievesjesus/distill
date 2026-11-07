@@ -54,6 +54,6 @@ export async function exposeLibreOffice(probe: CapabilityProbe = {}): Promise<bo
   const directory = path.dirname(candidates[index]);
   const key = platform === 'win32' && env.PATH === undefined && env.Path !== undefined ? 'Path' : 'PATH';
   const entries = (env[key] ?? '').split(path.delimiter).filter(Boolean);
-  if (!entries.includes(directory)) env[key] = [directory, ...entries].join(path.delimiter);
+  if (!entries.includes(directory)) env[key] = [...entries, directory].join(path.delimiter);
   return true;
 }

@@ -288,8 +288,9 @@ export function createLingua(opts: LinguaOptions): Lingua {
       return status;
     },
     async probe() {
-      const [found] = await Promise.all([resolvePackages(), installer?.probe()]);
+      const found = await resolvePackages();
       state.installed = found;
+      if (!found) await installer?.probe();
       return found;
     },
     async install() {

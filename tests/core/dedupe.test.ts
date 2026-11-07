@@ -9,14 +9,14 @@ describe('dropRepeatedBoilerplate', () => {
 
   it('treats running headers differing only in the page indicator as the same', () => {
     const doc = [
-      'Example Co. — Report   Page 1 of 3',
+      'Example Co. Annual Report — Page 1 of 3',
       'Alpha',
-      'Example Co. — Report   Page 2 of 3',
+      'Example Co. Annual Report — Page 2 of 3',
       'Beta',
-      'Example Co. — Report   Page 3 of 3',
+      'Example Co. Annual Report — Page 3 of 3',
       'Gamma',
     ].join('\n');
-    expect(dropRepeatedBoilerplate(doc)).toBe('Example Co. — Report   Page 1 of 3\nAlpha\nBeta\nGamma');
+    expect(dropRepeatedBoilerplate(doc)).toBe('Example Co. Annual Report — Page 1 of 3\nAlpha\nBeta\nGamma');
   });
 
   it('keeps lines that appear fewer than three times', () => {
@@ -100,9 +100,31 @@ describe('dropRepeatedBoilerplate', () => {
     expect(dropRepeatedBoilerplate(`${qualifying}\n${qualifying}\n${qualifying}`)).toBe(qualifying);
   });
 
-  it('compares lines after media slimming and keeps the original first line', () => {
-    const doc = '[Edit this page on GitHub now](a.md)\nx\n[Edit this page on GitHub now](b.md)\ny\n[Edit this page on GitHub now](c.md)';
-    expect(dropRepeatedBoilerplate(doc)).toBe('[Edit this page on GitHub now](a.md)\nx\ny');
+  it('keeps lines that differ only inside link targets byte for byte', () => {
+    const doc = [
+      'Download the signed installer for this platform [here](https://example.com/mac)',
+      'Download the signed installer for this platform [here](https://example.com/win)',
+      'Download the signed installer for this platform [here](https://example.com/linux)',
+    ].join('\n');
+    expect(dropRepeatedBoilerplate(doc)).toBe(doc);
+  });
+
+  it('keeps long lines that carry a page cross-reference byte for byte', () => {
+    const doc = [
+      'For details see the appendix table on page 12 of 40',
+      'For details see the appendix table on page 15 of 40',
+      'For details see the appendix table on page 20 of 40',
+    ].join('\n');
+    expect(dropRepeatedBoilerplate(doc)).toBe(doc);
+  });
+
+  it('masks a trailing indicator only after a separator', () => {
+    for (const separator of ['—', '|', '·']) {
+      const lines = [3, 4, 5].map((n) => `Annual Report for Example Co. ${separator} Page ${n} of 12`);
+      expect(dropRepeatedBoilerplate(lines.join('\nA\n'))).toBe(`${lines[0]}\nA\nA`);
+    }
+    const unseparated = [3, 4, 5].map((n) => `Annual Report for Example Co. Page ${n} of 12`).join('\n');
+    expect(dropRepeatedBoilerplate(unseparated)).toBe(unseparated);
   });
 
   it('does not mask digits in dates or fractions', () => {
@@ -121,9 +143,9 @@ describe('dropRepeatedBoilerplate', () => {
     expect(dropRepeatedBoilerplate(doc)).toBe('Page 2 of 9 · Example Co.\nA\nB\nC');
   });
 
-  it('applies the length limit after normalization', () => {
-    const long = (n: number) => `[Edit this page on GitHub now](https://github.com/example-org/docs/blob/main/section-${n}/intro-and-overview.md)`;
-    const doc = [long(1), 'A', long(2), 'B', long(3)].join('\n');
-    expect(dropRepeatedBoilerplate(doc)).toBe([long(1), 'A', 'B'].join('\n'));
+  it('applies the length limit to the line itself', () => {
+    const long = `${'word '.repeat(30)}end`;
+    const doc = [long, 'A', long, 'B', long].join('\n');
+    expect(dropRepeatedBoilerplate(doc)).toBe(doc);
   });
 });

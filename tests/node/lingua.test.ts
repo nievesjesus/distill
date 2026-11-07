@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -548,6 +548,28 @@ describe('lingua roots', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe('createLingua probe laziness', () => {
+  const idle = { state: 'idle' as const };
+
+  it('does not look for npm when LLMLingua-2 is already installed', async () => {
+    const probe = vi.fn(async () => true);
+    const installer = { probe, installable: () => false, status: () => idle, install: async () => undefined };
+    const l = createLingua({ cacheDir: '/tmp/x', installer, resolvePackages: async () => true });
+    await expect(l.probe()).resolves.toBe(true);
+    expect(probe).not.toHaveBeenCalled();
+    expect(l.status().installed).toBe(true);
+  });
+
+  it('looks for npm when LLMLingua-2 is not installed', async () => {
+    const probe = vi.fn(async () => true);
+    const installer = { probe, installable: () => true, status: () => idle, install: async () => undefined };
+    const l = createLingua({ cacheDir: '/tmp/x', installer, resolvePackages: async () => false });
+    await expect(l.probe()).resolves.toBe(false);
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(l.status()).toMatchObject({ installed: false, installable: true });
   });
 });
 

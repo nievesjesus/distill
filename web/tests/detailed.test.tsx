@@ -120,6 +120,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete document.documentElement.dataset.shell;
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -377,8 +378,8 @@ describe('LLMLingua-2 on-demand install', () => {
     preset({ optionsOpen: true });
     server.lingua = notInstalled();
     render(<App />);
-    expect(await screen.findByRole('button', { name: 'Install (~400 MB)' })).toBeInTheDocument();
-    expect(screen.getByText(/downloaded from npm once.*then runs offline/i)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Install (~520 MB)' })).toBeInTheDocument();
+    expect(screen.getByText(/downloaded from npm once.*model.*57 MB.*hugging face.*first time.*offline/i)).toBeInTheDocument();
     expect(screen.queryByText('Available in distill full')).toBeNull();
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
@@ -391,13 +392,13 @@ describe('LLMLingua-2 on-demand install', () => {
     await flush();
     drop(['a.pdf']);
     await flush();
-    fireEvent.click(screen.getByRole('button', { name: 'Install (~400 MB)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Install (~520 MB)' }));
     await flush();
     expect(server.installCalls).toBe(1);
     expect(JSON.parse(localStorage.getItem('distill:settings') ?? '{}').lingua.on).toBe(true);
     const bar = screen.getByRole('progressbar', { name: 'Installing…' });
     expect(bar).not.toHaveAttribute('aria-valuenow');
-    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install (~520 MB)' })).toBeNull();
     expect(screen.getByRole('switch', { name: /LLMLingua-2/ })).toBeDisabled();
     await advance(1000);
     expect(screen.getByRole('progressbar', { name: 'Installing…' })).toBeInTheDocument();
@@ -405,7 +406,7 @@ describe('LLMLingua-2 on-demand install', () => {
     await advance(1000);
     await flush();
     expect(screen.queryByRole('progressbar', { name: 'Installing…' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install (~520 MB)' })).toBeNull();
     expect(server.compressCalls.length).toBeGreaterThan(0);
     await advance(100);
     const announcer = document.querySelector('[role=status]') as HTMLElement;
@@ -418,7 +419,7 @@ describe('LLMLingua-2 on-demand install', () => {
     render(<App />);
     expect(await screen.findByRole('progressbar', { name: 'Installing…' })).toBeInTheDocument();
     expect(screen.getByText('Installing…')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install (~520 MB)' })).toBeNull();
   });
 
   it('shows the failure with its message and lets the user retry', async () => {
@@ -430,14 +431,43 @@ describe('LLMLingua-2 on-demand install', () => {
     await waitFor(() => expect(server.installCalls).toBe(1));
   });
 
+  it('announces an install failure once, through the alert only', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    preset({ optionsOpen: true });
+    server.lingua = notInstalled({ state: 'installing' });
+    render(<App />);
+    await flush();
+    server.lingua = notInstalled({ state: 'install_failed', installError: { code: 'npm_failed', message: 'network request failed' } });
+    await advance(1000);
+    await flush();
+    await advance(100);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('alert')).toHaveTextContent('Install failed: network request failed');
+    const announcer = document.querySelector('[role=status]') as HTMLElement;
+    expect(announcer).not.toHaveTextContent(/install/i);
+  });
+
+  it('explains that npm is missing, with a hint, outside the desktop shell', async () => {
+    preset({ optionsOpen: true });
+    server.lingua = notInstalled({ installable: false });
+    render(<App />);
+    expect(await screen.findByText(/npm was not found/i)).toBeInTheDocument();
+    expect(screen.getByText(/install node\.js/i)).toBeInTheDocument();
+    expect(screen.queryByText('Available in distill full')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Available in distill full' })).toBeNull();
+    expect(screen.getByRole('switch', { name: /LLMLingua-2/ })).toBeDisabled();
+  });
+
   it('points to distill full when the app cannot install (desktop lite)', async () => {
+    document.documentElement.dataset.shell = 'desktop';
     preset({ optionsOpen: true });
     server.lingua = notInstalled({ installable: false });
     render(<App />);
     const link = await screen.findByRole('link', { name: 'Available in distill full' });
     expect(link).toHaveAttribute('href', 'https://github.com/nievesjesus/distill/releases/latest');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+    expect(screen.queryByText(/npm was not found/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install (~520 MB)' })).toBeNull();
     expect(screen.getByRole('switch', { name: /LLMLingua-2/ })).toBeDisabled();
   });
 
@@ -446,7 +476,7 @@ describe('LLMLingua-2 on-demand install', () => {
     server.lingua = installed();
     render(<App />);
     await screen.findByRole('switch', { name: /LLMLingua-2/ });
-    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install (~520 MB)' })).toBeNull();
     expect(screen.queryByText('Available in distill full')).toBeNull();
   });
 });

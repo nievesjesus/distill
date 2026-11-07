@@ -10,6 +10,7 @@ import type { Settings } from './settings';
 export const MAX_CONCURRENT_UPLOADS = 3;
 export const LINGUA_DEBOUNCE_MS = 400;
 export const HEALTH_POLL_MS = 1000;
+export const MAX_POLL_FAILURES = 5;
 export const COMPRESS_CACHE_LIMIT = 50;
 export const HEALTH_RETRY_BASE_MS = 1000;
 export const HEALTH_RETRY_MAX_MS = 10_000;
@@ -391,15 +392,23 @@ export function useFiles(settings: Settings): FilesApi {
   useEffect(() => {
     if (!polling) return;
     let cancelled = false;
+    let failures = 0;
     const interval = setInterval(() => {
       getHealth().then(
         (next) => {
           if (cancelled) return;
+          failures = 0;
           setHealth(next);
           const state = next.lingua?.state;
           if (state === 'ready' || state === 'error') setPollRequested(false);
         },
-        () => undefined,
+        (error: unknown) => {
+          if (cancelled) return;
+          failures += 1;
+          if (failures < MAX_POLL_FAILURES) return;
+          clearInterval(interval);
+          setHealthError(toApiError(error));
+        },
       );
     }, HEALTH_POLL_MS);
     return () => {

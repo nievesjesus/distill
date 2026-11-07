@@ -407,6 +407,83 @@ describe('useFiles remove and clear', () => {
     expect(healthCalls).toBe(4);
   });
 
+  it('stops polling the install after five consecutive failed health calls and reports the error', async () => {
+    vi.useFakeTimers();
+    let healthCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        healthCalls += 1;
+        if (healthCalls === 1) {
+          return Response.json({
+            version: '1',
+            liteparseVersion: '1',
+            libreoffice: false,
+            maxBytes: 1000,
+            lingua: { installed: false, installable: true, model: 'tinybert', state: 'installing', progress: 0 },
+          });
+        }
+        throw new TypeError('server went away');
+      }),
+    );
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(healthCalls).toBe(1);
+    expect(result.current.healthError).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    expect(healthCalls).toBe(5);
+    expect(result.current.healthError).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(healthCalls).toBe(6);
+    expect(result.current.healthError).not.toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(healthCalls).toBe(6);
+  });
+
+  it('resets the failure count after a successful poll', async () => {
+    vi.useFakeTimers();
+    let healthCalls = 0;
+    const installing = () =>
+      Response.json({
+        version: '1',
+        liteparseVersion: '1',
+        libreoffice: false,
+        maxBytes: 1000,
+        lingua: { installed: false, installable: true, model: 'tinybert', state: 'installing', progress: 0 },
+      });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        healthCalls += 1;
+        if (healthCalls === 1 || healthCalls === 6) return installing();
+        if (healthCalls > 6 && healthCalls < 11) throw new TypeError('blip');
+        if (healthCalls > 1 && healthCalls < 6) throw new TypeError('blip');
+        return installing();
+      }),
+    );
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(healthCalls).toBe(11);
+    expect(result.current.healthError).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(healthCalls).toBe(13);
+  });
+
   it('caps the health retry delay at 10 seconds', async () => {
     vi.useFakeTimers();
     let healthCalls = 0;

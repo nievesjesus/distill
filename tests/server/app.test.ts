@@ -568,6 +568,92 @@ describe('server app', () => {
     });
   });
 
+  describe('cross-site guard', () => {
+    const blockedBody = { code: 'forbidden', message: 'Request blocked: cross-site requests are not allowed' };
+    const crossSite = { host: '192.168.1.5:4321', 'sec-fetch-site': 'cross-site' };
+    const foreignOrigin = { host: '192.168.1.5:4321', origin: 'https://evil.example' };
+
+    async function attempts(app: Harness['app'], headers: Record<string, string>) {
+      const upload1 = upload('a.pdf');
+      return [
+        await app.request('/api/lingua/install', { method: 'POST', headers }),
+        await app.request('/api/parse', { ...upload1, headers }),
+        await app.request('/api/compress', { ...jsonPost({ text: 'x', rate: 0.5 }), headers: { ...headers, 'content-type': 'application/json' } }),
+        await app.request('/api/files/abc', { method: 'DELETE', headers }),
+        await app.request('/api/files/abc', { method: 'PUT', headers }),
+        await app.request('/api/files/abc', { method: 'PATCH', headers }),
+      ];
+    }
+
+    it.each([
+      ['Sec-Fetch-Site cross-site', crossSite],
+      ['a foreign Origin', foreignOrigin],
+    ])('rejects every state-changing request with %s when the loopback guard is off', async (_label, headers) => {
+      const install = vi.fn(async () => undefined);
+      const { app, store } = setup({ installed: true, lingua: { install }, guardLoopback: false });
+      const responses = await attempts(app, headers);
+      for (const res of responses) {
+        expect(res.status).toBe(403);
+        expect(await res.json()).toEqual(blockedBody);
+      }
+      expect(install).not.toHaveBeenCalled();
+      expect(store.get('abc')).toBeUndefined();
+    });
+
+    it('does not parse or install anything for a rejected request', async () => {
+      const toMarkdown = vi.fn(async () => ({ markdown: 'x', pages: 1 }));
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ parser: { toMarkdown }, lingua: { install } });
+      await attempts(app, foreignOrigin);
+      expect(toMarkdown).not.toHaveBeenCalled();
+      expect(install).not.toHaveBeenCalled();
+    });
+
+    it('allows a same-origin request, including its port', async () => {
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ lingua: { install } });
+      const res = await app.request('/api/lingua/install', {
+        method: 'POST',
+        headers: { host: '192.168.1.5:4321', origin: 'http://192.168.1.5:4321', 'sec-fetch-site': 'same-origin' },
+      });
+      expect(res.status).toBe(202);
+      expect(install).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an Origin whose port differs from the Host', async () => {
+      const { app } = setup();
+      const res = await app.request('/api/lingua/install', { method: 'POST', headers: { host: '192.168.1.5:4321', origin: 'http://192.168.1.5:9999' } });
+      expect(res.status).toBe(403);
+    });
+
+    it('rejects an unparsable Origin', async () => {
+      const { app } = setup();
+      const res = await app.request('/api/lingua/install', { method: 'POST', headers: { host: '192.168.1.5:4321', origin: 'null' } });
+      expect(res.status).toBe(403);
+    });
+
+    it('allows requests without Origin or Sec-Fetch-Site, such as curl or MCP clients', async () => {
+      const { app } = setup();
+      const res = await app.request('/api/parse', { ...upload('a.pdf'), headers: { host: '192.168.1.5:4321' } });
+      expect(res.status).toBe(200);
+      expect((await app.request('/api/files/abc', { method: 'DELETE', headers: { host: '192.168.1.5:4321' } })).status).toBe(204);
+    });
+
+    it('allows a same-site or user-initiated Sec-Fetch-Site', async () => {
+      const { app } = setup();
+      for (const site of ['same-origin', 'same-site', 'none']) {
+        const res = await app.request('/api/files/abc', { method: 'DELETE', headers: { 'sec-fetch-site': site } });
+        expect(res.status).toBe(204);
+      }
+    });
+
+    it('leaves safe methods alone', async () => {
+      const { app } = setup();
+      const res = await app.request('/api/health', { headers: { host: '192.168.1.5:4321', 'sec-fetch-site': 'cross-site', origin: 'https://evil.example' } });
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe('POST /api/lingua/install', () => {
     const statusWith = (state: 'idle' | 'installing', installed = false) => () => ({
       installed,

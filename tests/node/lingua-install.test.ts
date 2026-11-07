@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { rename as realRename, rm as realRm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -76,8 +77,8 @@ describe('lingua installer', () => {
     await installer.install();
     expect(calls).toHaveLength(1);
     expect(calls[0].command).toBe(npm.command);
-    expect(calls[0].args).toEqual([...npm.prefixArgs, 'ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
-    expect(NPM_ARGS).toEqual(['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
+    expect(calls[0].args).toEqual([...npm.prefixArgs, 'ci', '--omit=dev', '--include=peer', '--ignore-scripts', '--no-audit', '--no-fund']);
+    expect(NPM_ARGS).toEqual(['ci', '--omit=dev', '--include=peer', '--ignore-scripts', '--no-audit', '--no-fund']);
     expect(calls[0].options.shell).toBeFalsy();
     expect(calls[0].options.cwd.startsWith(cacheDir)).toBe(true);
     expect(calls[0].options.cwd).not.toBe(join(cacheDir, 'lingua'));
@@ -198,11 +199,182 @@ describe('lingua installer', () => {
     expect(installer.status()).toEqual({ state: 'idle' });
   });
 
-  it('removes stale temporary directories from interrupted runs', async () => {
-    mkdirSync(join(cacheDir, 'lingua.installing-deadbeef'), { recursive: true });
-    const installer = make(succeed);
+  it('removes temporary directories older than the install timeout', async () => {
+    const stale = join(cacheDir, 'lingua.installing-deadbeef');
+    mkdirSync(stale, { recursive: true });
+    const longAgo = new Date(Date.now() - 60_000);
+    utimesSync(stale, longAgo, longAgo);
+    const installer = make(succeed, { timeoutMs: 1000 });
     await installer.install();
     expect(readdirSync(cacheDir)).toEqual(['lingua']);
+  });
+
+  it('keeps a recent temporary directory that may belong to another running install', async () => {
+    const other = join(cacheDir, 'lingua.installing-cafebabe');
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, 'package.json'), '{}');
+    const installer = make(succeed);
+    await installer.install();
+    expect(readdirSync(cacheDir).sort()).toEqual(['lingua', 'lingua.installing-cafebabe']);
+    expect(existsSync(join(other, 'package.json'))).toBe(true);
+  });
+
+  it('never removes unrelated directories while cleaning', async () => {
+    const unrelated = join(cacheDir, 'models');
+    mkdirSync(unrelated, { recursive: true });
+    const longAgo = new Date(Date.now() - 60_000_000);
+    utimesSync(unrelated, longAgo, longAgo);
+    const installer = make(succeed, { timeoutMs: 1000 });
+    await installer.install();
+    expect(existsSync(unrelated)).toBe(true);
+  });
+
+  it('waits for npm to close after killing it before reporting the timeout', async () => {
+    const events: string[] = [];
+    const installer = make(
+      (child, call) => {
+        child.kill = (signal?: string) => {
+          child.killed = signal ?? 'SIGTERM';
+          events.push('kill');
+          setTimeout(() => {
+            plantPackages(call.options.cwd);
+            events.push('close');
+            child.emit('close', null, 'SIGKILL');
+          }, 40);
+          return true;
+        };
+      },
+      { timeoutMs: 20 },
+    );
+    await expect(installer.install().finally(() => events.push('settled'))).rejects.toMatchObject({ code: 'timeout' });
+    expect(events).toEqual(['kill', 'close', 'settled']);
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  it('surfaces the original failure when the cleanup itself fails', async () => {
+    const installer = make(
+      (child) => {
+        child.stderr.write('npm error network request failed\n');
+        child.emit('close', 1, null);
+      },
+      {
+        fileOps: {
+          rm: async (path: string, options: Record<string, unknown>) => {
+            if (String(path).includes('installing-')) throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
+            return realRm(path, options);
+          },
+        },
+      },
+    );
+    await expect(installer.install()).rejects.toMatchObject({ code: 'npm_failed' });
+    expect(installer.status().error?.message).toContain('network request failed');
+  });
+
+  it('moves the old install aside, swaps the new one in and removes the old one', async () => {
+    const old = join(cacheDir, 'lingua');
+    mkdirSync(old, { recursive: true });
+    writeFileSync(join(old, 'marker.txt'), 'old');
+    const renames: string[] = [];
+    const installer = make(succeed, {
+      fileOps: {
+        rename: async (from: string, to: string) => {
+          renames.push(`${from.split('/').pop()!.replace(/-[0-9a-f]+$/, '-*')}>${to.split('/').pop()!.replace(/-[0-9a-f]+$/, '-*')}`);
+          return realRename(from, to);
+        },
+      },
+    });
+    await installer.install();
+    expect(renames).toEqual(['lingua>lingua.old-*', 'lingua.installing-*>lingua']);
+    expect(readdirSync(cacheDir)).toEqual(['lingua']);
+    expect(existsSync(join(old, 'marker.txt'))).toBe(false);
+  });
+
+  it('restores the previous install when the second rename fails', async () => {
+    const old = join(cacheDir, 'lingua');
+    mkdirSync(old, { recursive: true });
+    writeFileSync(join(old, 'marker.txt'), 'old');
+    const installer = make(succeed, {
+      fileOps: {
+        rename: async (from: string, to: string) => {
+          if (String(from).includes('installing-')) throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+          return realRename(from, to);
+        },
+      },
+    });
+    await expect(installer.install()).rejects.toMatchObject({ code: 'filesystem' });
+    expect(readFileSync(join(old, 'marker.txt'), 'utf8')).toBe('old');
+    expect(readdirSync(cacheDir)).toEqual(['lingua']);
+  });
+
+  it('retries a rename that fails with EPERM or EBUSY', async () => {
+    let attempts = 0;
+    const installer = make(succeed, {
+      renameBackoffMs: 1,
+      fileOps: {
+        rename: async (from: string, to: string) => {
+          if (String(from).includes('installing-')) {
+            attempts += 1;
+            if (attempts <= 2) throw Object.assign(new Error('locked'), { code: attempts === 1 ? 'EPERM' : 'EBUSY' });
+          }
+          return realRename(from, to);
+        },
+      },
+    });
+    await installer.install();
+    expect(attempts).toBe(3);
+    expect(existsSync(join(cacheDir, 'lingua', 'node_modules'))).toBe(true);
+  });
+
+  it('gives up after five rename attempts', async () => {
+    let attempts = 0;
+    const installer = make(succeed, {
+      renameBackoffMs: 1,
+      fileOps: {
+        rename: async (from: string, to: string) => {
+          if (String(from).includes('installing-')) {
+            attempts += 1;
+            throw Object.assign(new Error('locked'), { code: 'EPERM' });
+          }
+          return realRename(from, to);
+        },
+      },
+    });
+    await expect(installer.install()).rejects.toMatchObject({ code: 'filesystem' });
+    expect(attempts).toBe(5);
+  });
+
+  it('does not retry a rename that fails for another reason', async () => {
+    let attempts = 0;
+    const installer = make(succeed, {
+      renameBackoffMs: 1,
+      fileOps: {
+        rename: async (from: string, to: string) => {
+          if (String(from).includes('installing-')) {
+            attempts += 1;
+            throw Object.assign(new Error('nope'), { code: 'ENOSPC' });
+          }
+          return realRename(from, to);
+        },
+      },
+    });
+    await expect(installer.install()).rejects.toMatchObject({ code: 'filesystem' });
+    expect(attempts).toBe(1);
+  });
+
+  it('still succeeds when the old install cannot be removed afterwards', async () => {
+    const old = join(cacheDir, 'lingua');
+    mkdirSync(old, { recursive: true });
+    const installer = make(succeed, {
+      fileOps: {
+        rm: async (path: string, options: Record<string, unknown>) => {
+          if (String(path).includes('.old-')) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+          return realRm(path, options);
+        },
+      },
+    });
+    await installer.install();
+    expect(existsSync(join(cacheDir, 'lingua', 'node_modules'))).toBe(true);
+    expect(installer.status()).toEqual({ state: 'idle' });
   });
 
   it('never takes the install location from outside input', async () => {

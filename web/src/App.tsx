@@ -68,7 +68,6 @@ function AppBody() {
     const previous = previousLinguaState.current;
     previousLinguaState.current = linguaState;
     if (linguaState === 'ready' && previous !== undefined && previous !== 'ready') announce(S.linguaReady);
-    if (previous === 'installing' && linguaState === 'install_failed') announce(S.linguaInstallFailedAnnounce);
     if (previous === 'installing' && (linguaState === 'idle' || linguaState === 'downloading') && health?.lingua?.installed) announce(S.linguaInstalled);
   }, [linguaState, announce]);
 

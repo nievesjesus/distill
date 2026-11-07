@@ -14,5 +14,5 @@ if (!npmCli) {
 rmSync(target, { recursive: true, force: true });
 mkdirSync(target, { recursive: true });
 for (const file of ['package.json', 'package-lock.json']) copyFileSync(source + file, target + file);
-execFileSync(process.execPath, [npmCli, 'ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: target, stdio: 'inherit' });
+execFileSync(process.execPath, [npmCli, 'ci', '--omit=dev', '--include=peer', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: target, stdio: 'inherit' });
 console.log('lingua runtime ready in build/lingua');

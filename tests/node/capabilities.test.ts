@@ -76,7 +76,7 @@ describe('hasLibreOffice on other platforms', () => {
 });
 
 describe('exposeLibreOffice', () => {
-  it('prepends the Windows program directory to the injected PATH', async () => {
+  it('appends the Windows program directory to the injected PATH', async () => {
     const env: NodeJS.ProcessEnv = { ProgramFiles: programFiles, PATH: 'C:\\Windows' };
     const found = await exposeLibreOffice({
       platform: 'win32',
@@ -84,17 +84,17 @@ describe('exposeLibreOffice', () => {
       isExecutable: existsOnly('D:\\Apps\\LibreOffice\\program\\soffice.exe'),
     });
     expect(found).toBe(true);
-    expect(env.PATH).toBe('D:\\Apps\\LibreOffice\\program;C:\\Windows');
+    expect(env.PATH).toBe('C:\\Windows;D:\\Apps\\LibreOffice\\program');
   });
 
-  it('prepends the macOS bundle directory', async () => {
+  it('appends the macOS bundle directory', async () => {
     const env: NodeJS.ProcessEnv = { PATH: '/usr/bin' };
     await exposeLibreOffice({
       platform: 'darwin',
       env,
       isExecutable: existsOnly('/Applications/LibreOffice.app/Contents/MacOS/soffice'),
     });
-    expect(env.PATH).toBe('/Applications/LibreOffice.app/Contents/MacOS:/usr/bin');
+    expect(env.PATH).toBe('/usr/bin:/Applications/LibreOffice.app/Contents/MacOS');
   });
 
   it('leaves PATH untouched when soffice is already on it', async () => {
@@ -102,6 +102,16 @@ describe('exposeLibreOffice', () => {
     const found = await exposeLibreOffice({ platform: 'linux', env, isExecutable: existsOnly('/opt/bin/soffice') });
     expect(found).toBe(true);
     expect(env.PATH).toBe('/usr/bin:/opt/bin');
+  });
+
+  it('never lets the LibreOffice directory shadow an earlier PATH entry', async () => {
+    const env: NodeJS.ProcessEnv = { PATH: '/usr/bin:/usr/local/bin' };
+    await exposeLibreOffice({
+      platform: 'darwin',
+      env,
+      isExecutable: existsOnly('/Applications/LibreOffice.app/Contents/MacOS/soffice'),
+    });
+    expect(env.PATH!.split(':').slice(0, 2)).toEqual(['/usr/bin', '/usr/local/bin']);
   });
 
   it('leaves PATH untouched when LibreOffice is missing', async () => {
@@ -117,7 +127,7 @@ describe('exposeLibreOffice', () => {
       env,
       isExecutable: existsOnly('D:\\Apps\\LibreOffice\\program\\soffice.exe'),
     });
-    expect(env.Path).toBe('D:\\Apps\\LibreOffice\\program;C:\\Windows');
+    expect(env.Path).toBe('C:\\Windows;D:\\Apps\\LibreOffice\\program');
     expect(env.PATH).toBeUndefined();
   });
 });

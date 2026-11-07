@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { BOOSTERS } from '@core/boosters/pipeline';
 import type { Health, LinguaModel, LocalBoosterId } from '@core/types';
+import { isDesktopShell } from '../lib/shell';
 import type { Settings } from '../state/settings';
 import { S } from '../strings';
 
@@ -125,12 +126,17 @@ export function OptimizeBar({
                   </button>
                 </p>
               </>
-            ) : (
+            ) : isDesktopShell() ? (
               <p className="lingua-line">
                 <a href={S.linguaFullUrl} target="_blank" rel="noopener noreferrer">
                   {S.linguaFullOnly}
                 </a>
               </p>
+            ) : (
+              <>
+                <p className="lingua-line">{S.linguaNoNpm}</p>
+                <p className="lingua-line">{S.linguaNoNpmHint}</p>
+              </>
             )}
           </div>
         ) : null}

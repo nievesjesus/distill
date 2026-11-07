@@ -65,6 +65,17 @@ function originHostname(origin: string): string | null {
   }
 }
 
+function isCrossSite(c: Context): boolean {
+  if (c.req.header('sec-fetch-site')?.toLowerCase() === 'cross-site') return true;
+  const origin = c.req.header('origin');
+  if (origin === undefined) return false;
+  try {
+    return new URL(origin).host.toLowerCase() !== (c.req.header('host') ?? '').toLowerCase();
+  } catch {
+    return true;
+  }
+}
+
 function extensionOf(filename: string): string {
   return filename.slice(filename.lastIndexOf('.')).toLowerCase();
 }
@@ -105,6 +116,13 @@ export function createApp(deps: AppDeps): Hono {
       return next();
     });
   }
+
+  app.use('/api/*', async (c, next) => {
+    if (!SAFE_METHODS.has(c.req.method) && isCrossSite(c)) {
+      return fail(c, 'forbidden', 'Request blocked: cross-site requests are not allowed');
+    }
+    return next();
+  });
 
   app.onError((error, c) => {
     if (error instanceof DistillError) return fail(c, error.code, error.message);
