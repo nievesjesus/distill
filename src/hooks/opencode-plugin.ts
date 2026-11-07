@@ -2,10 +2,13 @@ import { isHookConvertible } from './supported';
 
 const CANDIDATE_EXTENSIONS = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'webp'];
 
-export const INVOCATION_SOURCE = String.raw`const quote = (value) => '"' + String(value).replace(/"/g, '\\"') + '"';
+export const PLUGIN_ID = 'distillmd-opencode-plugin';
+
+export const INVOCATION_SOURCE = String.raw`const quote = (value) => '"' + String(value) + '"';
 const buildInvocation = (command, file, platform) => {
+  if (platform === 'win32' && /["%!\u0000-\u001f\u007f]/.test(file)) return null;
   const [bin, ...base] = command;
-  const args = [...base, ...'hook convert'.split(' '), file];
+  const args = [...base, 'hook', 'convert', file];
   if (platform === 'win32') return { file: [bin, ...args].map(quote).join(' '), args: [], shell: true };
   return { file: bin, args, shell: false };
 };`;
@@ -17,8 +20,10 @@ export function hookExtensions(): string[] {
 export function opencodePluginSource(command: string): string {
   return [
     `import { execFile } from 'node:child_process';`,
+    `import { existsSync } from 'node:fs';`,
     `import { extname, isAbsolute, resolve } from 'node:path';`,
     ``,
+    `const DISTILL_PLUGIN_ID = ${JSON.stringify(PLUGIN_ID)};`,
     `const COMMAND = ${JSON.stringify(command)}.split(' ');`,
     `const EXTENSIONS = new Set(${JSON.stringify(hookExtensions())});`,
     `const ARG_KEYS = ['filePath', 'file_path', 'path'];`,
@@ -28,7 +33,9 @@ export function opencodePluginSource(command: string): string {
     ``,
     `const convert = (file) =>`,
     `  new Promise((done) => {`,
+    `    if (!existsSync(file)) return done(null);`,
     `    const call = buildInvocation(COMMAND, file, process.platform);`,
+    `    if (call === null) return done(null);`,
     `    execFile(call.file, call.args, { timeout: TIMEOUT_MS, maxBuffer: 1024 * 1024, shell: call.shell }, (error, stdout) => {`,
     `      if (error) return done(null);`,
     `      try {`,

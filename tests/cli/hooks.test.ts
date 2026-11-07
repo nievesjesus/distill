@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { run } from '../../src/cli/run';
+import { writeAtomic } from '../../src/hooks/atomic';
 
 function setup(options: { isTTY?: boolean; answer?: string; which?: string | null } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'distill-home-'));
@@ -233,5 +234,63 @@ describe('hooks install robustness', () => {
     expect(s.exit).toHaveBeenCalledWith(1);
     expect(s.stderr).toHaveLength(1);
     expect(s.stderr[0]).toMatch(/^Could not write .*settings\.json: /);
+  });
+});
+
+describe('hooks install symlink and masking safety', () => {
+  it('shows the link target and refuses a project symlink that escapes', async () => {
+    const s = setup();
+    const outside = join(s.home, 'outside.json');
+    writeFileSync(outside, '{}\n');
+    mkdirSync(join(s.cwd, '.claude'), { recursive: true });
+    symlinkSync(outside, join(s.cwd, '.claude', 'settings.json'));
+    await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
+    expect(s.exit).toHaveBeenCalledWith(1);
+    expect(s.stderr).toHaveLength(1);
+    expect(s.stderr[0]).toContain('links outside the project');
+    expect(readFileSync(outside, 'utf8')).toBe('{}\n');
+  });
+
+  it('allows an in-project symlink and shows both paths', async () => {
+    const s = setup();
+    const inside = join(s.cwd, 'shared.json');
+    writeFileSync(inside, '{}\n');
+    mkdirSync(join(s.cwd, '.claude'), { recursive: true });
+    const link = join(s.cwd, '.claude', 'settings.json');
+    symlinkSync(inside, link);
+    await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
+    expect(s.exit).not.toHaveBeenCalled();
+    expect(s.stdout.some((line) => line.startsWith('File: ') && line.includes(' -> '))).toBe(true);
+    expect(JSON.parse(readFileSync(inside, 'utf8')).hooks).toBeDefined();
+  });
+
+  it('refuses a dangling symlink', async () => {
+    const s = setup();
+    mkdirSync(join(s.home, '.claude'), { recursive: true });
+    const link = join(s.home, '.claude', 'settings.json');
+    symlinkSync(join(s.home, 'nowhere.json'), link);
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    expect(s.exit).toHaveBeenCalledWith(1);
+    expect(s.stderr).toHaveLength(1);
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(s.home, 'nowhere.json'))).toBe(false);
+  });
+
+  it('masks string values in context lines', async () => {
+    const s = setup();
+    const file = join(s.home, '.claude', 'settings.json');
+    mkdirSync(join(s.home, '.claude'), { recursive: true });
+    writeFileSync(file, '{"model":"x","env":{"SECRET":"hunter2"}}');
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    expect(s.stdout.join('\n')).not.toContain('hunter2');
+  });
+
+  it('leaves no temp file when the rename fails', () => {
+    const s = setup();
+    const target = join(s.cwd, 'dir');
+    mkdirSync(target);
+    writeFileSync(join(target, 'child'), 'x');
+    expect(() => writeAtomic(target, 'content')).toThrow();
+    expect(existsSync(`${target}.${process.pid}.tmp`)).toBe(false);
   });
 });

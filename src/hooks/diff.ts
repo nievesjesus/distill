@@ -1,4 +1,11 @@
 const CONTEXT_LINES = 2;
+const STRING_VALUE = /^(\s*"(?:[^"\\]|\\.)*"\s*:\s*)"(?:[^"\\]|\\.)*"/;
+const STRING_ELEMENT = /^(\s*)"(?:[^"\\]|\\.)*"(,?)$/;
+
+function mask(text: string): string {
+  if (STRING_VALUE.test(text)) return text.replace(STRING_VALUE, '$1"…"');
+  return text.replace(STRING_ELEMENT, '$1"…"$2');
+}
 
 export function lineDiff(before: string, after: string): string[] {
   const a = before === '' ? [] : before.replace(/\n$/, '').split('\n');
@@ -43,7 +50,7 @@ export function lineDiff(before: string, after: string): string[] {
       return;
     }
     collapsed = false;
-    out.push(`${op.mark} ${op.text}`);
+    out.push(`${op.mark} ${op.mark === ' ' ? mask(op.text) : op.text}`);
   });
   return out;
 }

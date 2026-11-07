@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -23,6 +23,15 @@ async function loadPlugin(script: string, ctx?: unknown) {
   return (await mod.DistillPlugin(ctx))['tool.execute.before'];
 }
 
+const fixtures = mkdtempSync(join(tmpdir(), 'distill-oc-files-'));
+
+function real(name: string): string {
+  const file = join(fixtures, name);
+  mkdirSync(join(file, '..'), { recursive: true });
+  writeFileSync(file, 'x');
+  return file;
+}
+
 const OK = '#!/bin/sh\necho \'{"path":"/cache/out/x.md"}\'\n';
 const FAIL = '#!/bin/sh\nexit 1\n';
 
@@ -34,14 +43,14 @@ describe('opencodePluginSource', () => {
 
   it('rewrites filePath for a pdf', async () => {
     const before = await loadPlugin(OK);
-    const output = { args: { filePath: '/docs/a.pdf' } };
+    const output = { args: { filePath: real('a.pdf') } };
     await before({ tool: 'read' }, output);
     expect(output.args.filePath).toBe('/cache/out/x.md');
   });
 
   it('leaves non-convertible extensions alone', async () => {
     const before = await loadPlugin(OK);
-    for (const name of ['/src/a.ts', '/img/a.png', '/data/a.csv', '/a/noext']) {
+    for (const name of [real('a.ts'), real('a.png'), real('a.csv'), real('noext')]) {
       const output = { args: { filePath: name } };
       await before({ tool: 'read' }, output);
       expect(output.args.filePath).toBe(name);
@@ -50,29 +59,32 @@ describe('opencodePluginSource', () => {
 
   it('ignores other tools', async () => {
     const before = await loadPlugin(OK);
-    const output = { args: { filePath: '/docs/a.pdf' } };
+    const file = real('b.pdf');
+    const output = { args: { filePath: file } };
     await before({ tool: 'bash' }, output);
-    expect(output.args.filePath).toBe('/docs/a.pdf');
+    expect(output.args.filePath).toBe(file);
   });
 
   it('keeps the original path when the command fails', async () => {
     const before = await loadPlugin(FAIL);
-    const output = { args: { filePath: '/docs/a.pdf' } };
+    const file = real('c.pdf');
+    const output = { args: { filePath: file } };
     await before({ tool: 'read' }, output);
-    expect(output.args.filePath).toBe('/docs/a.pdf');
+    expect(output.args.filePath).toBe(file);
   });
 
   it('keeps the original path on garbage output', async () => {
     const before = await loadPlugin('#!/bin/sh\necho nope\n');
-    const output = { args: { filePath: '/docs/a.pdf' } };
+    const file = real('d.pdf');
+    const output = { args: { filePath: file } };
     await before({ tool: 'read' }, output);
-    expect(output.args.filePath).toBe('/docs/a.pdf');
+    expect(output.args.filePath).toBe(file);
   });
 
   it('rewrites whichever argument name is present and writes it back to the same key', async () => {
     const before = await loadPlugin(OK);
     for (const key of ['file_path', 'path']) {
-      const output = { args: { [key]: '/docs/a.docx' } };
+      const output = { args: { [key]: real('e.docx') } };
       await before({ tool: 'read' }, output);
       expect(output.args[key]).toBe('/cache/out/x.md');
     }
@@ -80,10 +92,20 @@ describe('opencodePluginSource', () => {
 
   it('resolves relative paths against the plugin directory', async () => {
     const echo = '#!/bin/sh\nprintf \'{"path":"%s.md"}\' "$3"\n';
-    const before = await loadPlugin(echo, { directory: '/work/proj' });
-    const output = { args: { filePath: 'docs/a.pdf' } };
+    const before = await loadPlugin(echo, { directory: fixtures });
+    real('docs/f.pdf');
+    const output = { args: { filePath: 'docs/f.pdf' } };
     await before({ tool: 'read' }, output);
-    expect(output.args.filePath).toBe('/work/proj/docs/a.pdf.md');
+    expect(output.args.filePath).toBe(`${fixtures}/docs/f.pdf.md`);
+  });
+
+  it('never spawns for a nonexistent path', async () => {
+    const marker = join(fixtures, 'spawned');
+    const before = await loadPlugin(`#!/bin/sh\ntouch ${marker}\necho '{"path":"/cache/out/x.md"}'\n`);
+    const output = { args: { filePath: join(fixtures, 'missing.pdf') } };
+    await before({ tool: 'read' }, output);
+    expect(output.args.filePath).toBe(join(fixtures, 'missing.pdf'));
+    expect(existsSync(marker)).toBe(false);
   });
 
   it('survives missing args', async () => {
@@ -127,14 +149,20 @@ describe('invocation builder', () => {
   });
 
   it('goes through a shell with quoted arguments on win32', () => {
-    const result = build(['distillmd'], 'C:\\My Docs\\a"b.pdf', 'win32');
-    expect(result.shell).toBe(true);
-    expect(result.args).toEqual([]);
-    expect(result.file).toBe('"distillmd" "hook" "convert" "C:\\My Docs\\a\\"b.pdf"');
+    const result = build(['distillmd'], 'C:\\My Docs\\a & b.pdf', 'win32');
+    expect(result).toEqual({ file: '"distillmd" "hook" "convert" "C:\\My Docs\\a & b.pdf"', args: [], shell: true });
   });
+
+  it.each(['C:\\proj\\a" & calc & ".pdf', 'C:\\%USERPROFILE%.pdf', 'C:\\a!b.pdf', 'C:\\a\r\nb.pdf', 'C:\\a\u0000b.pdf'])(
+    'refuses an unsafe win32 path %j',
+    (file) => {
+      expect(build(['distillmd'], file, 'win32')).toBeNull();
+    },
+  );
 
   it('recognizes its own plugin file', () => {
     expect(isOwnOpencodePlugin(opencodePluginSource('distillmd'))).toBe(true);
     expect(isOwnOpencodePlugin('export const Other = 1;')).toBe(false);
+    expect(isOwnOpencodePlugin('export const DistillPlugin = 1; hook convert')).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { opencodePluginSource } from './opencode-plugin';
+import { opencodePluginSource, PLUGIN_ID } from './opencode-plugin';
 import type { Plan } from './install-claude';
 
 export interface OpencodeLocation {
@@ -20,5 +20,5 @@ export function planOpencodeInstall(current: string | null, command: string): Pl
 }
 
 export function isOwnOpencodePlugin(text: string): boolean {
-  return text.includes('DistillPlugin') && text.includes('hook convert');
+  return text.includes(PLUGIN_ID);
 }

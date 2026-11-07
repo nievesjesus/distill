@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process';
-import { accessSync, chmodSync, constants, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, lstatSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
 import { handleClaudePreToolUse } from '../hooks/claude';
 import { convertCached } from '../hooks/cache';
+import { readIfExists, writeAtomic } from '../hooks/atomic';
 import { hookCommand } from '../hooks/command';
 import { lineDiff } from '../hooks/diff';
 import { normalizeSettings, planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
@@ -75,34 +76,6 @@ async function defaultPrompt(question: string): Promise<string> {
     return await rl.question(question);
   } finally {
     rl.close();
-  }
-}
-
-function readIfExists(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
-function writeAtomic(path: string, content: string): void {
-  let target = path;
-  let mode: number | undefined;
-  try {
-    target = realpathSync(path);
-    mode = statSync(target).mode & 0o777;
-  } catch {}
-  mkdirSync(dirname(target), { recursive: true });
-  const tmp = `${target}.${process.pid}.tmp`;
-  try {
-    writeFileSync(tmp, content);
-    if (mode !== undefined) chmodSync(tmp, mode);
-    renameSync(tmp, target);
-  } catch (error) {
-    rmSync(tmp, { force: true });
-    throw error;
   }
 }
 
@@ -451,8 +424,8 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   type Target = 'claude' | 'opencode';
 
-  const applyChange = async (path: string, before: string | null, next: string | null, options: HooksOptions, note?: string): Promise<boolean> => {
-    stdout(`File: ${path}`);
+  const applyChange = async (path: string, label: string, before: string | null, next: string | null, options: HooksOptions, note?: string): Promise<boolean> => {
+    stdout(`File: ${label}`);
     if (note !== undefined) stdout(note);
     for (const line of lineDiff(before ?? '', next ?? '')) stdout(line);
     if (options.yes !== true) {
@@ -482,6 +455,30 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const processTarget = async (target: Target, action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
     const location = { home: homeDir, cwd, project: options.project === true };
     const path = target === 'claude' ? join(location.project ? cwd : homeDir, '.claude', 'settings.json') : opencodePluginPath(location);
+    let label = path;
+    let isLink = false;
+    try {
+      isLink = lstatSync(path).isSymbolicLink();
+    } catch {}
+    if (isLink) {
+      let resolved: string;
+      try {
+        resolved = realpathSync(path);
+      } catch {
+        stderr(`Refusing to follow dangling symlink ${path}.`);
+        exit(1);
+        return false;
+      }
+      if (location.project) {
+        const root = realpathSync(cwd);
+        if (resolved !== root && !resolved.startsWith(`${root}${sep}`)) {
+          stderr(`Refusing to write ${path}: it links outside the project (${resolved}).`);
+          exit(1);
+          return false;
+        }
+      }
+      if (resolved !== path) label = `${path} -> ${resolved}`;
+    }
     let current: string | null;
     try {
       current = readIfExists(path);
@@ -512,9 +509,9 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           stdout(`Already installed: ${path}`);
           return true;
         }
-        return applyChange(path, current, plan.next, options);
+        return applyChange(path, label, current, plan.next, options);
       }
-      return applyChange(path, current, null, options);
+      return applyChange(path, label, current, null, options);
     }
 
     let plan: { next: string; changed: boolean };
@@ -535,7 +532,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       stdout(action === 'install' ? `Already installed: ${path}` : 'Nothing to remove.');
       return true;
     }
-    return applyChange(path, baseline, plan.next, options, note);
+    return applyChange(path, label, baseline, plan.next, options, note);
   };
 
   const runHooksAction = async (action: 'install' | 'uninstall', options: HooksOptions): Promise<void> => {
