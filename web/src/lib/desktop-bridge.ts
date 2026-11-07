@@ -19,6 +19,35 @@ declare global {
 
 export const SAVED_NOTICE_MS = 6000;
 
+function extensionOf(filename: string): string {
+  return filename.slice(filename.lastIndexOf('.')).toLowerCase();
+}
+
+export function useExportTracking(commit: (localIds: string[]) => void) {
+  const pending = useRef<{ ids: string[]; extension: string } | null>(null);
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+
+  useEffect(() => {
+    const bridge = window.distillDesktop;
+    if (!bridge) return undefined;
+    return bridge.onSaved((saved) => {
+      const waiting = pending.current;
+      if (!waiting || extensionOf(saved.filename) !== waiting.extension) return;
+      pending.current = null;
+      commitRef.current(waiting.ids);
+    });
+  }, []);
+
+  return useCallback((localIds: string[], filename?: string) => {
+    if (filename === undefined || !window.distillDesktop) {
+      commitRef.current(localIds);
+      return;
+    }
+    pending.current = { ids: localIds, extension: extensionOf(filename) };
+  }, []);
+}
+
 export function revealLabel(): string {
   return document.documentElement.dataset.platform === 'darwin' ? S.showInFinder : S.showInFolder;
 }

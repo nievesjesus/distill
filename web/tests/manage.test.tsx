@@ -8,6 +8,7 @@ import { EmptyState } from '../src/components/EmptyState';
 import { FileList } from '../src/components/FileList';
 import { FileRow } from '../src/components/FileRow';
 import { Footer } from '../src/components/Footer';
+import { useExportTracking } from '../src/lib/desktop-bridge';
 import type { FileEntry } from '../src/state/files';
 
 const distillMock = vi.hoisted(() => vi.fn());
@@ -152,8 +153,98 @@ describe('Footer clear', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Download all' }));
     });
-    expect(onExported).toHaveBeenCalledWith(['1']);
+    expect(onExported).toHaveBeenCalledWith(['1'], expect.stringMatching(/^distill-\d{4}-\d{2}-\d{2}\.zip$/));
   });
+
+  it('does not mark anything exported when building the ZIP fails', async () => {
+    const onExported = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => { throw new Error('boom'); }), configurable: true });
+    render(<Footer files={[entry('1', 'a.pdf')]} onExported={onExported} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Download all' }));
+    });
+    expect(onExported).not.toHaveBeenCalled();
+  });
+
+  it('does not come back in confirm mode after the list empties', () => {
+    const { rerender } = render(<Footer files={[entry('1', 'a.pdf')]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.getByText(/not saved yet/)).toBeInTheDocument();
+    rerender(<Footer files={[]} />);
+    rerender(<Footer files={[entry('2', 'b.pdf')]} />);
+    expect(screen.queryByText(/not saved yet/)).toBeNull();
+  });
+
+  it('ignores Escape that belongs to an open dialog or was already handled', () => {
+    render(
+      <>
+        <dialog open><button type="button">inside</button></dialog>
+        <Footer files={[entry('1', 'a.pdf')]} />
+      </>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'inside' }), { key: 'Escape' });
+    expect(screen.getByText(/not saved yet/)).toBeInTheDocument();
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    handled.preventDefault();
+    act(() => {
+      window.dispatchEvent(handled);
+    });
+    expect(screen.getByText(/not saved yet/)).toBeInTheDocument();
+  });
+});
+
+describe('export tracking on desktop', () => {
+  function Probe({ commit }: { commit: (ids: string[]) => void }) {
+    const track = useExportTracking(commit);
+    return (
+      <>
+        <button type="button" onClick={() => track(['1'], 'a.md')}>download</button>
+        <button type="button" onClick={() => track(['2'])}>copy</button>
+      </>
+    );
+  }
+
+  function bridge() {
+    let listener: ((saved: { id: string; filename: string }) => void) | undefined;
+    (window as { distillDesktop?: unknown }).distillDesktop = {
+      onSaved: (callback: typeof listener) => {
+        listener = callback;
+        return () => undefined;
+      },
+      reveal: () => undefined,
+    };
+    return (saved: { id: string; filename: string }) => act(() => listener?.(saved));
+  }
+
+  it('marks a download only when the save is confirmed, and a copy at once', () => {
+    const emit = bridge();
+    const commit = vi.fn();
+    render(<Probe commit={commit} />);
+    fireEvent.click(screen.getByRole('button', { name: 'download' }));
+    expect(commit).not.toHaveBeenCalled();
+    emit({ id: 'x', filename: 'a.md' });
+    expect(commit).toHaveBeenCalledWith(['1']);
+    fireEvent.click(screen.getByRole('button', { name: 'copy' }));
+    expect(commit).toHaveBeenLastCalledWith(['2']);
+  });
+
+  it('marks nothing for a cancelled save and ignores unrelated saves', () => {
+    const emit = bridge();
+    const commit = vi.fn();
+    render(<Probe commit={commit} />);
+    fireEvent.click(screen.getByRole('button', { name: 'download' }));
+    emit({ id: 'x', filename: 'bundle.zip' });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('marks at once in the browser shell', () => {
+    const commit = vi.fn();
+    render(<Probe commit={commit} />);
+    fireEvent.click(screen.getByRole('button', { name: 'download' }));
+    expect(commit).toHaveBeenCalledWith(['1']);
+  });
+
 });
 
 describe('saved notice', () => {
@@ -316,6 +407,15 @@ describe('App list management', () => {
     expect(screen.getByText('Nothing distilled yet')).toBeInTheDocument();
     expect(screen.queryByRole('contentinfo')).toBeNull();
     await waitFor(() => expect(calls).toContainEqual({ url: '/api/files', method: 'DELETE' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'browse' })).toHaveFocus());
+  });
+
+  it('moves focus to browse when the only row is removed', async () => {
+    render(<App />);
+    drop(['a.pdf']);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove a.pdf' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Remove a.pdf' }));
+    expect(screen.getByText('Nothing distilled yet')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'browse' })).toHaveFocus());
   });
 

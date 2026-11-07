@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ApiError, Health, ParseResponse } from '../../src/core/types';
 import { DistillError } from '../../src/node/errors';
 import type { Lingua } from '../../src/node/lingua';
@@ -401,6 +401,25 @@ describe('server app', () => {
       duplex: 'half',
     } as RequestInit);
     expect(res.status).toBe(503);
+  });
+
+  it('does not store a parse whose client went away while parsing', async () => {
+    const controller = new AbortController();
+    const { app, store } = setup({
+      parser: {
+        async toMarkdown() {
+          controller.abort();
+          return { markdown: '# Late', pages: 1 };
+        },
+      },
+    });
+    const put = vi.spyOn(store, 'put');
+    const res = await app.request('/api/parse', { ...upload('a.pdf'), signal: controller.signal });
+    expect(res.status).toBe(499);
+    expect(put).not.toHaveBeenCalled();
+    const follow = await app.request('/api/parse', upload('b.pdf'));
+    const body = (await follow.json()) as ParseResponse;
+    expect(store.get(body.id)).toBeDefined();
   });
 
   describe('DELETE /api/files', () => {

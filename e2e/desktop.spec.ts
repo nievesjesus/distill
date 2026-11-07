@@ -23,6 +23,18 @@ function launch(userDataDir?: string): Promise<ElectronApplication> {
   return electron.launch(packagedApp ? { executablePath: packagedApp, args: userData } : { args: ['.', ...userData] });
 }
 
+const tempDirs: string[] = [];
+
+function tmp(label: string): string {
+  const dir = mkdtempSync(join(tmpdir(), `distill-${label}-`));
+  tempDirs.push(dir);
+  return dir;
+}
+
+test.afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 async function quit(app: ElectronApplication): Promise<void> {
   const child = app.process();
   const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
@@ -41,7 +53,7 @@ async function quit(app: ElectronApplication): Promise<void> {
   }
 }
 
-async function closing(app: ElectronApplication, dirs: string[], body: () => Promise<void>): Promise<void> {
+async function closing(app: ElectronApplication, body: () => Promise<void>): Promise<void> {
   let failed = false;
   try {
     await body();
@@ -53,8 +65,6 @@ async function closing(app: ElectronApplication, dirs: string[], body: () => Pro
       await quit(app);
     } catch (error) {
       if (!failed) throw error;
-    } finally {
-      for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
     }
   }
 }
@@ -121,13 +131,13 @@ function setSaveTarget(app: ElectronApplication, target: string | null) {
 }
 
 test('desktop shell loads the UI, converts a PDF through the LiteParse fork and exits cleanly', async () => {
-  const workDir = mkdtempSync(join(tmpdir(), 'distill-desktop-'));
+  const workDir = tmp('desktop');
   const pdfPath = join(workDir, 'sample-report.pdf');
   writeFileSync(pdfPath, makeSamplePdf(sampleLines()));
 
   const packagedApp = process.env.DISTILL_APP_PATH;
   const app = await electron.launch(packagedApp ? { executablePath: packagedApp } : { args: ['.'] });
-  await closing(app, [workDir], async () => {
+  await closing(app, async () => {
     const page = await app.firstWindow();
     await expect(page).toHaveTitle('distill');
     await expect(page.getByText('Fewer tokens')).toBeVisible();
@@ -146,15 +156,15 @@ test('desktop shell loads the UI, converts a PDF through the LiteParse fork and 
 });
 
 test('desktop window adapts to its size and keeps the footer in view', async () => {
-  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
-  const workDir = mkdtempSync(join(tmpdir(), 'distill-desktop-'));
+  const userData = tmp('userdata');
+  const workDir = tmp('desktop');
   const files = Array.from({ length: 12 }, (_, index) => {
     const path = join(workDir, `doc-${index}.pdf`);
     writeFileSync(path, makeSamplePdf(sampleLines()));
     return path;
   });
   const app = await launch(userData);
-  await closing(app, [workDir, userData], async () => {
+  await closing(app, async () => {
     const page = await app.firstWindow();
     await expect(page.getByText('Fewer tokens')).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-shell', 'desktop');
@@ -193,12 +203,12 @@ test('desktop window adapts to its size and keeps the footer in view', async () 
 });
 
 test('detailed mode with options open keeps the footer inside a minimum window', async () => {
-  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
-  const workDir = mkdtempSync(join(tmpdir(), 'distill-desktop-'));
+  const userData = tmp('userdata');
+  const workDir = tmp('desktop');
   const pdf = join(workDir, 'one.pdf');
   writeFileSync(pdf, makeSamplePdf(sampleLines()));
   const app = await launch(userData);
-  await closing(app, [workDir, userData], async () => {
+  await closing(app, async () => {
     const page = await app.firstWindow();
     await expect(page.getByText('Fewer tokens')).toBeVisible();
     expect(await resize(app, 440, 520)).toEqual([440, 520]);
@@ -219,9 +229,9 @@ test('detailed mode with options open keeps the footer inside a minimum window',
 });
 
 test('connect drawer stays clear of the window controls', async () => {
-  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
+  const userData = tmp('userdata');
   const app = await launch(userData);
-  await closing(app, [userData], async () => {
+  await closing(app, async () => {
     const page = await app.firstWindow();
     await expect(page.getByText('Fewer tokens')).toBeVisible();
     expect(await resize(app, 640, 780)).toEqual([640, 780]);
@@ -239,12 +249,12 @@ test('connect drawer stays clear of the window controls', async () => {
 });
 
 test('desktop window remembers its size between launches and starts with an empty list', async () => {
-  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
-  const workDir = mkdtempSync(join(tmpdir(), 'distill-desktop-'));
+  const userData = tmp('userdata');
+  const workDir = tmp('desktop');
   const pdf = join(workDir, 'one.pdf');
   writeFileSync(pdf, makeSamplePdf(sampleLines()));
   const first = await launch(userData);
-  await closing(first, [], async () => {
+  await closing(first, async () => {
     const firstPage = await first.firstWindow();
     await expect(firstPage.getByText('Fewer tokens')).toBeVisible();
     expect(await resize(first, 700, 640)).toEqual([700, 640]);
@@ -253,7 +263,7 @@ test('desktop window remembers its size between launches and starts with an empt
   });
 
   const second = await launch(userData);
-  await closing(second, [userData, workDir], async () => {
+  await closing(second, async () => {
     const secondPage = await second.firstWindow();
     await expect(secondPage.getByText('Fewer tokens')).toBeVisible();
     const restored = await second.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize());
@@ -264,9 +274,9 @@ test('desktop window remembers its size between launches and starts with an empt
 });
 
 test('empty state fills the free space, centered, without a footer', async () => {
-  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
+  const userData = tmp('userdata');
   const app = await launch(userData);
-  await closing(app, [userData], async () => {
+  await closing(app, async () => {
     const page = await app.firstWindow();
     await expect(page.getByText('Nothing distilled yet')).toBeVisible();
     await expect(page.locator('.footer')).toHaveCount(0);
@@ -307,9 +317,9 @@ test('empty state fills the free space, centered, without a footer', async () =>
 });
 
 test('native save writes a valid ZIP, remembers the folder, offers reveal and honours Cancel', async () => {
-  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
-  const workDir = mkdtempSync(join(tmpdir(), 'distill-desktop-'));
-  const saveDir = mkdtempSync(join(tmpdir(), 'distill-saved-'));
+  const userData = tmp('userdata');
+  const workDir = tmp('desktop');
+  const saveDir = tmp('saved');
   const pdfs = ['sample-report.pdf', 'second-report.pdf'].map((name) => {
     const path = join(workDir, name);
     writeFileSync(path, makeSamplePdf(sampleLines()));
@@ -318,7 +328,7 @@ test('native save writes a valid ZIP, remembers the folder, offers reveal and ho
   const zipPath = join(saveDir, 'bundle.zip');
   const mdPath = join(saveDir, 'sample-report.md');
   const app = await launch(userData);
-  await closing(app, [userData, workDir, saveDir], async () => {
+  await closing(app, async () => {
     const page = await app.firstWindow();
     await expect(page.getByText('Fewer tokens')).toBeVisible();
     await resize(app, 640, 780);
@@ -334,6 +344,11 @@ test('native save writes a valid ZIP, remembers the folder, offers reveal and ho
     expect(readdirSync(saveDir)).toEqual([]);
     await expect(page.getByText(/^Saved /)).toHaveCount(0);
     expect(existsSync(join(userData, 'desktop-prefs.json'))).toBe(false);
+
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await expect(page.getByText('Clear 2 files? 2 not saved yet.')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByText(/not saved yet/)).toHaveCount(0);
 
     await setSaveTarget(app, zipPath);
     await page.getByRole('button', { name: 'Download all' }).click();
@@ -365,15 +380,15 @@ test('native save writes a valid ZIP, remembers the folder, offers reveal and ho
 });
 
 test('list management, alignment and confirm in the desktop shell', async () => {
-  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
-  const workDir = mkdtempSync(join(tmpdir(), 'distill-desktop-'));
+  const userData = tmp('userdata');
+  const workDir = tmp('desktop');
   const pdfs = ['alpha.pdf', 'beta.pdf', 'gamma.pdf'].map((name) => {
     const path = join(workDir, name);
     writeFileSync(path, makeSamplePdf(sampleLines()));
     return path;
   });
   const app = await launch(userData);
-  await closing(app, [userData, workDir], async () => {
+  await closing(app, async () => {
     const page = await app.firstWindow();
     await expect(page.getByText('Fewer tokens')).toBeVisible();
     await resize(app, 640, 780);

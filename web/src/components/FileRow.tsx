@@ -14,7 +14,7 @@ interface FileRowProps {
   detailed?: boolean;
   onToggle?: () => void;
   onRemove?: () => void;
-  onExported?: () => void;
+  onExported?: (filename?: string) => void;
 }
 
 const LIBREOFFICE_URL = 'https://www.libreoffice.org/download/';
@@ -76,7 +76,7 @@ function Status({ file }: FileRowProps) {
   return <Tokens key="done" file={file} />;
 }
 
-function useCopy(text: string, onExported?: () => void) {
+function useCopy(text: string, onExported?: (filename?: string) => void) {
   const announce = useAnnounce();
   const [state, setState] = useState<CopyState>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -124,13 +124,14 @@ function RemoveButton({ name, onRemove }: { name: string; onRemove?: () => void 
   );
 }
 
-function DoneActions({ file, onRemove, onExported }: { file: FileEntry; onRemove?: () => void; onExported?: () => void }) {
+function DoneActions({ file, onRemove, onExported }: { file: FileEntry; onRemove?: () => void; onExported?: (filename?: string) => void }) {
   const out = file.out ?? '';
   const { state, copy } = useCopy(out, onExported);
   const copied = state === 'copied';
   const download = () => {
-    downloadText(mdName(file.name), out);
-    onExported?.();
+    const name = mdName(file.name);
+    downloadText(name, out);
+    onExported?.(name);
   };
   return (
     <>

@@ -141,6 +141,7 @@ export function createApp(deps: AppDeps): Hono {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const started = performance.now();
     const result = await withTempFile(extensionOf(file.name), bytes, (path) => deps.parser.toMarkdown(path));
+    if (c.req.raw.signal.aborted) return new Response(null, { status: 499 });
     const id = randomUUID();
     deps.store.put({ id, name: file.name, kind, bytes, markdown: result.markdown });
     const body: ParseResponse = {

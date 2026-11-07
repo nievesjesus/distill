@@ -7,6 +7,7 @@ import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import type { ViewMode } from './components/Header';
 import { OptimizeBar } from './components/OptimizeBar';
+import { useExportTracking } from './lib/desktop-bridge';
 import { AnnouncerProvider, useAnnounce } from './state/announcer';
 import { useFiles } from './state/files';
 import { useSettings } from './state/settings';
@@ -26,8 +27,10 @@ function AppBody() {
   const removeFile = useCallback(
     (localId: string) => {
       const file = filesRef.current.find((candidate) => candidate.localId === localId);
+      const wasLast = filesRef.current.length === 1;
       remove(localId);
       if (file) announce(S.removed(file.name));
+      if (file && wasLast) requestAnimationFrame(focusBrowse);
     },
     [remove, announce],
   );
@@ -38,7 +41,8 @@ function AppBody() {
     requestAnimationFrame(focusBrowse);
   }, [clear, announce]);
 
-  const markOne = useCallback((localId: string) => markExported([localId]), [markExported]);
+  const exportRows = useExportTracking(markExported);
+  const exportRow = useCallback((localId: string, filename?: string) => exportRows([localId], filename), [exportRows]);
   const announced = useRef(new Map<string, 'done' | 'error'>());
 
   useEffect(() => {
@@ -98,9 +102,9 @@ function AppBody() {
           {files.length === 0 ? (
             <EmptyState dragging={dragging} onBrowse={() => pickerRef.current?.click()} />
           ) : (
-            <FileList files={files} detailed={settings.detailed} onRemove={removeFile} onExported={markOne} />
+            <FileList files={files} detailed={settings.detailed} onRemove={removeFile} onExported={exportRow} />
           )}
-          <Footer files={files} onClear={clearAll} onExported={markExported} />
+          <Footer files={files} onClear={clearAll} onExported={exportRows} />
         </div>
       </div>
     </div>

@@ -39,6 +39,7 @@
   --space-5: 20px;
   --space-6: 24px;
   --guide: var(--space-4);
+  --accent-glow: rgba(200, 245, 60, 0.45);
   --font-ui: Inter, system-ui, sans-serif;
   --font-display: 'Space Grotesk', Inter, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -507,6 +508,12 @@ button {
   word-break: inherit;
 }
 
+.preview-text,
+.connect-snippet code {
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+}
+
 .preview-text {
   margin: 0;
   padding: 8px 10px;
@@ -651,12 +658,12 @@ button {
   color: var(--muted);
 }
 
-.icon-button:hover {
+.file-actions .icon-button:hover {
   color: var(--text);
   background: var(--surface);
 }
 
-.remove-button:hover {
+.file-actions .remove-button:hover {
   color: var(--kind-pdf);
 }
 
@@ -1041,7 +1048,7 @@ button {
   justify-content: center;
   min-height: 180px;
   padding: var(--space-5) var(--guide);
-  border: 1px dashed var(--drop-border);
+  border: 1px dashed transparent;
   border-radius: 10px;
   text-align: center;
   transition: border-color 160ms, background 160ms;
@@ -1049,7 +1056,7 @@ button {
 
 .empty-state[data-dragging='true'] {
   border-color: var(--accent);
-  background: var(--drop-bg);
+  box-shadow: var(--glow);
 }
 
 .empty-art {
@@ -1061,7 +1068,7 @@ button {
 .empty-art .empty-art-drop {
   stroke: var(--accent);
   fill: var(--bg);
-  filter: drop-shadow(0 0 6px rgba(200, 245, 60, 0.45));
+  filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 
 .empty-title {

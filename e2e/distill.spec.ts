@@ -70,6 +70,8 @@ test('shows the empty state, removes a row, and clears with a confirmation', asy
   await expect(rows.getByText(/^−\d+%$/)).toHaveCount(2, { timeout: 60_000 });
   await expect(page.getByText('Nothing distilled yet')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/t16-browser-files.png' });
+  const ligatures = await page.locator('.preview-text').first().evaluate((el) => getComputedStyle(el).fontVariantLigatures);
+  expect(ligatures).toBe('none');
 
   await page.getByRole('button', { name: 'Remove sample-report.pdf' }).click();
   await expect(rows).toHaveCount(1);

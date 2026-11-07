@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { savedPercent, shortCount } from '@core/format';
 import type { FileEntry } from '../state/files';
 import { revealLabel, useSavedNotice } from '../lib/desktop-bridge';
-import { downloadZip } from '../lib/download';
+import { downloadZip, zipName } from '../lib/download';
 import { mdName, uniqueNames } from '../lib/names';
 import { S } from '../strings';
 
 interface FooterProps {
   files: FileEntry[];
   onClear?: () => void;
-  onExported?: (localIds: string[]) => void;
+  onExported?: (localIds: string[], filename: string) => void;
 }
 
 export function Footer({ files, onClear, onExported }: FooterProps) {
@@ -20,13 +20,18 @@ export function Footer({ files, onClear, onExported }: FooterProps) {
   const active = confirming || saved !== null;
 
   useEffect(() => {
+    if (files.length === 0) setConfirming(false);
+  }, [files.length]);
+
+  useEffect(() => {
     if (confirming) cancelRef.current?.focus();
   }, [confirming]);
 
   useEffect(() => {
     if (!active) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.target instanceof Element && event.target.closest('dialog')) return;
       if (confirming) {
         setConfirming(false);
         requestAnimationFrame(() => clearRef.current?.focus());
@@ -48,8 +53,12 @@ export function Footer({ files, onClear, onExported }: FooterProps) {
 
   const downloadAll = () => {
     const names = uniqueNames(done.map((file) => mdName(file.name)));
-    void downloadZip(done.map((file, index) => ({ name: names[index], text: file.out ?? '' })));
-    onExported?.(done.map((file) => file.localId));
+    const ids = done.map((file) => file.localId);
+    const archive = zipName();
+    downloadZip(done.map((file, index) => ({ name: names[index], text: file.out ?? '' }))).then(
+      () => onExported?.(ids, archive),
+      () => undefined,
+    );
   };
 
   const requestClear = () => {

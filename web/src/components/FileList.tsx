@@ -8,7 +8,7 @@ interface FileListProps {
   files: FileEntry[];
   detailed?: boolean;
   onRemove?: (localId: string) => void;
-  onExported?: (localId: string) => void;
+  onExported?: (localId: string, filename?: string) => void;
 }
 
 export function FileList({ files, detailed = false, onRemove, onExported }: FileListProps) {
@@ -48,7 +48,7 @@ export function FileList({ files, detailed = false, onRemove, onExported }: File
             focusIndex.current = index;
             onRemove?.(file.localId);
           }}
-          onExported={() => onExported?.(file.localId)}
+          onExported={(filename) => onExported?.(file.localId, filename)}
         />
       ))}
     </ul>
