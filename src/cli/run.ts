@@ -1,12 +1,17 @@
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { accessSync, constants, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
 import { handleClaudePreToolUse } from '../hooks/claude';
 import { convertCached } from '../hooks/cache';
+import { hookCommand } from '../hooks/command';
+import { lineDiff } from '../hooks/diff';
+import { planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
+import { opencodePluginPath, planOpencodeInstall } from '../hooks/install-opencode';
 import { isHookConvertible } from '../hooks/supported';
 import { openDistiller as defaultOpenDistiller } from '../node/distill';
 import type { Distiller } from '../node/distill';
@@ -34,6 +39,11 @@ export interface CliDeps {
   env?: Record<string, string | undefined>;
   readStdin?: () => Promise<string>;
   cacheDir?: string;
+  homeDir?: string;
+  cwd?: string;
+  which?: (bin: string) => string | null;
+  isTTY?: boolean;
+  prompt?: (question: string) => Promise<string>;
 }
 
 const BYTES_PER_MB = 1024 * 1024;
@@ -42,6 +52,53 @@ async function defaultReadStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString('utf8');
+}
+
+function defaultWhich(bin: string, pathEnv: string | undefined = process.env.PATH): string | null {
+  const suffixes = process.platform === 'win32' ? ['', '.cmd', '.exe', '.bat'] : [''];
+  for (const dir of (pathEnv ?? '').split(delimiter)) {
+    if (dir === '') continue;
+    for (const suffix of suffixes) {
+      const candidate = join(dir, `${bin}${suffix}`);
+      try {
+        accessSync(candidate, constants.X_OK);
+        return candidate;
+      } catch {}
+    }
+  }
+  return null;
+}
+
+async function defaultPrompt(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return await rl.question(question);
+  } finally {
+    rl.close();
+  }
+}
+
+function readIfExists(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function writeAtomic(path: string, content: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, content);
+  renameSync(tmp, path);
+}
+
+interface HooksOptions {
+  claude?: boolean;
+  opencode?: boolean;
+  project?: boolean;
+  yes?: boolean;
 }
 
 export function readVersion(): string {
@@ -132,6 +189,11 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const env = deps.env ?? process.env;
   const readStdin = deps.readStdin ?? defaultReadStdin;
   const cacheDir = deps.cacheDir ?? join(homedir(), '.cache', 'distillmd');
+  const homeDir = deps.homeDir ?? homedir();
+  const cwd = deps.cwd ?? process.cwd();
+  const which = deps.which ?? ((bin: string) => defaultWhich(bin, env.PATH));
+  const isTTY = deps.isTTY ?? Boolean(process.stdin.isTTY);
+  const prompt = deps.prompt ?? defaultPrompt;
 
   const program = new Command();
   program
@@ -370,6 +432,98 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       }
       closeQuietly(distiller);
     });
+
+  const hooks = program.command('hooks').description('Install or remove the agent hooks');
+
+  type Target = 'claude' | 'opencode';
+
+  const applyChange = async (path: string, before: string | null, next: string | null, options: HooksOptions): Promise<boolean> => {
+    stdout(`File: ${path}`);
+    for (const line of lineDiff(before ?? '', next ?? '')) stdout(line);
+    if (options.yes !== true) {
+      if (!isTTY) {
+        stderr('Refusing to write without confirmation. Re-run with --yes.');
+        exit(1);
+        return false;
+      }
+      const answer = (await prompt('Apply? [y/N] ')).trim().toLowerCase();
+      if (answer !== 'y' && answer !== 'yes') {
+        stdout('Aborted.');
+        return true;
+      }
+    }
+    if (next === null) rmSync(path, { force: true });
+    else writeAtomic(path, next);
+    stdout(next === null ? `Removed ${path}` : `Wrote ${path}`);
+    return true;
+  };
+
+  const processTarget = async (target: Target, action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
+    const location = { home: homeDir, cwd, project: options.project === true };
+    const path = target === 'claude' ? join(location.project ? cwd : homeDir, '.claude', 'settings.json') : opencodePluginPath(location);
+    const current = readIfExists(path);
+
+    if (action === 'uninstall' && current === null) {
+      stdout('Nothing to remove.');
+      return true;
+    }
+
+    if (target === 'opencode') {
+      if (action === 'install') {
+        const plan = planOpencodeInstall(current, command);
+        if (!plan.changed) {
+          stdout(`Already installed: ${path}`);
+          return true;
+        }
+        return applyChange(path, current, plan.next, options);
+      }
+      return applyChange(path, current, null, options);
+    }
+
+    let plan: { next: string; changed: boolean };
+    try {
+      plan = action === 'install' ? planClaudeInstall(current, command) : planClaudeUninstall(current as string);
+    } catch (error) {
+      stderr(`Could not parse ${path}: ${error instanceof Error ? error.message : String(error)}. Nothing was changed.`);
+      exit(1);
+      return false;
+    }
+    if (!plan.changed) {
+      stdout(action === 'install' ? `Already installed: ${path}` : 'Nothing to remove.');
+      return true;
+    }
+    return applyChange(path, current, plan.next, options);
+  };
+
+  const runHooksAction = async (action: 'install' | 'uninstall', options: HooksOptions): Promise<void> => {
+    const targets: Target[] = [];
+    if (options.claude) targets.push('claude');
+    if (options.opencode) targets.push('opencode');
+    if (targets.length === 0) {
+      stderr('Choose a target: --claude or --opencode.');
+      exit(1);
+      return;
+    }
+    const command = hookCommand({ which, version: readVersion() });
+    if (action === 'install') {
+      stdout(`Hook command: ${command}`);
+      if (command !== 'distillmd') stdout('Tip: npm i -g distillmd makes the hook start faster.');
+    }
+    for (const target of targets) {
+      if (!(await processTarget(target, action, options, command))) return;
+    }
+  };
+
+  for (const action of ['install', 'uninstall'] as const) {
+    hooks
+      .command(action)
+      .description(action === 'install' ? 'Install the hook for an agent' : 'Remove the hook for an agent')
+      .option('--claude', 'Claude Code (PreToolUse hook in settings.json)')
+      .option('--opencode', 'OpenCode (plugin file)')
+      .option('--project', 'use the current project instead of your home directory')
+      .option('--yes', 'apply without asking')
+      .action((options: HooksOptions) => runHooksAction(action, options));
+  }
 
   try {
     await program.parseAsync(argv, { from: 'user' });
