@@ -20,7 +20,7 @@ npm run test:e2e
 npm run test:smoke
 ```
 
-`npm run dev:web` runs the web UI with Vite next to a server on `:4321`.
+For UI work, run `npm run build && node dist/cli.js --no-open` in one terminal and `npm run dev:web` (Vite, proxying `/api` to `:4321`) in another.
 
 ## Conventions
 

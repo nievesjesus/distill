@@ -89,7 +89,23 @@ Any other client:
 
 `distill_file({ path, boosters?, lingua? })` returns the Markdown plus `{ tokens: { raw, out }, pages, kind }`. `distill_files` takes up to 20 paths and reports a per-file error instead of failing the whole call.
 
-For remote clients, `distillmd mcp --http` serves Streamable HTTP at `http://127.0.0.1:4322/mcp`. Over HTTP the server only reads files inside the directories you pass with `--root` (repeatable, default: the current directory), compares real paths so symlinks cannot escape, and applies the same host and origin checks as the web app. It has no authentication, so keep it on loopback or behind a tunnel you control.
+For clients that speak HTTP, `distillmd mcp --http` serves Streamable HTTP at `http://127.0.0.1:4322/mcp`. Over HTTP the server only reads files inside the directories you pass with `--root` (repeatable, default: the current directory) and compares real paths, so symlinks cannot escape. It rejects cross-site requests and answers only to loopback names, IP addresses and the hostnames you list with `--allowed-hosts`, which blocks DNS rebinding.
+
+<details>
+<summary>Remote clients such as ChatGPT connectors</summary>
+
+The HTTP server has **no authentication**: anyone who can reach it can read every file under `--root`. Never publish it directly to the internet. To use it from a remote client:
+
+1. Point `--root` at a folder that holds only the documents you want to share.
+2. Put an HTTPS tunnel **with authentication** in front of it (for example Cloudflare Tunnel with Cloudflare Access, or Tailscale Funnel restricted to your tailnet).
+3. Allow the tunnel's hostname, or every request gets 403:
+
+```bash
+distillmd mcp --http --root ~/shared-docs --allowed-hosts distill.example.com
+```
+
+4. Add `https://distill.example.com/mcp` as the connector URL in your client.
+</details>
 
 ### Hooks: make your agent read Markdown instead of the binary
 
@@ -99,12 +115,19 @@ distillmd hooks install --claude     # Claude Code
 distillmd hooks install --opencode   # OpenCode
 ```
 
-- **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or `.claude/settings.json` with `--project`). When Claude reads a PDF or Office file, the hook converts it once, caches it by content hash in `~/.cache/distillmd/out/` and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distillmd/out/**)` so those reads do not prompt.
-- **OpenCode:** writes a plugin to `~/.config/opencode/plugins/distill.js` (or `.opencode/plugins/` with `--project`) that does the same on `tool.execute.before` for `read`.
+- **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or your personal `.claude/settings.local.json` with `--project`). When Claude reads a PDF or Office file inside the project it is working in, the hook converts it once, caches it by content hash in `~/.cache/distillmd/out/` (private to your user) and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distillmd/out/**)` so those reads do not prompt.
+- **OpenCode** (experimental): writes a plugin to `~/.config/opencode/plugins/distill.js` (or `.opencode/plugins/` with `--project`) that does the same on `tool.execute.before` for `read`. OpenCode's plugin API is changing; if the plugin does not apply, OpenCode simply reads the original file.
 
-The installer shows the exact change and asks before writing (`--yes` skips the question). It keeps your other settings, follows symlinked dotfiles, keeps the file mode, and masks existing values in the diff it prints. `distillmd hooks uninstall --claude|--opencode` removes only what it added.
+The installer shows the exact change and asks before writing (`--yes` skips the question). It keeps your other settings, follows symlinked dotfiles, keeps the file mode, and masks existing values in the diff it prints. `distillmd hooks uninstall --claude|--opencode` removes only what it added. Install it globally first: a command written from a temporary `npx` run would disappear.
 
-The hooks never block a read. Images and CSV files are left alone, and if anything fails (a missing file, a timeout, a password-protected PDF) the agent reads the original file as usual. Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session.
+The hooks respect your permissions and never block a read:
+
+- Files outside the project the agent works in are not converted, so Claude Code asks you about them as usual.
+- If you have any `deny` rule for `Read`, the Claude Code hook stays out of the way entirely.
+- Images and CSV files are left alone.
+- If anything fails (a missing file, a timeout, a password-protected PDF, a scan with no text), the agent reads the original file.
+
+Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session.
 
 ### CLI
 
@@ -207,7 +230,7 @@ The app and the CLI count with `o200k_base` (via `gpt-tokenizer`). Claude and Ge
 
 **Why not just give the PDF to the model?** You can, and for charts and layout-heavy pages you sometimes should. For text, the same content as Markdown costs a fraction of the tokens: about a third on our demo files.
 
-**Will the hook break my agent?** No. It only touches PDF and Office reads, never blocks a read, and falls back to the original file on any error.
+**Will the hook break my agent?** No. It only touches PDF and Office reads inside your project, never blocks a read, respects your permission rules, and falls back to the original file on any error.
 
 **Is LLMLingua-2 safe to use on contracts?** It is lossy by design: it removes words. Keep it off when every word matters.
 
