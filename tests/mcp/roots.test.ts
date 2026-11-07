@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -84,5 +84,30 @@ describe('rootResolver existence oracle and missing roots', () => {
 
   it('resolveRoots rejects a missing root', async () => {
     await expect(resolveRoots([join(base, 'missing-root')], root)).rejects.toMatchObject({ code: 'not_found' });
+  });
+});
+
+describe('rootResolver unexpected filesystem errors', () => {
+  const canTest = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+  it.skipIf(!canTest)('answers forbidden when an outside directory is unreadable', async () => {
+    const locked = join(outside, 'locked');
+    mkdirSync(locked);
+    writeFileSync(join(locked, 'x.pdf'), 'x');
+    chmodSync(locked, 0o000);
+    try {
+      const resolve = rootResolver([root], root);
+      const error = await resolve(join(locked, 'x.pdf')).catch((e) => e);
+      expect(error).toMatchObject({ code: 'forbidden', message: 'Path is outside the allowed roots' });
+    } finally {
+      chmodSync(locked, 0o700);
+    }
+  });
+
+  it('answers forbidden for a symlink loop outside the roots', async () => {
+    symlinkSync(join(outside, 'loop-b'), join(outside, 'loop-a'));
+    symlinkSync(join(outside, 'loop-a'), join(outside, 'loop-b'));
+    const resolve = rootResolver([root], root);
+    await expect(resolve(join(outside, 'loop-a'))).rejects.toMatchObject({ code: 'forbidden' });
   });
 });

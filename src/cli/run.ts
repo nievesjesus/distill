@@ -436,7 +436,10 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   const processTarget = async (target: Target, action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
     const location = { home: homeDir, cwd, project: options.project === true };
-    const path = target === 'claude' ? join(location.project ? cwd : homeDir, '.claude', 'settings.json') : opencodePluginPath(location);
+    const path =
+      target === 'claude'
+        ? join(location.project ? cwd : homeDir, '.claude', location.project ? 'settings.local.json' : 'settings.json')
+        : opencodePluginPath(location);
     let label = path;
     let isLink = false;
     try {
@@ -522,7 +525,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     if (options.opencode) targets.push('opencode');
     if (targets.length === 0) {
       stderr('Choose a target: --claude or --opencode.');
-      exit(1);
+      exit(2);
       return;
     }
     const command = hookCommand({ which, version: readVersion(), npmCommand: env.npm_command });
@@ -539,7 +542,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     hooks
       .command(action)
       .description(action === 'install' ? 'Install the hook for an agent' : 'Remove the hook for an agent')
-      .option('--claude', 'Claude Code (PreToolUse hook in settings.json)')
+      .option('--claude', 'Claude Code (PreToolUse hook in settings.json, or settings.local.json with --project)')
       .option('--opencode', 'OpenCode (plugin file)')
       .option('--project', 'use the current project instead of your home directory')
       .option('--yes', 'apply without asking')

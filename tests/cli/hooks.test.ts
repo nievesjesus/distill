@@ -62,8 +62,20 @@ describe('hooks install --claude', () => {
   it('writes to the cwd with --project', async () => {
     const s = setup();
     await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
-    expect(existsSync(join(s.cwd, '.claude', 'settings.json'))).toBe(true);
+    expect(existsSync(join(s.cwd, '.claude', 'settings.local.json'))).toBe(true);
+    expect(existsSync(join(s.cwd, '.claude', 'settings.json'))).toBe(false);
     expect(existsSync(join(s.home, '.claude', 'settings.json'))).toBe(false);
+  });
+
+  it('removes the project hook from settings.local.json with uninstall --project', async () => {
+    const s = setup();
+    await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
+    const shared = join(s.cwd, '.claude', 'settings.json');
+    writeFileSync(shared, '{"model":"x"}\n');
+    await run(['hooks', 'uninstall', '--claude', '--project', '--yes'], s.deps);
+    const local = join(s.cwd, '.claude', 'settings.local.json');
+    expect(JSON.parse(readFileSync(local, 'utf8')).hooks).toBeUndefined();
+    expect(readFileSync(shared, 'utf8')).toBe('{"model":"x"}\n');
   });
 
   it('falls back to npx with a tip', async () => {
@@ -97,10 +109,12 @@ describe('hooks install --claude', () => {
     expect(again.stdout.join('\n')).toContain('Already installed');
   });
 
-  it('requires a target', async () => {
+  it.each(['install', 'uninstall'])('exits 2 as a usage error when %s has no target', async (action) => {
     const s = setup();
-    await run(['hooks', 'install', '--yes'], s.deps);
-    expect(s.exit).toHaveBeenCalledWith(1);
+    await run(['hooks', action, '--yes'], s.deps);
+    expect(s.exit).toHaveBeenCalledWith(2);
+    expect(s.exit).not.toHaveBeenCalledWith(1);
+    expect(s.stderr).toEqual(['Choose a target: --claude or --opencode.']);
   });
 });
 
@@ -252,7 +266,7 @@ describe('hooks install symlink and masking safety', () => {
     const outside = join(s.home, 'outside.json');
     writeFileSync(outside, '{}\n');
     mkdirSync(join(s.cwd, '.claude'), { recursive: true });
-    symlinkSync(outside, join(s.cwd, '.claude', 'settings.json'));
+    symlinkSync(outside, join(s.cwd, '.claude', 'settings.local.json'));
     await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
     expect(s.exit).toHaveBeenCalledWith(1);
     expect(s.stderr).toHaveLength(1);
@@ -265,7 +279,7 @@ describe('hooks install symlink and masking safety', () => {
     const inside = join(s.cwd, 'shared.json');
     writeFileSync(inside, '{}\n');
     mkdirSync(join(s.cwd, '.claude'), { recursive: true });
-    const link = join(s.cwd, '.claude', 'settings.json');
+    const link = join(s.cwd, '.claude', 'settings.local.json');
     symlinkSync(inside, link);
     await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
     expect(s.exit).not.toHaveBeenCalled();
@@ -306,7 +320,7 @@ describe('hooks install symlink and masking safety', () => {
 
 describe('hooks install real-target and masking', () => {
   it.each([
-    ['claude', '.claude', 'settings.json'],
+    ['claude', '.claude', 'settings.local.json'],
     ['opencode', '.opencode', join('plugins', 'distill.js')],
   ])('refuses a project %s directory symlinked outside', async (target, dir, rest) => {
     const s = setup();
@@ -328,7 +342,7 @@ describe('hooks install real-target and masking', () => {
     await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
     expect(s.exit).not.toHaveBeenCalled();
     expect(s.stdout.some((line) => line.startsWith('File: ') && line.includes(' -> '))).toBe(true);
-    expect(existsSync(join(inside, 'settings.json'))).toBe(true);
+    expect(existsSync(join(inside, 'settings.local.json'))).toBe(true);
   });
 
   it('does not print a value that only gains a trailing comma', async () => {

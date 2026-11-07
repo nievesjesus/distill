@@ -30,11 +30,11 @@ export function rootResolver(roots: string[], cwd: string): (p: string) => Promi
     try {
       real = await realpath(absolute);
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
       if (!allowed.some((root) => isInside(absolute, root))) {
         throw new DistillError('forbidden', 'Path is outside the allowed roots');
       }
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
       throw new DistillError('not_found', `File not found: ${absolute}`);
     }
     if (!allowed.some((root) => isInside(real, root))) {
