@@ -46,14 +46,14 @@ export const CONNECT_CLIENTS: readonly ConnectClient[] = [
     id: 'claude-code-hook',
     name: 'Claude Code hook',
     copy: 'Make Claude Code read the distilled Markdown instead of the PDF or Office file. Install distill globally first.',
-    snippet: 'npm i -g distill-llm && distillmd hooks install --claude',
+    snippet: 'npm i -g distill-llm && distill-llm hooks install --claude',
     group: 'hooks',
   },
   {
     id: 'opencode-plugin',
     name: 'OpenCode plugin',
     copy: 'Make OpenCode read the distilled Markdown instead of the PDF or Office file (experimental). Install distill globally first.',
-    snippet: 'npm i -g distill-llm && distillmd hooks install --opencode',
+    snippet: 'npm i -g distill-llm && distill-llm hooks install --opencode',
     group: 'hooks',
   },
 ];

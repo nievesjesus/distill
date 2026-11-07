@@ -46,7 +46,7 @@ afterAll(() => {
   rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
-describe('distillmd convert', () => {
+describe('distill-llm convert', () => {
   it('converts a pdf and reports tokens as json', () => {
     const result = runCli(['convert', pdf, '--json']);
     expect(result.status).toBe(0);
@@ -62,7 +62,7 @@ describe('distillmd convert', () => {
   });
 });
 
-describe('distillmd hook claude', () => {
+describe('distill-llm hook claude', () => {
   it('rewrites a pdf read to a cached markdown file and hits the cache on rerun', () => {
     for (let i = 0; i < 2; i++) {
       const result = runCli(['hook', 'claude'], readPreToolUse(pdf));
@@ -85,7 +85,7 @@ describe('distillmd hook claude', () => {
   });
 });
 
-describe('distillmd mcp', () => {
+describe('distill-llm mcp', () => {
   it('serves tools over stdio with a clean stdout', async () => {
     const transport = new StdioClientTransport({ command: process.execPath, args: [CLI, 'mcp'], env, stderr: 'pipe' });
     let stderr = '';
@@ -147,7 +147,7 @@ describe('distillmd mcp', () => {
   });
 });
 
-describe('distillmd hooks install', () => {
+describe('distill-llm hooks install', () => {
   it('installs and uninstalls the claude hook in a temp home', () => {
     const settingsPath = join(home, '.claude', 'settings.json');
     const install = runCli(['hooks', 'install', '--claude', '--yes']);
@@ -155,13 +155,13 @@ describe('distillmd hooks install', () => {
     const installed = readFileSync(settingsPath, 'utf8');
     expect(installed).toContain('PreToolUse');
     expect(installed).toContain('hook claude');
-    expect(installed).toContain('.cache/distillmd/out');
+    expect(installed).toContain('.cache/distill-llm/out');
     expect(JSON.parse(installed).permissions.allow.length).toBeGreaterThan(0);
 
     const uninstall = runCli(['hooks', 'uninstall', '--claude', '--yes']);
     expect(uninstall.status).toBe(0);
     const after = readFileSync(settingsPath, 'utf8');
     expect(after).not.toContain('hook claude');
-    expect(after).not.toContain('distillmd');
+    expect(after).not.toContain('distill-llm');
   });
 });

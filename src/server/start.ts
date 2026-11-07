@@ -27,7 +27,7 @@ export async function startServer(opts: {
   allowedHosts?: readonly string[];
 }): Promise<{ url: string; close(): Promise<void> }> {
   const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url)));
-  if (packageRoot === undefined) throw new Error('distillmd package.json not found');
+  if (packageRoot === undefined) throw new Error('distill-llm package.json not found');
   const require = createRequire(import.meta.url);
   const version = readVersion(join(packageRoot, 'package.json'));
   const liteparseVersion = readVersion(require.resolve('@llamaindex/liteparse/package.json'));
@@ -36,7 +36,7 @@ export async function startServer(opts: {
   const libreoffice = await exposeLibreOffice();
   const parser = createParser();
   try {
-    const cacheDir = join(homedir(), '.cache', 'distillmd');
+    const cacheDir = join(homedir(), '.cache', 'distill-llm');
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
     const lingua = createLingua({ cacheDir, installer });
     await lingua.probe();

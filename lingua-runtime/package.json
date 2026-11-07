@@ -1,5 +1,5 @@
 {
-  "name": "distillmd-lingua-runtime",
+  "name": "distill-llm-lingua-runtime",
   "version": "1.0.0",
   "private": true,
   "description": "LLMLingua-2 stack that distill installs on demand",

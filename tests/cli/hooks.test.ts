@@ -15,7 +15,7 @@ function setup(options: { isGitIgnored?: (cwd: string, file: string) => boolean 
   const deps = {
     homeDir: home,
     cwd,
-    which: () => (options.which === undefined ? '/usr/bin/distillmd' : options.which),
+    which: () => (options.which === undefined ? '/usr/bin/distill-llm' : options.which),
     isTTY: options.isTTY ?? false,
     prompt,
     exit: exit as unknown as (code: number) => never,
@@ -42,7 +42,7 @@ describe('hooks install --claude', () => {
     await run(['hooks', 'install', '--claude', '--yes'], s.deps);
     expect(s.exit).not.toHaveBeenCalled();
     const text = readFileSync(join(s.home, '.claude', 'settings.json'), 'utf8');
-    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toBe('distillmd hook claude');
+    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toBe('distill-llm hook claude');
     expect(s.stdout.some((line) => line.startsWith('+'))).toBe(true);
     expect(s.stdout.join('\n')).toContain(join(s.home, '.claude', 'settings.json'));
   });
@@ -256,7 +256,7 @@ describe('hooks install robustness', () => {
     again.deps.homeDir = s.home;
     await run(['hooks', 'install', '--claude', '--yes'], again.deps);
     const text = readFileSync(join(s.home, '.claude', 'settings.json'), 'utf8');
-    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toBe('distillmd hook claude');
+    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toBe('distill-llm hook claude');
   });
 
   it('reports read errors on one line', async () => {
@@ -377,6 +377,6 @@ describe('hooks install real-target and masking', () => {
     await run(['hooks', 'install', '--claude', '--yes'], s.deps);
     const out = s.stdout.join('\n');
     expect(out).not.toContain('hunter2');
-    expect(out).toContain('distillmd hook claude');
+    expect(out).toContain('distill-llm hook claude');
   });
 });

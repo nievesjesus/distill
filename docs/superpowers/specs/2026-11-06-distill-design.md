@@ -26,19 +26,19 @@ Tiene tres caras sobre el mismo núcleo:
 | Fase | Entrega | Publicable |
 |------|---------|------------|
 | 1 | Núcleo (parse + boosters + tokens), web y app de escritorio | Sí: `npx distill-llm`, imagen Docker, instaladores Electron *lite* y *full* |
-| 2 | `distillmd mcp` (stdio y HTTP) y `distillmd convert` (CLI) | Sí |
-| 3 | `distillmd hooks install --claude \| --opencode` | Sí |
+| 2 | `distill-llm mcp` (stdio y HTTP) y `distill-llm convert` (CLI) | Sí |
+| 3 | `distill-llm hooks install --claude \| --opencode` | Sí |
 
 Esta spec detalla la fase 1 y fija las interfaces de las fases 2 y 3. Cada fase tendrá su propio plan de implementación.
 
-**Estado (2026-11-07):** las fases 2 y 3 están implementadas (`distillmd convert`, `distillmd mcp`, `distillmd hook claude|convert`, `distillmd hooks install|uninstall`). Ver las decisiones de implementación al final de la sección 8.
+**Estado (2026-11-07):** las fases 2 y 3 están implementadas (`distill-llm convert`, `distill-llm mcp`, `distill-llm hook claude|convert`, `distill-llm hooks install|uninstall`). Ver las decisiones de implementación al final de la sección 8.
 
 ## 3. Arquitectura
 
 Es un solo paquete npm en TypeScript (Node ≥ 22.12, ESM). Un proceso de Node sirve la API y la SPA ya compilada.
 
 ```
-distillmd/
+distill-llm/
 ├── src/
 │   ├── core/                 sin dependencias de servidor; se usa en Node y en el navegador
 │   │   ├── boosters/         una función pura por booster + pipeline
@@ -50,7 +50,7 @@ distillmd/
 │   │   ├── lingua-install.ts instalación bajo demanda del runtime (npm ci en la caché)
 │   │   └── capabilities.ts   qué está disponible (LibreOffice, modelo descargado)
 │   ├── server/               Hono + @hono/node-server: API y archivos estáticos
-│   ├── cli/                  entrada `distillmd` (commander): web | convert | mcp | hooks
+│   ├── cli/                  entrada `distill-llm` (commander): web | convert | mcp | hooks
 │   ├── mcp/                  (fase 2)
 │   └── hooks/                (fase 3)
 └── web/                      SPA con Vite + React; usa src/core directamente
@@ -102,15 +102,15 @@ Valores por defecto: 1 a 4 activos, `lingua` apagado. El switch maestro "Optimiz
 
 - Usa `@atjsh/llmlingua-2` (MIT) con los peers `@huggingface/transformers` y `js-tiktoken`, en `device: 'cpu'` y `dtype: 'fp32'`.
 - El modelo por defecto es TinyBERT (`atjsh/llmlingua-2-js-tinybert-meetingbank`, unos 57 MB). En Detailed se puede elegir MobileBERT (99 MB) o XLM-RoBERTa (2.2 GB).
-- El modelo se descarga la primera vez que se activa, a la caché de transformers.js en `~/.cache/distillmd/models`. La UI muestra el progreso de la descarga. Después corre sin red.
+- El modelo se descarga la primera vez que se activa, a la caché de transformers.js en `~/.cache/distill-llm/models`. La UI muestra el progreso de la descarga. Después corre sin red.
 - `rate` (fracción de tokens que se conserva) vale 0.6 por defecto, se ajusta en Detailed entre 0.3 y 0.9 y se aplica por fragmentos de unos 512 tokens.
 - **Instalación bajo demanda (decisión del usuario, 2026-11-06).** `@atjsh/llmlingua-2`, `@huggingface/transformers` y `js-tiktoken` ya no son dependencias de `distill-llm`: `npx distill-llm` no baja los ~520 MB (en disco) de onnxruntime y compañía ni el postinstall que en Linux x64 trae CUDA desde NuGet. Las tres viven en `lingua-runtime/` (`package.json` con versiones exactas y `package-lock.json` con integridad, ambos dentro del tarball de npm) y se instalan cuando el usuario lo pide.
 - **Raíces de carga**, en este orden; se usa la primera donde las tres resuelven y su ruta real queda dentro de la raíz, sin buscar nunca en directorios ancestros:
   1. el `node_modules` propio de distill (desarrollo);
   2. `process.resourcesPath/lingua/node_modules` (app de escritorio full);
-  3. `~/.cache/distillmd/lingua/node_modules` (instalación bajo demanda).
+  3. `~/.cache/distill-llm/lingua/node_modules` (instalación bajo demanda).
   El `import()` usa la ruta ESM resuelta con el mapa `exports` (condiciones `node`, `import`, `default`), de modo que `@atjsh/llmlingua-2` y la configuración de `env.cacheDir` comparten la misma instancia de transformers.
-- **Instalación.** `POST /api/lingua/install` (con el guard de loopback/Origin) es idempotente y de una sola ejecución a la vez: copia `lingua-runtime/package.json` y `package-lock.json` a un directorio temporal junto a `~/.cache/distillmd/lingua`, corre `npm ci --omit=dev --include=peer --ignore-scripts --no-audit --no-fund` ahí (sin shell, con timeout de 10 min), verifica que los tres paquetes existan y recién entonces cambia el directorio: mueve el `lingua` anterior a `lingua.old-<hex>`, renombra el temporal a `lingua` y borra el anterior (si el segundo renombrado falla, devuelve el anterior; los renombrados se reintentan hasta 5 veces con espera ante `EPERM`/`EBUSY`). Al arrancar una instalación solo se borran los temporales `lingua.installing-*` y `lingua.old-*` con más antigüedad que el timeout, para no pisar otra instalación en curso. Si se vence el timeout, se mata npm y se espera a que cierre antes de limpiar. Un fallo borra el temporal y deja `install_failed` con un código (`npm_missing`, `npm_failed`, `timeout`, `verify_failed`, `filesystem`) y el mensaje de npm recortado y sin rutas del usuario. `--ignore-scripts` omite el postinstall de onnxruntime-node (que solo agrega CUDA en Linux x64; los binarios CPU vienen en el tarball) y sharp usa sus paquetes `@img/sharp-*` precompilados.
+- **Instalación.** `POST /api/lingua/install` (con el guard de loopback/Origin) es idempotente y de una sola ejecución a la vez: copia `lingua-runtime/package.json` y `package-lock.json` a un directorio temporal junto a `~/.cache/distill-llm/lingua`, corre `npm ci --omit=dev --include=peer --ignore-scripts --no-audit --no-fund` ahí (sin shell, con timeout de 10 min), verifica que los tres paquetes existan y recién entonces cambia el directorio: mueve el `lingua` anterior a `lingua.old-<hex>`, renombra el temporal a `lingua` y borra el anterior (si el segundo renombrado falla, devuelve el anterior; los renombrados se reintentan hasta 5 veces con espera ante `EPERM`/`EBUSY`). Al arrancar una instalación solo se borran los temporales `lingua.installing-*` y `lingua.old-*` con más antigüedad que el timeout, para no pisar otra instalación en curso. Si se vence el timeout, se mata npm y se espera a que cierre antes de limpiar. Un fallo borra el temporal y deja `install_failed` con un código (`npm_missing`, `npm_failed`, `timeout`, `verify_failed`, `filesystem`) y el mensaje de npm recortado y sin rutas del usuario. `--ignore-scripts` omite el postinstall de onnxruntime-node (que solo agrega CUDA en Linux x64; los binarios CPU vienen en el tarball) y sharp usa sus paquetes `@img/sharp-*` precompilados.
 - **`installable`.** Es `true` cuando se encuentra `npm` (el `npm-cli.js` de `npm_execpath`, el que trae Node junto al ejecutable, o `npm` en el PATH fuera de Windows) y responde a `--version`; es siempre `false` dentro de Electron. Por eso en la app lite la fila dice "Available in distill full" con un link al release, y en npx, la CLI y Docker dice "Install (~520 MB)".
 - La app de escritorio *full* empaqueta el mismo `lingua-runtime` (`npm ci --omit=dev --include=peer --ignore-scripts` en `build/lingua`) en `Resources/lingua/` con un hook `afterPack` (electron-builder quita `node_modules` de `extraResources`); en Docker se instala bajo demanda en el volumen de caché.
 
@@ -171,8 +171,8 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 
 ## 7. Fase 2 — MCP y CLI (interfaces)
 
-- `distillmd convert <archivos…> [--out dir] [--no-optimize] [--boosters ws,tables,…] [--lingua] [--json]` escribe `.md` junto al archivo o en `--out` e imprime el resumen de tokens.
-- `distillmd mcp [--http --port]` expone el servidor MCP (`@modelcontextprotocol/sdk`) con:
+- `distill-llm convert <archivos…> [--out dir] [--no-optimize] [--boosters ws,tables,…] [--lingua] [--json]` escribe `.md` junto al archivo o en `--out` e imprime el resumen de tokens.
+- `distill-llm mcp [--http --port]` expone el servidor MCP (`@modelcontextprotocol/sdk`) con:
   - `distill_file({ path, boosters?, lingua? })` → `{ markdown, tokens: { raw, out } }`
   - `distill_files({ paths, … })` → lo mismo, por lote
   - `distill_capabilities()` → igual que `/api/health`
@@ -180,7 +180,7 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 
 ## 8. Fase 3 — Hooks (interfaces)
 
-- **Claude Code:** un hook `PreToolUse` con matcher `Read`. Si `file_path` termina en una extensión soportada, convierte el archivo a `~/.cache/distillmd/out/<hash>.md` y devuelve `updatedInput.file_path` apuntando a ese Markdown. Las conversiones se guardan en caché por hash del contenido. `hooks install --claude` lo agrega a `~/.claude/settings.json` (o al del proyecto con `--project`) después de mostrar el diff y pedir confirmación.
+- **Claude Code:** un hook `PreToolUse` con matcher `Read`. Si `file_path` termina en una extensión soportada, convierte el archivo a `~/.cache/distill-llm/out/<hash>.md` y devuelve `updatedInput.file_path` apuntando a ese Markdown. Las conversiones se guardan en caché por hash del contenido. `hooks install --claude` lo agrega a `~/.claude/settings.json` (o al del proyecto con `--project`) después de mostrar el diff y pedir confirmación.
 - **OpenCode:** un plugin con `tool.execute.before` sobre la tool `read`, con la misma lógica.
 - Codex y otros clientes se integran por MCP. Si tienen hooks, se agregan en una versión posterior.
 - Se verificará la API exacta de cada cliente al planear la fase 3; esta sección fija la intención, no la firma final.
@@ -188,7 +188,7 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 ### Decisiones de implementación (fases 2 y 3) — 2026-11-07
 
 - **MCP HTTP:** transporte stateless (un servidor y un transporte por petición). Confina las lecturas a `--root` (por defecto, el cwd) resolviendo symlinks; una ruta fuera devuelve `forbidden`. Aplica las mismas guardas de host y origen que el servidor web. Stdio solo usa el cwd y no escribe nada en stdout fuera de JSON-RPC.
-- **Hooks de Claude:** nunca bloquean. Salen con código 0, no emiten `permissionDecision` y, ante cualquier fallo, dejan pasar la lectura original. `updatedInput` reemplaza la entrada completa, así que se copian `offset` y `limit`. El instalador agrega también la regla `allow` para `~/.cache/distillmd/out/**`, para que la lectura del Markdown no pida permiso.
+- **Hooks de Claude:** nunca bloquean. Salen con código 0, no emiten `permissionDecision` y, ante cualquier fallo, dejan pasar la lectura original. `updatedInput` reemplaza la entrada completa, así que se copian `offset` y `limit`. El instalador agrega también la regla `allow` para `~/.cache/distill-llm/out/**`, para que la lectura del Markdown no pida permiso.
 - **Formatos:** solo se convierten PDF y Office/ODF. Las imágenes y el CSV se dejan pasar sin tocar, porque convertirlos no ahorra tokens.
 - **Caché:** direccionada por contenido (hash del archivo y de las opciones). Un acierto no vuelve a parsear.
 - **OpenCode:** el plugin reescribe `filePath`, `file_path` o `path` según la tool y rechaza rutas riesgosas en Windows.
@@ -197,8 +197,8 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 
 ## 9. Distribución
 
-- npm: `distill-llm`, con los bins `distill-llm`, `distillmd` y `distill`. `npx distill-llm` equivale a `distillmd web --open`.
-- El paquete npm se renombró a `distill-llm` el 2026-11-07 porque npm bloqueó `distillmd` por ser demasiado parecido a `distill-md`.
+- npm: `distill-llm`, con el único bin `distill-llm`. `npx distill-llm` equivale a `distill-llm web --open`.
+- El paquete y el comando npm se renombraron a `distill-llm` el 2026-11-07 porque npm bloqueó `distillmd` por ser demasiado parecido a `distill-md`.
 - Repositorio: `github.com/nievesjesus/distill`.
 - Docker: `ghcr.io/nievesjesus/distill`, basada en `node:22-bookworm-slim` con LibreOffice (writer, calc, impress) y los datos de tesseract en inglés (`tesseract-ocr-eng`; otros idiomas se piden con `DISTILL_OCR_LANG` y datos propios en `DISTILL_TESSDATA`). Se ejecuta con `docker run -p 4321:4321`, y dentro del contenedor escucha en `0.0.0.0`.
 - Licencia: Apache-2.0, compatible con LiteParse.

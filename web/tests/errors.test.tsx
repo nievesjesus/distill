@@ -48,8 +48,8 @@ describe('Connect panel', () => {
     expect(dialog.textContent).not.toMatch(/coming in|arrive in/i);
     expect(dialog).toHaveTextContent('claude mcp add distill -- npx -y distill-llm mcp');
     expect(dialog).toHaveTextContent('"enabled": true');
-    expect(dialog).toHaveTextContent('npm i -g distill-llm && distillmd hooks install --claude');
-    expect(dialog).toHaveTextContent('npm i -g distill-llm && distillmd hooks install --opencode');
+    expect(dialog).toHaveTextContent('npm i -g distill-llm && distill-llm hooks install --claude');
+    expect(dialog).toHaveTextContent('npm i -g distill-llm && distill-llm hooks install --opencode');
     expect(dialog).toHaveTextContent('npx -y distill-llm mcp --http --root ~/shared-docs --allowed-hosts <your-tunnel-host>');
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });

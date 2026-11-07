@@ -6,7 +6,7 @@ import type { DistillOptions, Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
 
 const MAX_PATHS = 20;
-const SERVER_NAME = 'distillmd';
+const SERVER_NAME = 'distill-llm';
 
 const boostersSchema = z.array(z.enum(BOOSTER_ORDER as [LocalBoosterId, ...LocalBoosterId[]])).optional().describe('Boosters to apply: dedupe, media, tables, ws');
 const linguaSchema = z.boolean().optional().describe('Compress further with LLMLingua-2 when installed');

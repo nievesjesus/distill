@@ -1,4 +1,4 @@
-export const CLAUDE_ALLOW_RULE = 'Read(~/.cache/distillmd/out/**)';
+export const CLAUDE_ALLOW_RULE = 'Read(~/.cache/distill-llm/out/**)';
 const HOOK_TIMEOUT_SECONDS = 120;
 
 export interface Plan {
@@ -24,7 +24,7 @@ function serialize(settings: Json): string {
 }
 
 function isOwnCommand(command: unknown): boolean {
-  return typeof command === 'string' && /distill(md|-llm)/.test(command) && /hook claude\s*$/.test(command);
+  return typeof command === 'string' && command.includes('distill-llm') && /hook claude\s*$/.test(command);
 }
 
 function isOwnHook(hook: unknown): boolean {

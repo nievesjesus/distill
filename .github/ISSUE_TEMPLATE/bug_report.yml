@@ -28,7 +28,7 @@ body:
         - npx / npm (web app)
         - Desktop app
         - Docker
-        - CLI (distillmd convert)
+        - CLI (distill-llm convert)
         - MCP server
         - Claude Code or OpenCode hook
     validations:

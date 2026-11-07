@@ -5,12 +5,12 @@ import { describe, expect, it } from 'vitest';
 import { findOnPath, hookCommand, isEphemeralPath } from '../../src/hooks/command';
 import { planClaudeInstall, planClaudeUninstall } from '../../src/hooks/install-claude';
 
-const RULE = 'Read(~/.cache/distillmd/out/**)';
-const ENTRY = { matcher: 'Read', hooks: [{ type: 'command', command: 'distillmd hook claude', timeout: 120 }] };
+const RULE = 'Read(~/.cache/distill-llm/out/**)';
+const ENTRY = { matcher: 'Read', hooks: [{ type: 'command', command: 'distill-llm hook claude', timeout: 120 }] };
 
 describe('hookCommand', () => {
-  it('uses distillmd when it is on the PATH', () => {
-    expect(hookCommand({ which: () => '/usr/bin/distillmd', version: '1.2.3' })).toBe('distillmd');
+  it('uses distill-llm when it is on the PATH', () => {
+    expect(hookCommand({ which: () => '/usr/bin/distill-llm', version: '1.2.3' })).toBe('distill-llm');
   });
 
   it('falls back to npx pinned to the version', () => {
@@ -18,25 +18,25 @@ describe('hookCommand', () => {
   });
 
   it('always uses npx under npm exec even when a binary is on the PATH', () => {
-    expect(hookCommand({ which: () => '/usr/bin/distillmd', version: '1.2.3', npmCommand: 'exec' })).toBe('npx -y distill-llm@1.2.3');
+    expect(hookCommand({ which: () => '/usr/bin/distill-llm', version: '1.2.3', npmCommand: 'exec' })).toBe('npx -y distill-llm@1.2.3');
   });
 
   it('keeps using the binary for other npm commands', () => {
-    expect(hookCommand({ which: () => '/usr/bin/distillmd', version: '1.2.3', npmCommand: 'run-script' })).toBe('distillmd');
+    expect(hookCommand({ which: () => '/usr/bin/distill-llm', version: '1.2.3', npmCommand: 'run-script' })).toBe('distill-llm');
   });
 });
 
 describe('isEphemeralPath', () => {
   it.each([
-    '/p/node_modules/.bin/distillmd',
-    '/home/u/.npm/_npx/abc123/node_modules/.bin/distillmd',
-    'C:\\Users\\u\\AppData\\npm-cache\\_npx\\abc\\distillmd.cmd',
-    'C:\\p\\node_modules\\.bin\\distillmd.cmd',
+    '/p/node_modules/.bin/distill-llm',
+    '/home/u/.npm/_npx/abc123/node_modules/.bin/distill-llm',
+    'C:\\Users\\u\\AppData\\npm-cache\\_npx\\abc\\distill-llm.cmd',
+    'C:\\p\\node_modules\\.bin\\distill-llm.cmd',
   ])('flags %s', (path) => {
     expect(isEphemeralPath(path)).toBe(true);
   });
 
-  it.each(['/usr/local/bin/distillmd', '/home/u/.nvm/versions/node/v22/bin/distillmd'])('accepts %s', (path) => {
+  it.each(['/usr/local/bin/distill-llm', '/home/u/.nvm/versions/node/v22/bin/distill-llm'])('accepts %s', (path) => {
     expect(isEphemeralPath(path)).toBe(false);
   });
 });
@@ -44,7 +44,7 @@ describe('isEphemeralPath', () => {
 describe('findOnPath', () => {
   const makeBin = (dir: string): void => {
     mkdirSync(dir, { recursive: true });
-    const file = join(dir, 'distillmd');
+    const file = join(dir, 'distill-llm');
     writeFileSync(file, '#!/bin/sh\n');
     chmodSync(file, 0o755);
   };
@@ -58,8 +58,8 @@ describe('findOnPath', () => {
       makeBin(local);
       makeBin(npx);
       makeBin(real);
-      expect(findOnPath('distillmd', [local, npx, real].join(delimiter))).toBe(join(real, 'distillmd'));
-      expect(findOnPath('distillmd', [local, npx].join(delimiter))).toBeNull();
+      expect(findOnPath('distill-llm', [local, npx, real].join(delimiter))).toBe(join(real, 'distill-llm'));
+      expect(findOnPath('distill-llm', [local, npx].join(delimiter))).toBeNull();
     } finally {
       rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
@@ -68,7 +68,7 @@ describe('findOnPath', () => {
 
 describe('planClaudeInstall', () => {
   it('creates the settings from nothing', () => {
-    const plan = planClaudeInstall(null, 'distillmd');
+    const plan = planClaudeInstall(null, 'distill-llm');
     expect(plan.changed).toBe(true);
     expect(plan.next.endsWith('\n')).toBe(true);
     expect(plan.next).toBe(`${JSON.stringify({ hooks: { PreToolUse: [ENTRY] }, permissions: { allow: [RULE] } }, null, 2)}\n`);
@@ -81,7 +81,7 @@ describe('planClaudeInstall', () => {
       hooks: { PreToolUse: [other], Stop: [{ hooks: [{ type: 'command', command: 'x' }] }] },
       permissions: { allow: ['Bash(ls)'], deny: ['Bash(rm)'] },
     });
-    const next = JSON.parse(planClaudeInstall(current, 'distillmd').next);
+    const next = JSON.parse(planClaudeInstall(current, 'distill-llm').next);
     expect(next.model).toBe('opus');
     expect(next.hooks.Stop).toHaveLength(1);
     expect(next.hooks.PreToolUse).toEqual([other, ENTRY]);
@@ -94,23 +94,23 @@ describe('planClaudeInstall', () => {
   });
 
   it('is idempotent', () => {
-    const first = planClaudeInstall(null, 'distillmd');
-    const second = planClaudeInstall(first.next, 'distillmd');
+    const first = planClaudeInstall(null, 'distill-llm');
+    const second = planClaudeInstall(first.next, 'distill-llm');
     expect(second.changed).toBe(false);
     expect(second.next).toBe(first.next);
   });
 
   it('updates an own entry installed with a different command in place', () => {
     const first = planClaudeInstall(null, 'npx -y distill-llm@1.0.0');
-    const plan = planClaudeInstall(first.next, 'distillmd');
+    const plan = planClaudeInstall(first.next, 'distill-llm');
     expect(plan.changed).toBe(true);
     const next = JSON.parse(plan.next);
     expect(next.hooks.PreToolUse).toHaveLength(1);
-    expect(next.hooks.PreToolUse[0].hooks[0].command).toBe('distillmd hook claude');
-    expect(planClaudeInstall(plan.next, 'distillmd').changed).toBe(false);
+    expect(next.hooks.PreToolUse[0].hooks[0].command).toBe('distill-llm hook claude');
+    expect(planClaudeInstall(plan.next, 'distill-llm').changed).toBe(false);
   });
 
-  it.each(['distill-llm', 'npx -y distill-llm@1.0.0', 'npx -y distillmd@1.0.0'])('replaces an own entry installed as %s', (old) => {
+  it.each(['distill-llm', 'npx -y distill-llm@1.0.0'])('replaces an own entry installed as %s', (old) => {
     const first = planClaudeInstall(null, old);
     const plan = planClaudeInstall(first.next, 'distill-llm');
     const next = JSON.parse(plan.next);
@@ -120,7 +120,7 @@ describe('planClaudeInstall', () => {
 
   it('adds only the permission when the hook already exists', () => {
     const current = JSON.stringify({ hooks: { PreToolUse: [ENTRY] } });
-    const plan = planClaudeInstall(current, 'distillmd');
+    const plan = planClaudeInstall(current, 'distill-llm');
     expect(plan.changed).toBe(true);
     const next = JSON.parse(plan.next);
     expect(next.hooks.PreToolUse).toHaveLength(1);
@@ -128,17 +128,17 @@ describe('planClaudeInstall', () => {
   });
 
   it('throws on invalid JSON', () => {
-    expect(() => planClaudeInstall('{ nope', 'distillmd')).toThrow();
+    expect(() => planClaudeInstall('{ nope', 'distill-llm')).toThrow();
   });
 
   it('throws when the root is not an object', () => {
-    expect(() => planClaudeInstall('[]', 'distillmd')).toThrow();
+    expect(() => planClaudeInstall('[]', 'distill-llm')).toThrow();
   });
 });
 
 describe('planClaudeUninstall', () => {
   it('removes everything it added and prunes empty containers', () => {
-    const installed = planClaudeInstall(null, 'distillmd').next;
+    const installed = planClaudeInstall(null, 'distill-llm').next;
     const plan = planClaudeUninstall(installed);
     expect(plan.changed).toBe(true);
     expect(JSON.parse(plan.next)).toEqual({});

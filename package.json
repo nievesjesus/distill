@@ -29,8 +29,6 @@
     "node": ">=22.12"
   },
   "bin": {
-    "distillmd": "dist/cli.js",
-    "distill": "dist/cli.js",
     "distill-llm": "dist/cli.js"
   },
   "files": [

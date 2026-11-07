@@ -12,9 +12,9 @@ You should get an answer within a week.
 
 In scope, for example:
 
-- Reading files outside the `--root` directories of `distillmd mcp --http`.
+- Reading files outside the `--root` directories of `distill-llm mcp --http`.
 - Bypassing the host, origin or cross-site checks of the web server or the MCP HTTP server.
 - A hook or plugin that blocks reads, runs unintended commands or writes outside its cache.
-- `distillmd hooks install` writing outside the intended settings file or leaking existing settings.
+- `distill-llm hooks install` writing outside the intended settings file or leaking existing settings.
 
 Out of scope: exposing a server with `--host 0.0.0.0` on an untrusted network (documented as unauthenticated), and parsing bugs inside LiteParse (please report those [upstream](https://github.com/run-llama/liteparse)).

@@ -212,7 +212,7 @@
       </div>
 
       <div role="tabpanel" id="p-mcp" aria-labelledby="t-mcp" tabindex="0" hidden>
-        <p>An MCP server any agent can call. Tools: <code>distill_file</code>, <code>distill_files</code>, <code>distill_capabilities</code>. Use <code>distillmd mcp --http</code> for remote clients.</p>
+        <p>An MCP server any agent can call. Tools: <code>distill_file</code>, <code>distill_files</code>, <code>distill_capabilities</code>. Use <code>distill-llm mcp --http</code> for remote clients.</p>
         <div class="code"><pre><code>claude mcp add distill -- npx -y distill-llm mcp</code></pre><button class="copy" type="button" data-copy="claude mcp add distill -- npx -y distill-llm mcp" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
         <p class="mt">Or add it to any client's config:</p>
         <div class="code"><pre><code>{"mcpServers":{"distill":{"command":"npx","args":["-y","distill-llm","mcp"]}}}</code></pre><button class="copy" type="button" data-copy='{"mcpServers":{"distill":{"command":"npx","args":["-y","distill-llm","mcp"]}}}' aria-label="Copy config"><span class="copy-t">Copy</span></button></div>
@@ -221,13 +221,13 @@
       <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" tabindex="0" hidden>
         <p>A Claude Code <code>PreToolUse</code> hook on <code>Read</code> makes the agent read the distilled Markdown instead of the binary. Only PDF and Office files are converted, images are left alone, and a failure never blocks the read.</p>
         <div class="code"><pre><code>npm i -g distill-llm
-distillmd hooks install --claude</code></pre><button class="copy" type="button" data-copy="npm i -g distill-llm&#10;distillmd hooks install --claude" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
+distill-llm hooks install --claude</code></pre><button class="copy" type="button" data-copy="npm i -g distill-llm&#10;distill-llm hooks install --claude" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
       </div>
 
       <div role="tabpanel" id="p-opencode" aria-labelledby="t-opencode" tabindex="0" hidden>
         <p>The same idea as an OpenCode plugin. Only PDF and Office files are converted, images are left alone, and a failure never blocks the read.</p>
         <div class="code"><pre><code>npm i -g distill-llm
-distillmd hooks install --opencode</code></pre><button class="copy" type="button" data-copy="npm i -g distill-llm&#10;distillmd hooks install --opencode" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
+distill-llm hooks install --opencode</code></pre><button class="copy" type="button" data-copy="npm i -g distill-llm&#10;distill-llm hooks install --opencode" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
       </div>
     </div>
   </div>
