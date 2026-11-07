@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { rootResolver } from '../../src/mcp/roots';
+import { resolveRoots, rootResolver } from '../../src/mcp/roots';
 
 let base: string;
 let root: string;
@@ -63,5 +63,26 @@ describe('rootResolver', () => {
   it('reports a missing file as not_found', async () => {
     const resolve = rootResolver([root], root);
     await expect(resolve('missing.pdf')).rejects.toMatchObject({ code: 'not_found' });
+  });
+});
+
+describe('rootResolver existence oracle and missing roots', () => {
+  it('answers forbidden for a missing file outside the roots', async () => {
+    const resolve = rootResolver([root], root);
+    await expect(resolve(join(outside, 'nope.pdf'))).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  it('answers not_found for a missing file inside the roots', async () => {
+    const resolve = rootResolver([root], root);
+    await expect(resolve(join(root, 'nope.pdf'))).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('does not leave an unhandled rejection for a missing root', async () => {
+    const resolve = rootResolver([join(base, 'missing-root')], root);
+    await expect(resolve(join(root, 'a.pdf'))).rejects.toMatchObject({ code: 'not_found', message: expect.stringContaining('Root not found') });
+  });
+
+  it('resolveRoots rejects a missing root', async () => {
+    await expect(resolveRoots([join(base, 'missing-root')], root)).rejects.toMatchObject({ code: 'not_found' });
   });
 });

@@ -7,7 +7,7 @@ import { isLoopbackHost } from '../core/loopback';
 import { openDistiller as defaultOpenDistiller } from '../node/distill';
 import type { Distiller } from '../node/distill';
 import { serveMcpHttp as defaultServeMcpHttp } from '../mcp/http';
-import { rootResolver, cwdResolver } from '../mcp/roots';
+import { cwdResolver, resolveRoots, rootResolver } from '../mcp/roots';
 import { createMcpServer } from '../mcp/server';
 import { connectStdio as defaultConnectStdio } from '../mcp/stdio';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -224,6 +224,15 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           distiller.close();
           exit(0);
         });
+        return;
+      }
+
+      try {
+        await resolveRoots(options.root ?? [cwd], cwd);
+      } catch (error) {
+        distiller.close();
+        stderr(`error: ${error instanceof Error ? error.message : String(error)}`);
+        exit(1);
         return;
       }
 

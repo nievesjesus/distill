@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { BOOSTER_ORDER } from '../core/boosters/pipeline';
 import type { Health, LocalBoosterId } from '../core/types';
 import type { DistillOptions, Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
@@ -7,7 +8,7 @@ import { DistillError } from '../node/errors';
 const MAX_PATHS = 20;
 const SERVER_NAME = 'distillmd';
 
-const boostersSchema = z.array(z.enum(['dedupe', 'media', 'tables', 'ws'])).optional().describe('Boosters to apply: dedupe, media, tables, ws');
+const boostersSchema = z.array(z.enum(BOOSTER_ORDER as [LocalBoosterId, ...LocalBoosterId[]])).optional().describe('Boosters to apply: dedupe, media, tables, ws');
 const linguaSchema = z.boolean().optional().describe('Compress further with LLMLingua-2 when installed');
 
 const tokensSchema = z.object({ raw: z.number(), out: z.number() });

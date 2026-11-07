@@ -1,3 +1,9 @@
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { describe, expect, it, vi } from 'vitest';
 import { openCommand, run } from '../../src/cli/run';
 
@@ -175,5 +181,76 @@ describe('run mcp', () => {
     expect(h.serveMcpHttp).toHaveBeenCalledWith(
       expect.objectContaining({ port: 5000, host: '0.0.0.0', allowedHosts: ['a.example', 'b.example'] }),
     );
+  });
+});
+
+describe('run mcp path confinement', () => {
+  function setup() {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), 'distill-mcp-cli-')));
+    const root = join(base, 'root');
+    const outside = join(base, 'outside');
+    mkdirSync(root);
+    mkdirSync(outside);
+    writeFileSync(join(root, 'a.pdf'), 'x');
+    writeFileSync(join(outside, 'b.pdf'), 'x');
+    const h = harness();
+    const seen: string[] = [];
+    const distiller = {
+      distillFile: vi.fn(async (path: string) => {
+        seen.push(path);
+        return { path, name: 'f.pdf', kind: 'PDF', pages: 1, markdown: 'm', tokens: { raw: 1, out: 1 }, ms: 1 };
+      }),
+      health: () => ({ version: '0.0.0' }),
+      close: vi.fn(),
+    };
+    const openDistiller = vi.fn(async () => distiller);
+    return { base, root, outside, h, seen, openDistiller, distiller };
+  }
+
+  async function call(server: McpServer, path: string) {
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 't', version: '0' });
+    await Promise.all([server.connect(b), client.connect(a)]);
+    const result = await client.callTool({ name: 'distill_file', arguments: { path } });
+    await client.close();
+    return result;
+  }
+
+  it('confines http to --root', async () => {
+    const t = setup();
+    let create: (() => McpServer) | undefined;
+    const serveMcpHttp = vi.fn(async (opts: { createServer: () => McpServer }) => {
+      create = opts.createServer;
+      return { url: 'http://127.0.0.1:4322/mcp', close: async () => {} };
+    });
+    await run(['mcp', '--http', '--root', t.root], { ...t.h.deps, serveMcpHttp, openDistiller: t.openDistiller } as never);
+    const denied = await call((create as () => McpServer)(), join(t.outside, 'b.pdf'));
+    expect(denied.isError).toBe(true);
+    expect(denied.content).toEqual([{ type: 'text', text: 'forbidden: Path is outside the allowed roots' }]);
+    const allowed = await call((create as () => McpServer)(), join(t.root, 'a.pdf'));
+    expect(allowed.isError).toBeFalsy();
+    expect(t.seen).toEqual([join(t.root, 'a.pdf')]);
+  });
+
+  it('fails cleanly for a missing --root', async () => {
+    const t = setup();
+    const serveMcpHttp = vi.fn();
+    await run(['mcp', '--http', '--root', join(t.base, 'typo')], { ...t.h.deps, serveMcpHttp, openDistiller: t.openDistiller } as never);
+    expect(serveMcpHttp).not.toHaveBeenCalled();
+    expect(t.h.stderr[0]).toMatch(/^error: Root not found: /);
+    expect(t.h.exit).toHaveBeenCalledWith(1);
+    expect(t.h.stdout).toEqual([]);
+  });
+
+  it('does not confine stdio', async () => {
+    const t = setup();
+    let server: McpServer | undefined;
+    const connectStdio = vi.fn(async (s: McpServer) => {
+      server = s;
+    });
+    await run(['mcp'], { ...t.h.deps, connectStdio, openDistiller: t.openDistiller } as never);
+    const result = await call(server as McpServer, join(t.outside, 'b.pdf'));
+    expect(result.isError).toBeFalsy();
+    expect(t.seen).toEqual([join(t.outside, 'b.pdf')]);
   });
 });
