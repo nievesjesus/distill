@@ -407,22 +407,24 @@ describe('useFiles remove and clear', () => {
     expect(healthCalls).toBe(4);
   });
 
-  it('stops polling the install after five consecutive failed health calls and reports the error', async () => {
+  it('reports the error after five failed install polls, slows down and recovers when the server returns', async () => {
     vi.useFakeTimers();
     let healthCalls = 0;
+    let serverBack = false;
+    const healthWith = (state: string, installed: boolean) =>
+      Response.json({
+        version: '1',
+        liteparseVersion: '1',
+        libreoffice: false,
+        maxBytes: 1000,
+        lingua: { installed, installable: true, model: 'tinybert', state, progress: 0 },
+      });
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
         healthCalls += 1;
-        if (healthCalls === 1) {
-          return Response.json({
-            version: '1',
-            liteparseVersion: '1',
-            libreoffice: false,
-            maxBytes: 1000,
-            lingua: { installed: false, installable: true, model: 'tinybert', state: 'installing', progress: 0 },
-          });
-        }
+        if (healthCalls === 1) return healthWith('installing', false);
+        if (serverBack) return healthWith('ready', true);
         throw new TypeError('server went away');
       }),
     );
@@ -431,7 +433,6 @@ describe('useFiles remove and clear', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(healthCalls).toBe(1);
-    expect(result.current.healthError).toBeNull();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4000);
     });
@@ -445,7 +446,19 @@ describe('useFiles remove and clear', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
-    expect(healthCalls).toBe(6);
+    expect(healthCalls).toBeGreaterThan(6);
+    expect(healthCalls).toBeLessThanOrEqual(15);
+    serverBack = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(result.current.healthError).toBeNull();
+    expect(result.current.health?.lingua?.state).toBe('ready');
+    const settled = healthCalls;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(healthCalls).toBe(settled);
   });
 
   it('resets the failure count after a successful poll', async () => {

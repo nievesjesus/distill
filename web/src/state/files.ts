@@ -392,28 +392,32 @@ export function useFiles(settings: Settings): FilesApi {
   useEffect(() => {
     if (!polling) return;
     let cancelled = false;
-    let failures = 0;
-    const interval = setInterval(() => {
-      getHealth().then(
-        (next) => {
-          if (cancelled) return;
-          failures = 0;
-          setHealth(next);
-          const state = next.lingua?.state;
-          if (state === 'ready' || state === 'error') setPollRequested(false);
-        },
-        (error: unknown) => {
-          if (cancelled) return;
-          failures += 1;
-          if (failures < MAX_POLL_FAILURES) return;
-          clearInterval(interval);
-          setHealthError(toApiError(error));
-        },
-      );
-    }, HEALTH_POLL_MS);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = (failures: number) => {
+      const backoff = failures - MAX_POLL_FAILURES;
+      const delay = backoff < 0 ? HEALTH_POLL_MS : Math.min(HEALTH_RETRY_BASE_MS * 2 ** backoff, HEALTH_RETRY_MAX_MS);
+      timer = setTimeout(() => {
+        getHealth().then(
+          (next) => {
+            if (cancelled) return;
+            setHealthError(null);
+            setHealth(next);
+            const state = next.lingua?.state;
+            if (state === 'ready' || state === 'error') setPollRequested(false);
+            schedule(0);
+          },
+          (error: unknown) => {
+            if (cancelled) return;
+            if (failures + 1 >= MAX_POLL_FAILURES) setHealthError(toApiError(error));
+            schedule(failures + 1);
+          },
+        );
+      }, delay);
+    };
+    schedule(0);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (timer) clearTimeout(timer);
     };
   }, [polling]);
 
