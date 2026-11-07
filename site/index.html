@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>distill: Documents in. Fewer tokens out.</title>
-<meta name="description" content="Turn PDFs, Office files and images into token-lean Markdown for LLMs. Runs 100% on your machine: no telemetry, no CDN. Web app, desktop, Docker, CLI, MCP server and agent hooks.">
+<meta name="description" content="Turn PDFs, Office files and images into token-lean Markdown for LLMs. Claude reads our 5 demo PDFs for 98.3k tokens; as distill Markdown, 31.0k (-68%). Runs 100% on your machine: no telemetry, no CDN. Web app, desktop, Docker, CLI, MCP server and agent hooks.">
 <link rel="canonical" href="https://nievesjesus.github.io/distill/">
 <meta name="theme-color" content="#0B0B10">
 <meta name="color-scheme" content="dark">
@@ -12,14 +12,14 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="distill">
 <meta property="og:title" content="distill: Documents in. Fewer tokens out.">
-<meta property="og:description" content="Turn PDFs, Office files and images into token-lean Markdown for LLMs. 100% local, open source.">
+<meta property="og:description" content="Turn PDFs, Office files and images into token-lean Markdown for LLMs. 68% fewer Claude tokens on our demo PDFs. 100% local, open source.">
 <meta property="og:url" content="https://nievesjesus.github.io/distill/">
 <meta property="og:image" content="https://nievesjesus.github.io/distill/assets/social-preview.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="distill: Documents in. Fewer tokens out.">
-<meta name="twitter:description" content="Turn PDFs, Office files and images into token-lean Markdown for LLMs. 100% local, open source.">
+<meta name="twitter:description" content="Turn PDFs, Office files and images into token-lean Markdown for LLMs. 68% fewer Claude tokens on our demo PDFs. 100% local, open source.">
 <meta name="twitter:image" content="https://nievesjesus.github.io/distill/assets/social-preview.png">
 <link rel="preload" href="fonts/space-grotesk-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -67,6 +67,7 @@
           <span class="copy-t">Copy</span>
         </button>
       </div>
+      <a class="proof r4" href="#savings"><span class="proof-pct">&minus;68%</span><span>Claude reads our 5 demo PDFs for 98.3k tokens. As distill Markdown: 31.0k.</span></a>
       <div class="cta r5">
         <a class="btn" href="https://github.com/nievesjesus/distill">View on GitHub</a>
         <a class="btn btn-ghost" href="https://github.com/nievesjesus/distill#readme">Read the docs</a>
@@ -120,25 +121,35 @@
 </section>
 
 <section class="savings" id="savings">
-  <div class="wrap savings-grid">
-    <div>
+  <div class="wrap">
+    <div class="savings-head">
       <p class="kicker">Measured</p>
-      <h2>Real numbers, from the app.</h2>
-      <p class="sub">Measured on the demo documents with the default boosters. Token counts use o200k_base. Your savings depend on your files: headers, footers and links repeat more in some documents than in others.</p>
+      <h2>What Claude actually pays to read your PDFs.</h2>
+      <p class="sub">We counted the input tokens Claude needs for the five demo PDFs, once as the raw PDF and once as distill's Markdown. Your files will differ: headers, footers and links repeat more in some documents than in others.</p>
     </div>
-    <div class="meter" data-total="10">
-      <div class="meter-head">
-        <span class="big" id="overall">−10%</span>
-        <span class="meter-sub">24.9k → 22.4k tokens<br>5 of 5 files</span>
+    <div class="savings-grid">
+      <div class="meter meter-primary">
+        <div class="meter-head">
+          <span class="big" id="overall">−68%</span>
+          <span class="meter-sub">98.3k → 31.0k Claude tokens<br>raw PDF vs distill Markdown, 5 PDFs</span>
+        </div>
+        <ul class="bars">
+        <li><span class="fn">vendor-contract.pdf</span><span class="bar"><b style="--w:80"></b></span><span class="tk">14.0k → 2.8k</span><span class="pc">−80%</span></li>
+        <li><span class="fn">product-roadmap.pdf</span><span class="bar"><b style="--w:77"></b></span><span class="tk">16.5k → 3.9k</span><span class="pc">−77%</span></li>
+        <li><span class="fn">q3-financial-report.pdf</span><span class="bar"><b style="--w:75"></b></span><span class="tk">25.0k → 6.4k</span><span class="pc">−75%</span></li>
+        <li><span class="fn">inventory-export.pdf</span><span class="bar"><b style="--w:59"></b></span><span class="tk">24.1k → 9.9k</span><span class="pc">−59%</span></li>
+        <li><span class="fn">sales-ledger.pdf</span><span class="bar"><b style="--w:57"></b></span><span class="tk">18.7k → 8.1k</span><span class="pc">−57%</span></li>
+        </ul>
+        <p class="meter-note">Measured with Anthropic's token counting API (claude-sonnet-5-5) on 5 demo PDFs. Your files will differ.</p>
       </div>
-      <ul class="bars">
-        <li><span class="fn">q3-financial-report.pdf</span><span class="bar"><b style="--w:19"></b></span><span class="tk">5.7k → 4.6k</span><span class="pc">−19%</span></li>
-        <li><span class="fn">sales-ledger.pdf</span><span class="bar"><b style="--w:13"></b></span><span class="tk">7.3k → 6.4k</span><span class="pc">−13%</span></li>
-        <li><span class="fn">inventory-export.pdf</span><span class="bar"><b style="--w:3"></b></span><span class="tk">7.5k → 7.3k</span><span class="pc">−3%</span></li>
-        <li><span class="fn">product-roadmap.pdf</span><span class="bar"><b style="--w:7"></b></span><span class="tk">2.6k → 2.4k</span><span class="pc">−7%</span></li>
-        <li><span class="fn">vendor-contract.pdf</span><span class="bar"><b style="--w:5"></b></span><span class="tk">1.8k → 1.7k</span><span class="pc">−5%</span></li>
-      </ul>
-      <p class="meter-note">LiteParse already returns fairly clean Markdown, so lossless savings are typically modest and bigger on table- and link-heavy documents. LLMLingua-2 (optional, lossy) goes further.</p>
+      <div class="meter meter-secondary">
+        <p class="meter-kicker">Lossless boosters, on top</p>
+        <div class="meter-head">
+          <span class="big">−10%</span>
+          <span class="meter-sub">24.9k → 22.4k tokens<br>o200k_base, 5 of 5 files</span>
+        </div>
+        <p class="meter-note">LiteParse already returns fairly clean Markdown, so lossless savings are typically modest and bigger on table- and link-heavy documents. LLMLingua-2 (optional, lossy) goes further.</p>
+      </div>
     </div>
   </div>
 </section>

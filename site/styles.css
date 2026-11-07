@@ -60,6 +60,9 @@ h1 em,.final h2 em{font-style:normal;color:var(--accent)}
 .copy:hover{background:#292933;border-color:#3a3a46}
 .copy.done{color:var(--accent);border-color:rgba(200,245,60,.5)}
 .cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}
+.proof{text-decoration:none;display:flex;align-items:center;gap:14px;margin-top:20px;max-width:34em;padding:12px 16px;border:1px solid rgba(200,245,60,.3);border-radius:14px;background:rgba(200,245,60,.06);color:var(--text);font-size:15px;line-height:1.45;transition:border-color .15s,background .15s}
+.proof:hover{border-color:rgba(200,245,60,.6);background:rgba(200,245,60,.1)}
+.proof-pct{font:700 22px/1 var(--mono);color:var(--accent);flex:none}
 .fine{font-size:14px;color:var(--muted);margin-top:18px}
 
 .hero-media{min-width:0}
@@ -111,7 +114,8 @@ h2{font-size:clamp(32px,5vw,54px);max-width:16em}
 }
 
 .savings{background:radial-gradient(50% 70% at 85% 50%,rgba(200,245,60,.07),transparent 70%)}
-.savings-grid{display:grid;gap:44px;align-items:center}
+.savings-head{max-width:46em;margin-bottom:40px}
+.savings-grid{display:grid;gap:24px;align-items:start}
 .meter{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:clamp(22px,4vw,36px)}
 .meter-head{display:flex;align-items:baseline;gap:20px;flex-wrap:wrap;padding-bottom:24px;border-bottom:1px solid var(--border)}
 .big{font:700 clamp(64px,11vw,104px)/.9 var(--display);letter-spacing:-.04em;color:var(--accent)}
@@ -126,7 +130,13 @@ h2{font-size:clamp(32px,5vw,54px);max-width:16em}
 .bars.in .bar b{animation-play-state:running}
 .tk{grid-column:1;grid-row:3;font:400 13px/1 var(--mono);color:var(--muted)}
 @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-@media(min-width:960px){.savings-grid{grid-template-columns:1fr 1.1fr;gap:72px}}
+.meter-primary .bar b{width:calc(var(--w) * 1%)}
+.meter-secondary{padding:clamp(20px,3vw,28px)}
+.meter-secondary .big{font-size:clamp(40px,6vw,56px)}
+.meter-secondary .meter-head{padding-bottom:0;border-bottom:0}
+.meter-secondary .meter-note{margin-top:20px}
+.meter-kicker{font:500 13px/1 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:0 0 18px}
+@media(min-width:960px){.savings-grid{grid-template-columns:1.35fr 1fr;gap:32px}}
 
 .table-wrap{margin-top:44px;border:1px solid var(--border);border-radius:var(--r);overflow-x:auto;background:var(--surface)}
 table{width:100%;border-collapse:collapse;min-width:640px;font-size:15.5px}

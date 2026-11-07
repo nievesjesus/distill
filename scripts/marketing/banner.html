@@ -165,6 +165,16 @@
     opacity: 0.8;
   }
 
+  .note {
+    margin-top: 10px;
+    align-self: flex-start;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+
+  .note:empty { display: none; }
+
   .win {
     position: absolute;
     border-radius: 14px;
@@ -217,6 +227,7 @@
       <span class="chip">Web</span><span class="chip">Desktop</span><span class="chip">CLI</span><span class="chip">MCP</span><span class="chip">Claude Code &amp; OpenCode hooks</span>
     </div>
     <div class="pill" id="pill"><span class="pct" id="pct">&minus;0%</span><span class="detail" id="detail"></span></div>
+    <p class="note" id="note"></p>
   </div>
 
   <div class="win back">
@@ -232,6 +243,7 @@
     const params = new URLSearchParams(location.search);
     document.getElementById('pct').textContent = params.get('pct') ?? '';
     document.getElementById('detail').textContent = params.get('detail') ?? '';
+    document.getElementById('note').textContent = params.get('note') ?? '';
   </script>
 </body>
 </html>
