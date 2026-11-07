@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { run } from '../../src/cli/run';
 import { writeAtomic } from '../../src/hooks/atomic';
 
-function setup(options: { isTTY?: boolean; answer?: string; which?: string | null; env?: Record<string, string> } = {}) {
+function setup(options: { isGitIgnored?: (cwd: string, file: string) => boolean | null; isTTY?: boolean; answer?: string; which?: string | null; env?: Record<string, string> } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'distill-home-'));
   const cwd = mkdtempSync(join(tmpdir(), 'distill-cwd-'));
   const stdout: string[] = [];
@@ -23,6 +23,7 @@ function setup(options: { isTTY?: boolean; answer?: string; which?: string | nul
     stderr: (line: string) => stderr.push(line),
     handleSignals: false,
     env: options.env ?? {},
+    isGitIgnored: options.isGitIgnored ?? (() => null),
   };
   return { home, cwd, stdout, stderr, exit, prompt, deps };
 }
@@ -65,6 +66,29 @@ describe('hooks install --claude', () => {
     expect(existsSync(join(s.cwd, '.claude', 'settings.local.json'))).toBe(true);
     expect(existsSync(join(s.cwd, '.claude', 'settings.json'))).toBe(false);
     expect(existsSync(join(s.home, '.claude', 'settings.json'))).toBe(false);
+  });
+
+  it('tips about .gitignore when settings.local.json is not ignored', async () => {
+    const isGitIgnored = vi.fn(() => false);
+    const s = setup({ isGitIgnored });
+    await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
+    expect(isGitIgnored).toHaveBeenCalledWith(s.cwd, join('.claude', 'settings.local.json'));
+    expect(s.stdout).toContain('Tip: add .claude/settings.local.json to .gitignore so it stays personal.');
+  });
+
+  it.each([
+    ['ignored', true],
+    ['not a git work tree', null],
+  ])('prints no gitignore tip when %s', async (_label, answer) => {
+    const s = setup({ isGitIgnored: () => answer });
+    await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
+    expect(s.stdout.some((line) => line.includes('.gitignore'))).toBe(false);
+  });
+
+  it('prints no gitignore tip for a global install', async () => {
+    const s = setup({ isGitIgnored: () => false });
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    expect(s.stdout.some((line) => line.includes('.gitignore'))).toBe(false);
   });
 
   it('removes the project hook from settings.local.json with uninstall --project', async () => {

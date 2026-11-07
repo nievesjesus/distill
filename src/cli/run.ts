@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
@@ -41,6 +41,14 @@ export interface CliDeps {
   which?: (bin: string) => string | null;
   isTTY?: boolean;
   prompt?: (question: string) => Promise<string>;
+  isGitIgnored?: (cwd: string, file: string) => boolean | null;
+}
+
+function gitCheckIgnore(cwd: string, file: string): boolean | null {
+  const result = spawnSync('git', ['check-ignore', '-q', file], { cwd, stdio: 'ignore' });
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+  return null;
 }
 
 const BYTES_PER_MB = 1024 * 1024;
@@ -162,6 +170,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const which = deps.which ?? ((bin: string) => findOnPath(bin, env.PATH));
   const isTTY = deps.isTTY ?? Boolean(process.stdin.isTTY);
   const prompt = deps.prompt ?? defaultPrompt;
+  const isGitIgnored = deps.isGitIgnored ?? gitCheckIgnore;
 
   const program = new Command();
   program
@@ -516,7 +525,17 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       stdout(action === 'install' ? `Already installed: ${path}` : 'Nothing to remove.');
       return true;
     }
-    return applyChange(path, label, baseline, plan.next, options, note);
+    const applied = await applyChange(path, label, baseline, plan.next, options, note);
+    if (applied && action === 'install' && location.project) {
+      let written: string | null = null;
+      try {
+        written = readIfExists(path);
+      } catch {}
+      if (written !== null && written !== current && isGitIgnored(cwd, join('.claude', 'settings.local.json')) === false) {
+        stdout('Tip: add .claude/settings.local.json to .gitignore so it stays personal.');
+      }
+    }
+    return applied;
   };
 
   const runHooksAction = async (action: 'install' | 'uninstall', options: HooksOptions): Promise<void> => {
