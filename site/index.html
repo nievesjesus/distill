@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>distill: Documents in. Fewer tokens out.</title>
+<meta name="description" content="Turn PDFs, Office files and images into token-lean Markdown for LLMs. Runs 100% on your machine: no telemetry, no CDN. Web app, desktop, Docker, CLI, MCP server and agent hooks.">
+<link rel="canonical" href="https://nievesjesus.github.io/distill/">
+<meta name="theme-color" content="#0B0B10">
+<meta name="color-scheme" content="dark">
+<link rel="icon" type="image/png" href="favicon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="distill">
+<meta property="og:title" content="distill: Documents in. Fewer tokens out.">
+<meta property="og:description" content="Turn PDFs, Office files and images into token-lean Markdown for LLMs. 100% local, open source.">
+<meta property="og:url" content="https://nievesjesus.github.io/distill/">
+<meta property="og:image" content="https://nievesjesus.github.io/distill/assets/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="distill: Documents in. Fewer tokens out.">
+<meta name="twitter:description" content="Turn PDFs, Office files and images into token-lean Markdown for LLMs. 100% local, open source.">
+<meta name="twitter:image" content="https://nievesjesus.github.io/distill/assets/social-preview.png">
+<link rel="preload" href="fonts/space-grotesk-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top" aria-label="distill home">
+      <img src="favicon.png" alt="" width="28" height="28">
+      <span>distill</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#savings">Savings</a>
+      <a href="#install">Use it</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="gh" href="https://github.com/nievesjesus/distill" aria-label="distill on GitHub">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.7 5.4-5.27 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+        <span class="gh-t">GitHub</span>
+      </a>
+      <a class="btn btn-sm" href="#install">Get started</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+<section class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow r1"><span class="dot"></span>Open source · Apache-2.0 · 100% local</p>
+      <h1 class="r2">Documents in.<br><em>Fewer tokens</em> out.</h1>
+      <p class="lede r3">Turn PDFs, Office files and images into token-lean Markdown for your LLM. Lossless boosters drop the repeats, not the content.</p>
+      <div class="cmd r4" data-copy-wrap>
+        <span class="prompt" aria-hidden="true">$</span>
+        <code id="hero-cmd">npx distillmd</code>
+        <button class="copy" type="button" data-copy="npx distillmd" aria-label="Copy command: npx distillmd">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span class="copy-t">Copy</span>
+        </button>
+      </div>
+      <div class="cta r5">
+        <a class="btn" href="https://github.com/nievesjesus/distill">View on GitHub</a>
+        <a class="btn btn-ghost" href="https://github.com/nievesjesus/distill#readme">Read the docs</a>
+      </div>
+      <p class="fine r5">Opens a local app at 127.0.0.1:4321. Nothing leaves your machine.</p>
+    </div>
+    <div class="hero-media r3">
+      <div class="frame">
+        <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>127.0.0.1:4321</span></div>
+        <video autoplay muted loop playsinline preload="metadata" poster="assets/screenshot-compact.png" width="1280" height="1130" aria-label="distill converting four PDFs and showing the token savings">
+          <source src="assets/demo.mp4" type="video/mp4">
+        </video>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="how" id="how">
+  <div class="wrap">
+    <p class="kicker">How it works</p>
+    <h2>Four small steps. All on your machine.</h2>
+    <ol class="steps">
+      <li><span class="n">01</span><h3>Drop</h3><p>PDF, DOCX, PPTX, XLSX, ODF or an image.</p></li>
+      <li><span class="n">02</span><h3>LiteParse</h3><p>Parses the layout into Markdown, with OCR for scans.</p></li>
+      <li><span class="n">03</span><h3>Boosters</h3><p>Small, deterministic passes trim boilerplate, link targets and whitespace.</p></li>
+      <li class="last"><span class="n">04</span><h3>Fewer tokens</h3><p>Copy or download lean Markdown, with the count before and after.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="shots" id="app">
+  <div class="wrap">
+    <p class="kicker">The app</p>
+    <h2>See the saving before you paste.</h2>
+    <p class="sub">Every file shows tokens before and after. Switch to the detailed view to toggle each booster and read the Markdown.</p>
+    <div class="shots-grid">
+      <figure class="shot s-compact">
+        <img src="assets/screenshot-compact.png" alt="Compact view: four PDFs with token counts before and after, and the total saving" width="1280" height="1130" loading="lazy">
+        <figcaption>Compact view</figcaption>
+      </figure>
+      <figure class="shot s-detailed">
+        <img src="assets/screenshot-detailed.png" alt="Detailed view: individual boosters and the converted Markdown" width="1280" height="1794" loading="lazy">
+        <figcaption>Detailed view, each booster on its own switch</figcaption>
+      </figure>
+      <figure class="shot s-preview">
+        <img src="assets/screenshot-preview.png" alt="Markdown preview of a converted document" width="1280" height="1390" loading="lazy">
+        <figcaption>Markdown preview</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="savings" id="savings">
+  <div class="wrap savings-grid">
+    <div>
+      <p class="kicker">Measured</p>
+      <h2>Real numbers, from the app.</h2>
+      <p class="sub">Measured on the demo documents with the default boosters. Token counts use o200k_base. Your savings depend on your files: headers, footers and links repeat more in some documents than in others.</p>
+    </div>
+    <div class="meter" data-total="13">
+      <div class="meter-head">
+        <span class="big" id="overall">−13%</span>
+        <span class="meter-sub">17.4k → 15.1k tokens<br>4 of 4 files</span>
+      </div>
+      <ul class="bars">
+        <li><span class="fn">q3-report.pdf</span><span class="bar"><b style="--w:19"></b></span><span class="tk">5.7k → 4.6k</span><span class="pc">−19%</span></li>
+        <li><span class="fn">sales-ledger.pdf</span><span class="bar"><b style="--w:13"></b></span><span class="tk">7.3k → 6.4k</span><span class="pc">−13%</span></li>
+        <li><span class="fn">product-roadmap.pdf</span><span class="bar"><b style="--w:7"></b></span><span class="tk">2.6k → 2.4k</span><span class="pc">−7%</span></li>
+        <li><span class="fn">vendor-contract.pdf</span><span class="bar"><b style="--w:5"></b></span><span class="tk">1.8k → 1.7k</span><span class="pc">−5%</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="boosters" id="boosters">
+  <div class="wrap">
+    <p class="kicker">Boosters</p>
+    <h2>Formatting goes. Content stays.</h2>
+    <p class="sub">Each booster is a pure, idempotent function over the Markdown, run in a fixed order. None of them touches code blocks or front-matter. The first four are on by default.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Booster</th><th scope="col">What it does</th><th scope="col">Loss</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Drop repeated boilerplate</th><td>Removes repeated running headers and footers and bare page indicators such as <code>Page 3 of 12</code>, keeping the first. Short repeated lines are never removed.</td><td><span class="chip ok">No information lost</span></td></tr>
+          <tr><th scope="row">Slim images and links</th><td><code>![alt](path)</code> becomes <code>[alt]</code> and <code>[text](url)</code> becomes <code>text</code>.</td><td><span class="chip warn">Drops image paths and URLs</span></td></tr>
+          <tr><th scope="row">Compact tables</th><td>Removes alignment padding from GFM tables.</td><td><span class="chip ok">None</span></td></tr>
+          <tr><th scope="row">Collapse whitespace</th><td>Collapses blank-line runs, trailing spaces and double spaces outside code.</td><td><span class="chip ok">None</span></td></tr>
+          <tr><th scope="row">LLMLingua-2</th><td>A local model removes low-value words. Optional, experimental, off by default.</td><td><span class="chip lossy">Lossy</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="install" id="install">
+  <div class="wrap">
+    <p class="kicker">Use it everywhere</p>
+    <h2>One engine, seven doors.</h2>
+    <p class="sub">The same local pipeline behind a web app, a desktop app, a container, a CLI, an MCP server and hooks for your coding agent.</p>
+
+    <div class="tabs">
+      <div class="tablist" role="tablist" aria-label="Ways to use distill">
+        <button role="tab" id="t-web" aria-controls="p-web" aria-selected="true" tabindex="0">Web</button>
+        <button role="tab" id="t-desktop" aria-controls="p-desktop" aria-selected="false" tabindex="-1">Desktop</button>
+        <button role="tab" id="t-docker" aria-controls="p-docker" aria-selected="false" tabindex="-1">Docker</button>
+        <button role="tab" id="t-cli" aria-controls="p-cli" aria-selected="false" tabindex="-1">CLI</button>
+        <button role="tab" id="t-mcp" aria-controls="p-mcp" aria-selected="false" tabindex="-1">MCP</button>
+        <button role="tab" id="t-claude" aria-controls="p-claude" aria-selected="false" tabindex="-1">Claude Code</button>
+        <button role="tab" id="t-opencode" aria-controls="p-opencode" aria-selected="false" tabindex="-1">OpenCode</button>
+      </div>
+
+      <div role="tabpanel" id="p-web" aria-labelledby="t-web" tabindex="0">
+        <p>Start the local web app. It opens at <code>http://127.0.0.1:4321</code>.</p>
+        <div class="code"><pre><code>npx distillmd</code></pre><button class="copy" type="button" data-copy="npx distillmd" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
+      </div>
+
+      <div role="tabpanel" id="p-desktop" aria-labelledby="t-desktop" tabindex="0" hidden>
+        <p>Installers for macOS, Windows and Linux are on GitHub Releases, in a lite and a full variant (full bundles the LLMLingua-2 runtime). Installers are not signed yet, so the OS warns on first launch.</p>
+        <p><a class="btn btn-sm" href="https://github.com/nievesjesus/distill/releases">Open Releases</a></p>
+      </div>
+
+      <div role="tabpanel" id="p-docker" aria-labelledby="t-docker" tabindex="0" hidden>
+        <p>The image bundles LibreOffice and OCR data, so every format works out of the box.</p>
+        <div class="code"><pre><code>docker run --rm -p 4321:4321 ghcr.io/nievesjesus/distill</code></pre><button class="copy" type="button" data-copy="docker run --rm -p 4321:4321 ghcr.io/nievesjesus/distill" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
+      </div>
+
+      <div role="tabpanel" id="p-cli" aria-labelledby="t-cli" tabindex="0" hidden>
+        <p>Convert files from the terminal. Also <code>--json</code>, <code>--stdout</code>, <code>--boosters ws,tables</code> and <code>--no-optimize</code>.</p>
+        <div class="code"><pre><code>npx distillmd convert report.pdf --out md/</code></pre><button class="copy" type="button" data-copy="npx distillmd convert report.pdf --out md/" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
+      </div>
+
+      <div role="tabpanel" id="p-mcp" aria-labelledby="t-mcp" tabindex="0" hidden>
+        <p>An MCP server any agent can call. Tools: <code>distill_file</code>, <code>distill_files</code>, <code>distill_capabilities</code>. Use <code>distillmd mcp --http</code> for remote clients.</p>
+        <div class="code"><pre><code>claude mcp add distill -- npx -y distillmd mcp</code></pre><button class="copy" type="button" data-copy="claude mcp add distill -- npx -y distillmd mcp" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
+        <p class="mt">Or add it to any client's config:</p>
+        <div class="code"><pre><code>{"mcpServers":{"distill":{"command":"npx","args":["-y","distillmd","mcp"]}}}</code></pre><button class="copy" type="button" data-copy='{"mcpServers":{"distill":{"command":"npx","args":["-y","distillmd","mcp"]}}}' aria-label="Copy config"><span class="copy-t">Copy</span></button></div>
+      </div>
+
+      <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" tabindex="0" hidden>
+        <p>A Claude Code <code>PreToolUse</code> hook on <code>Read</code> makes the agent read the distilled Markdown instead of the binary. Only PDF and Office files are converted, images are left alone, and a failure never blocks the read.</p>
+        <div class="code"><pre><code>npm i -g distillmd
+distillmd hooks install --claude</code></pre><button class="copy" type="button" data-copy="npm i -g distillmd&#10;distillmd hooks install --claude" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
+      </div>
+
+      <div role="tabpanel" id="p-opencode" aria-labelledby="t-opencode" tabindex="0" hidden>
+        <p>The same idea as an OpenCode plugin. Only PDF and Office files are converted, images are left alone, and a failure never blocks the read.</p>
+        <div class="code"><pre><code>npm i -g distillmd
+distillmd hooks install --opencode</code></pre><button class="copy" type="button" data-copy="npm i -g distillmd&#10;distillmd hooks install --opencode" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="privacy" id="privacy">
+  <div class="wrap privacy-grid">
+    <div>
+      <p class="kicker">Privacy</p>
+      <h2>Your documents never leave.</h2>
+    </div>
+    <ul class="facts">
+      <li><h3>Parsed locally</h3><p>Files are parsed on your machine and deleted from the temp directory after parsing.</p></li>
+      <li><h3>No telemetry</h3><p>No analytics, no tracking. This page loads no third-party scripts either.</p></li>
+      <li><h3>No CDN</h3><p>Fonts and assets are bundled, in the app and on this site.</p></li>
+      <li><h3>Loopback by default</h3><p>The server only listens on 127.0.0.1 unless you say otherwise.</p></li>
+    </ul>
+  </div>
+  <div class="wrap"><p class="fine pn">Up to three one-time downloads can happen, each only when you need it: OCR language data on first image OCR (about 15 MB, bundled in Docker and the desktop app), and, if you enable LLMLingua-2, its runtime from npm and its model (about 57 MB) from Hugging Face.</p></div>
+</section>
+
+<section class="faq" id="faq">
+  <div class="wrap faq-grid">
+    <div>
+      <p class="kicker">FAQ</p>
+      <h2>Quick answers.</h2>
+    </div>
+    <div class="qa">
+      <details><summary>Is it free?</summary><p>Yes. distill is open source under the Apache-2.0 license.</p></details>
+      <details><summary>Does anything leave my machine?</summary><p>No. Files are parsed locally, with no telemetry and no CDN. The only network use is the optional one-time downloads described above (OCR data, and the LLMLingua-2 runtime and model if you turn it on).</p></details>
+      <details><summary>Which formats are supported?</summary><p>PDF and images (PNG, JPG, TIFF, WebP, with built-in OCR) need nothing else. DOCX, PPTX, XLSX and ODF need LibreOffice on your PATH, which the Docker image already includes. Parsing quality is whatever LiteParse gives you, and it varies on dense tables and complex scans.</p></details>
+      <details><summary>How are tokens counted?</summary><p>With the <code>o200k_base</code> encoding, in your browser. Other models, such as Claude or Gemini, tokenize differently, so absolute counts are approximate. The percentage saved is comparable across tokenizers.</p></details>
+      <details><summary>Is LLMLingua-2 lossy?</summary><p>Yes. A local model removes low-value words, so it is marked as lossy, experimental and off by default. The default boosters drop only formatting, repeats and link targets.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap final-in">
+    <h2>Documents in. <em>Fewer tokens</em> out.</h2>
+    <div class="cmd" data-copy-wrap>
+      <span class="prompt" aria-hidden="true">$</span><code>npx distillmd</code>
+      <button class="copy" type="button" data-copy="npx distillmd" aria-label="Copy command: npx distillmd"><span class="copy-t">Copy</span></button>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div class="foot-l">
+      <a class="brand" href="#top"><img src="favicon.png" alt="" width="24" height="24"><span>distill</span></a>
+      <p>Apache-2.0 licensed. Built on <a href="https://github.com/run-llama/liteparse">LiteParse</a> by LlamaIndex.</p>
+    </div>
+    <ul class="foot-r">
+      <li><a href="https://github.com/nievesjesus/distill">GitHub</a></li>
+      <li><a href="https://github.com/nievesjesus/distill/releases">Releases</a></li>
+      <li><a href="https://github.com/nievesjesus/distill#readme">Docs</a></li>
+      <li><a href="https://github.com/nievesjesus/distill/blob/main/LICENSE">License</a></li>
+    </ul>
+  </div>
+</footer>
+<script src="main.js" defer></script>
+</body>
+</html>
