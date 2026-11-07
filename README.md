@@ -20,7 +20,7 @@ Options:
 npx distillmd --port 4321 --host 127.0.0.1 --no-open --max-size 100
 ```
 
-The server only listens on loopback by default. Passing `--host 0.0.0.0` exposes it to your network and disables the loopback check, so only do that on a network you trust. On every host, state-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) to `/api` are rejected with 403 when the browser marks them `Sec-Fetch-Site: cross-site` or when their `Origin` differs from the `Host`, so another website cannot drive your instance. Clients that send no `Origin` (curl, MCP clients) are unaffected. If you put distill behind a reverse proxy, keep the original `Host` header.
+The server only listens on loopback by default. Passing `--host 0.0.0.0` exposes it to your network and disables the loopback check, so only do that on a network you trust. On every host, state-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) to `/api` are rejected with 403 when the browser marks them `Sec-Fetch-Site: cross-site` or when their `Origin` differs from the `Host`, so another website cannot drive your instance through your browser. This does not stop DNS rebinding on an exposed host, so keep `--host 0.0.0.0` (and the Docker port) on trusted networks. Clients that send no `Origin` (curl, MCP clients) are unaffected. If you put distill behind a reverse proxy, keep the original `Host` header.
 
 `npx distillmd` installs only the parser, the local boosters and the server. LLMLingua-2 is not part of that install: you turn it on from the app when you want it (see below).
 
