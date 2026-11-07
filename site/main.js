@@ -52,6 +52,22 @@
     }
   });
 
+  var cards = document.querySelectorAll('.dl-card');
+  if (cards.length) {
+    var uad = navigator.userAgentData && navigator.userAgentData.platform;
+    var sig = ((uad || '') + ' ' + (navigator.platform || '') + ' ' + (navigator.userAgent || '')).toLowerCase();
+    var mine = null;
+    if (/iphone|ipad|ipod|android|cros/.test(sig)) mine = null;
+    else if (/mac/.test(sig)) mine = 'mac-arm';
+    else if (/win/.test(sig)) mine = 'win';
+    else if (/linux|x11/.test(sig)) mine = 'linux';
+    if (mine) {
+      Array.prototype.forEach.call(cards, function (c) {
+        if (c.getAttribute('data-os') === mine) c.classList.add('is-you');
+      });
+    }
+  }
+
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var bars = document.querySelector('.bars');
   if (bars) {

@@ -465,11 +465,11 @@ describe('lingua roots', () => {
     }
   };
 
-  it('finds a package root that has an own distillmd manifest', () => {
+  it('finds a package root that has an own distill-llm manifest', () => {
     withTmp((tmp) => {
       const app = join(tmp, 'app');
       mkdirSync(join(app, 'dist'), { recursive: true });
-      writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'distillmd' }));
+      writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'distill-llm' }));
       expect(findPackageRoot(join(app, 'dist'))).toBe(app);
     });
   });

@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: distill version
-      description: Output of `npx distillmd --version`, or the desktop app version.
+      description: Output of `npx distill-llm --version`, or the desktop app version.
     validations:
       required: true
   - type: input
@@ -28,7 +28,7 @@ body:
         - npx / npm (web app)
         - Desktop app
         - Docker
-        - CLI (distillmd convert)
+        - CLI (distill-llm convert)
         - MCP server
         - Claude Code or OpenCode hook
     validations:

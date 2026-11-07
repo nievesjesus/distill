@@ -29,5 +29,5 @@ linux:
   target:
     target: AppImage
     arch: [x64]
-artifactName: Distill-full-${version}-${os}-${arch}.${ext}
+artifactName: Distill-full-${os}-${arch}.${ext}
 publish: null

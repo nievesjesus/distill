@@ -107,7 +107,7 @@ describe('createDistiller with a fake parser', () => {
     const distiller = createDistiller({ parser: fakeParser(), lingua: fakeLingua(false), libreoffice: true });
     const promise = distiller.distillFile(pdfPath, { lingua: true });
     await expectCode(promise, 'lingua_unavailable');
-    await expect(promise).rejects.toThrow('LLMLingua-2 is not installed. Install it once from the web app (npx distillmd).');
+    await expect(promise).rejects.toThrow('LLMLingua-2 is not installed. Install it once from the web app (npx distill-llm).');
   });
 
   it('explains why lingua cannot be installed when the status carries a reason', async () => {

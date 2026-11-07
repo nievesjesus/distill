@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://github.com/nievesjesus/distill/actions/workflows/ci.yml"><img src="https://github.com/nievesjesus/distill/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://www.npmjs.com/package/distillmd"><img src="https://img.shields.io/npm/v/distillmd?color=C8F53C&labelColor=0B0B10" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/distill-llm"><img src="https://img.shields.io/npm/v/distill-llm?color=C8F53C&labelColor=0B0B10" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-C8F53C?labelColor=0B0B10" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522.12-C8F53C?labelColor=0B0B10" alt="Node 22.12+">
   <img src="https://img.shields.io/badge/runs-100%25%20local-C8F53C?labelColor=0B0B10" alt="Runs 100% local">
@@ -56,7 +56,7 @@ On top of that, distill's lossless boosters trim another 10% from LiteParse's Ma
 ## Quick start
 
 ```bash
-npx distillmd
+npx distill-llm
 ```
 
 This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop files in, read the Markdown, copy it or download it (one `.md` or a ZIP of all of them).
@@ -74,7 +74,7 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`.
 
 ```bash
-claude mcp add distill -- npx -y distillmd mcp
+claude mcp add distill -- npx -y distill-llm mcp
 ```
 
 Any other client:
@@ -82,14 +82,14 @@ Any other client:
 ```json
 {
   "mcpServers": {
-    "distill": { "command": "npx", "args": ["-y", "distillmd", "mcp"] }
+    "distill": { "command": "npx", "args": ["-y", "distill-llm", "mcp"] }
   }
 }
 ```
 
 `distill_file({ path, boosters?, lingua? })` returns the Markdown plus `{ tokens: { raw, out }, pages, kind }`. `distill_files` takes up to 20 paths and reports a per-file error instead of failing the whole call.
 
-For clients that speak HTTP, `distillmd mcp --http` serves Streamable HTTP at `http://127.0.0.1:4322/mcp`. Over HTTP the server only reads files inside the directories you pass with `--root` (repeatable, default: the current directory) and compares real paths, so symlinks cannot escape. It rejects cross-site requests and answers only to loopback names, IP addresses and the hostnames you list with `--allowed-hosts`, which blocks DNS rebinding.
+For clients that speak HTTP, `distill-llm mcp --http` serves Streamable HTTP at `http://127.0.0.1:4322/mcp`. Over HTTP the server only reads files inside the directories you pass with `--root` (repeatable, default: the current directory) and compares real paths, so symlinks cannot escape. It rejects cross-site requests and answers only to loopback names, IP addresses and the hostnames you list with `--allowed-hosts`, which blocks DNS rebinding.
 
 <details>
 <summary>Remote clients such as ChatGPT connectors</summary>
@@ -101,7 +101,7 @@ The HTTP server has **no authentication**: anyone who can reach it can read ever
 3. Allow the tunnel's hostname, or every request gets 403:
 
 ```bash
-distillmd mcp --http --root ~/shared-docs --allowed-hosts distill.example.com
+distill-llm mcp --http --root ~/shared-docs --allowed-hosts distill.example.com
 ```
 
 4. Add `https://distill.example.com/mcp` as the connector URL in your client.
@@ -110,15 +110,15 @@ distillmd mcp --http --root ~/shared-docs --allowed-hosts distill.example.com
 ### Hooks: make your agent read Markdown instead of the binary
 
 ```bash
-npm i -g distillmd
-distillmd hooks install --claude     # Claude Code
-distillmd hooks install --opencode   # OpenCode
+npm i -g distill-llm
+distill-llm hooks install --claude     # Claude Code
+distill-llm hooks install --opencode   # OpenCode
 ```
 
-- **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or your personal `.claude/settings.local.json` with `--project`). When Claude reads a PDF or Office file inside the project it is working in, the hook converts it once, caches it by content hash in `~/.cache/distillmd/out/` (private to your user) and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distillmd/out/**)` so those reads do not prompt.
+- **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or your personal `.claude/settings.local.json` with `--project`). When Claude reads a PDF or Office file inside the project it is working in, the hook converts it once, caches it by content hash in `~/.cache/distill-llm/out/` (private to your user) and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distill-llm/out/**)` so those reads do not prompt.
 - **OpenCode** (experimental): writes a plugin to `~/.config/opencode/plugins/distill.js` (or `.opencode/plugins/` with `--project`) that does the same on `tool.execute.before` for `read`. OpenCode's plugin API is changing; if the plugin does not apply, OpenCode simply reads the original file.
 
-The installer shows the exact change and asks before writing (`--yes` skips the question). It keeps your other settings, follows symlinked dotfiles, keeps the file mode, and masks existing values in the diff it prints. `distillmd hooks uninstall --claude|--opencode` removes only what it added. Install it globally first: a command written from a temporary `npx` run would disappear.
+The installer shows the exact change and asks before writing (`--yes` skips the question). It keeps your other settings, follows symlinked dotfiles, keeps the file mode, and masks existing values in the diff it prints. `distill-llm hooks uninstall --claude|--opencode` removes only what it added. Install it globally first: a command written from a temporary `npx` run would disappear.
 
 The hooks respect your permissions and never block a read:
 
@@ -132,7 +132,7 @@ Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session.
 ### CLI
 
 ```bash
-npx distillmd convert report.pdf deck.pptx --out md/
+npx distill-llm convert report.pdf deck.pptx --out md/
 ```
 
 | Option | Does |
@@ -148,7 +148,7 @@ Each file prints a summary such as `report.pdf → report.md  5.7k → 4.6k toke
 
 ## Desktop app and Docker
 
-**Desktop:** installers for macOS (arm64, x64), Windows (x64) and Linux (x64) are on [GitHub Releases](https://github.com/nievesjesus/distill/releases). `Distill-lite-*` has everything except LLMLingua-2; `Distill-full-*` bundles its runtime and is published for Apple Silicon, Windows x64 and Linux x64. Intel Macs get the lite build only.
+**Desktop:** installers for macOS (arm64, x64), Windows (x64) and Linux (x64) are on [GitHub Releases](https://github.com/nievesjesus/distill/releases). They are named without a version (`Distill-lite-mac-arm64.dmg`, `Distill-lite-mac-x64.dmg`, `Distill-lite-win-x64.exe`, `Distill-lite-linux-x86_64.AppImage`), so `https://github.com/nievesjesus/distill/releases/latest/download/<file>` always points at the newest release. `Distill-lite-*` has everything except LLMLingua-2; `Distill-full-*` bundles its runtime and is published for Apple Silicon, Windows x64 and Linux x64. Intel Macs get the lite build only.
 
 <details>
 <summary>Unsigned installers: how to open them the first time</summary>
@@ -193,7 +193,7 @@ Boosters are pure, idempotent functions and never touch fenced code blocks or fr
 <details>
 <summary>LLMLingua-2 details</summary>
 
-LLMLingua-2 is optional and experimental. It needs Apple Silicon, Windows x64 or Linux x64: its ONNX runtime has no Intel Mac build, so on Intel Macs the row explains this instead of offering an install. When `npm` is available, its row shows **Install (~520 MB)**: one click runs `npm ci --omit=dev --include=peer --ignore-scripts` against a lockfile with pinned versions and integrity hashes and installs the runtime into `~/.cache/distillmd/lingua`. The first use downloads the model (TinyBERT, about 57 MB) from Hugging Face into `~/.cache/distillmd/models`; after that it runs offline. Behind a proxy that intercepts HTTPS, give Node your organization's CA with `NODE_EXTRA_CA_CERTS=/path/to/ca.pem`. Never turn off certificate checks.
+LLMLingua-2 is optional and experimental. It needs Apple Silicon, Windows x64 or Linux x64: its ONNX runtime has no Intel Mac build, so on Intel Macs the row explains this instead of offering an install. When `npm` is available, its row shows **Install (~520 MB)**: one click runs `npm ci --omit=dev --include=peer --ignore-scripts` against a lockfile with pinned versions and integrity hashes and installs the runtime into `~/.cache/distill-llm/lingua`. The first use downloads the model (TinyBERT, about 57 MB) from Hugging Face into `~/.cache/distill-llm/models`; after that it runs offline. Behind a proxy that intercepts HTTPS, give Node your organization's CA with `NODE_EXTRA_CA_CERTS=/path/to/ca.pem`. Never turn off certificate checks.
 </details>
 
 ## Supported formats
@@ -210,7 +210,7 @@ Password-protected PDFs are reported as an error. Parsing quality is whatever Li
 
 Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. distill makes at most three one-time downloads, all of data and never of your documents: the Tesseract English data for the first OCR (skip it with `DISTILL_TESSDATA` or `TESSDATA_PREFIX`; `DISTILL_OCR_LANG` sets the language), and, only if you enable LLMLingua-2, its runtime from npm and its model from Hugging Face.
 
-Uploaded files go to a temporary directory and are deleted after parsing. Results stay in a small in-memory cache so the JSON view can be requested later. The hooks write converted Markdown to `~/.cache/distillmd/out/`. API responses are sent with `Cache-Control: no-store`.
+Uploaded files go to a temporary directory and are deleted after parsing. Results stay in a small in-memory cache so the JSON view can be requested later. The hooks write converted Markdown to `~/.cache/distill-llm/out/`. API responses are sent with `Cache-Control: no-store`.
 
 <details>
 <summary>Network exposure</summary>
@@ -237,7 +237,7 @@ The app and the CLI count with `o200k_base` (via `gpt-tokenizer`). Claude and Ge
 ## Roadmap
 
 - [x] Web app, desktop app and Docker image
-- [x] CLI (`distillmd convert`)
+- [x] CLI (`distill-llm convert`)
 - [x] MCP server (stdio and HTTP)
 - [x] Hooks for Claude Code and OpenCode
 - [ ] Signed and notarized desktop builds

@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 const root = join(__dirname, '..', '..');
 const version = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string }).version;
 
-describe('distillmd binary', () => {
+describe('distill-llm binary', () => {
   beforeAll(() => {
     const build = spawnSync(process.execPath, [join(root, 'node_modules', 'tsup', 'dist', 'cli-default.js')], { cwd: root, encoding: 'utf8' });
     expect(build.status, build.stderr).toBe(0);

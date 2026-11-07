@@ -165,7 +165,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const handleSignals = deps.handleSignals ?? true;
   const env = deps.env ?? process.env;
   const readStdin = deps.readStdin ?? defaultReadStdin;
-  const cacheDir = deps.cacheDir ?? join(homedir(), '.cache', 'distillmd');
+  const cacheDir = deps.cacheDir ?? join(homedir(), '.cache', 'distill-llm');
   const homeDir = deps.homeDir ?? homedir();
   const cwd = deps.cwd ?? process.cwd();
   const which = deps.which ?? ((bin: string) => findOnPath(bin, env.PATH));
@@ -175,7 +175,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   const program = new Command();
   program
-    .name('distillmd')
+    .name('distill-llm')
     .version(readVersion())
     .exitOverride()
     .configureOutput({
@@ -551,7 +551,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     const command = hookCommand({ which, version: readVersion(), npmCommand: env.npm_command });
     if (action === 'install') {
       stdout(`Hook command: ${command}`);
-      if (command !== 'distillmd') stdout('Tip: npm i -g distillmd makes the hook start faster.');
+      if (command !== 'distill-llm') stdout('Tip: npm i -g distill-llm makes the hook start faster.');
     }
     for (const target of targets) {
       if (!(await processTarget(target, action, options, command))) return;

@@ -1,6 +1,6 @@
 {
-  "name": "distillmd",
-  "version": "0.1.0",
+  "name": "distill-llm",
+  "version": "0.1.1",
   "description": "Turn documents into token-lean Markdown using LiteParse",
   "author": "Jesus Nieves <yo@nievesjesus.com>",
   "license": "Apache-2.0",
@@ -29,8 +29,7 @@
     "node": ">=22.12"
   },
   "bin": {
-    "distillmd": "dist/cli.js",
-    "distill": "dist/cli.js"
+    "distill-llm": "dist/cli.js"
   },
   "files": [
     "dist/*.js",

@@ -19,7 +19,7 @@ import type { Parser } from './parse';
 
 const DEFAULT_RATE = 0.5;
 const NO_LINGUA: LinguaStatus = { installed: false, installable: false, model: 'tinybert', state: 'idle', progress: 0 };
-const LINGUA_NOT_INSTALLED = 'LLMLingua-2 is not installed. Install it once from the web app (npx distillmd).';
+const LINGUA_NOT_INSTALLED = 'LLMLingua-2 is not installed. Install it once from the web app (npx distill-llm).';
 
 export interface DistillOptions {
   boosters?: ReadonlySet<LocalBoosterId>;
@@ -97,14 +97,14 @@ function readVersion(packageJsonPath: string): string {
 
 export async function openDistiller(maxBytes?: number): Promise<Distiller> {
   const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url)));
-  if (packageRoot === undefined) throw new Error('distillmd package.json not found');
+  if (packageRoot === undefined) throw new Error('distill-llm package.json not found');
   const require = createRequire(import.meta.url);
   const version = readVersion(join(packageRoot, 'package.json'));
   const liteparseVersion = readVersion(require.resolve('@llamaindex/liteparse/package.json'));
   const libreoffice = await exposeLibreOffice();
   const parser = createParser();
   try {
-    const cacheDir = join(homedir(), '.cache', 'distillmd');
+    const cacheDir = join(homedir(), '.cache', 'distill-llm');
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
     const lingua = createLingua({ cacheDir, installer });
     await lingua.probe();

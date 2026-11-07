@@ -151,6 +151,19 @@ td code{background:#1f1f28;border:1px solid var(--border);padding:1px 6px;border
 .chip.warn,.chip.lossy{color:var(--lossy);border-color:rgba(255,184,107,.4);background:rgba(255,184,107,.08)}
 .chip.lossy{font-weight:500;text-transform:uppercase;letter-spacing:.06em}
 
+.download{padding:clamp(64px,9vw,112px) 0}
+.dl-grid{list-style:none;margin:44px 0 0;padding:0;display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+.dl-card{display:flex;flex-direction:column;align-items:stretch;gap:10px;padding:22px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);min-width:0}
+.dl-card h3{font-size:22px}
+.dl-sub{color:var(--muted);font-size:15px}
+.dl-card .btn{margin-top:8px;padding:13px 18px;font-size:15px}
+.dl-alt{display:inline-flex;justify-content:center;padding:10px 12px;border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;text-decoration:none;text-align:center}
+.dl-alt:hover{border-color:#3a3a46;background:var(--bg)}
+.dl-note{font-size:13px;color:var(--muted);margin-top:auto;padding-top:4px}
+.dl-card.is-you{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 12px 40px -18px rgba(200,245,60,.45)}
+.dl-card.is-you h3::after{content:"Your system";margin-left:10px;padding:3px 8px;border-radius:999px;background:var(--accent);color:var(--on-accent);font:600 11px/1 var(--mono);letter-spacing:.04em;vertical-align:middle}
+.download .fine a{color:var(--text)}
+
 .install{background:linear-gradient(180deg,var(--bg),var(--surface) 50%,var(--bg));border-block:1px solid var(--border)}
 .tabs{margin-top:44px;border:1px solid var(--border);border-radius:18px;background:var(--bg);overflow:hidden}
 .tablist{display:flex;overflow-x:auto;border-bottom:1px solid var(--border);background:#101016;scrollbar-width:none}

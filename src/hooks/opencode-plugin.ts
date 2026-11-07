@@ -2,7 +2,7 @@ import { isHookConvertible } from './supported';
 
 const CANDIDATE_EXTENSIONS = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'webp'];
 
-export const PLUGIN_ID = 'distillmd-opencode-plugin';
+export const PLUGIN_ID = 'distill-llm-opencode-plugin';
 
 export const INVOCATION_SOURCE = String.raw`const quote = (value) => '"' + String(value) + '"';
 const buildInvocation = (command, file, platform) => {

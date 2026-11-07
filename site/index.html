@@ -61,8 +61,8 @@
       <p class="lede r3">Turn PDFs, Office files and images into token-lean Markdown for your LLM. Lossless boosters drop the repeats, not the content.</p>
       <div class="cmd r4" data-copy-wrap>
         <span class="prompt" aria-hidden="true">$</span>
-        <code id="hero-cmd">npx distillmd</code>
-        <button class="copy" type="button" data-copy="npx distillmd" aria-label="Copy command: npx distillmd">
+        <code id="hero-cmd">npx distill-llm</code>
+        <button class="copy" type="button" data-copy="npx distill-llm" aria-label="Copy command: npx distill-llm">
           <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           <span class="copy-t">Copy</span>
         </button>
@@ -174,6 +174,45 @@
   </div>
 </section>
 
+<section class="download" id="download">
+  <div class="wrap">
+    <p class="kicker">Desktop app</p>
+    <h2>Download the desktop app.</h2>
+    <p class="sub">Drop files into a window, no terminal needed. Lite has everything except LLMLingua-2; Full bundles its runtime.</p>
+    <ul class="dl-grid">
+      <li class="dl-card" data-os="mac-arm">
+        <h3>macOS</h3>
+        <p class="dl-sub">Apple Silicon (M1 and later)</p>
+        <a class="btn" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-lite-mac-arm64.dmg">Download Lite</a>
+        <a class="dl-alt" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-full-mac-arm64.dmg">Full, with LLMLingua-2</a>
+        <p class="dl-note">Signed and notarized.</p>
+      </li>
+      <li class="dl-card" data-os="mac-x64">
+        <h3>macOS</h3>
+        <p class="dl-sub">Intel</p>
+        <a class="btn" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-lite-mac-x64.dmg">Download Lite</a>
+        
+        <p class="dl-note">Lite only. Signed and notarized.</p>
+      </li>
+      <li class="dl-card" data-os="win">
+        <h3>Windows</h3>
+        <p class="dl-sub">x64</p>
+        <a class="btn" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-lite-win-x64.exe">Download Lite</a>
+        <a class="dl-alt" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-full-win-x64.exe">Full, with LLMLingua-2</a>
+        <p class="dl-note">Not code-signed yet: More info, then Run anyway.</p>
+      </li>
+      <li class="dl-card" data-os="linux">
+        <h3>Linux</h3>
+        <p class="dl-sub">x64 AppImage</p>
+        <a class="btn" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-lite-linux-x86_64.AppImage">Download Lite</a>
+        <a class="dl-alt" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-full-linux-x86_64.AppImage">Full, with LLMLingua-2</a>
+        <p class="dl-note">Make it executable, then run it.</p>
+      </li>
+    </ul>
+    <p class="fine">Always the latest release. <a href="https://github.com/nievesjesus/distill/releases">All releases</a>. macOS builds are signed and notarized.</p>
+  </div>
+</section>
+
 <section class="install" id="install">
   <div class="wrap">
     <p class="kicker">Use it everywhere</p>
@@ -193,12 +232,12 @@
 
       <div role="tabpanel" id="p-web" aria-labelledby="t-web" tabindex="0">
         <p>Start the local web app. It opens at <code>http://127.0.0.1:4321</code>.</p>
-        <div class="code"><pre><code>npx distillmd</code></pre><button class="copy" type="button" data-copy="npx distillmd" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
+        <div class="code"><pre><code>npx distill-llm</code></pre><button class="copy" type="button" data-copy="npx distill-llm" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
       </div>
 
       <div role="tabpanel" id="p-desktop" aria-labelledby="t-desktop" tabindex="0" hidden>
-        <p>Installers for macOS, Windows and Linux are on GitHub Releases, in a lite and a full variant (full bundles the LLMLingua-2 runtime). Installers are not signed yet, so the OS warns on first launch.</p>
-        <p><a class="btn btn-sm" href="https://github.com/nievesjesus/distill/releases">Open Releases</a></p>
+        <p>Installers for macOS, Windows and Linux, in a lite and a full variant (full bundles the LLMLingua-2 runtime). macOS builds are signed and notarized; the Windows installer is not code-signed yet.</p>
+        <p><a class="btn btn-sm" href="#download">Choose your download</a> <a class="btn btn-sm btn-ghost" href="https://github.com/nievesjesus/distill/releases">All releases</a></p>
       </div>
 
       <div role="tabpanel" id="p-docker" aria-labelledby="t-docker" tabindex="0" hidden>
@@ -208,26 +247,26 @@
 
       <div role="tabpanel" id="p-cli" aria-labelledby="t-cli" tabindex="0" hidden>
         <p>Convert files from the terminal. Also <code>--json</code>, <code>--stdout</code>, <code>--boosters ws,tables</code> and <code>--no-optimize</code>.</p>
-        <div class="code"><pre><code>npx distillmd convert report.pdf --out md/</code></pre><button class="copy" type="button" data-copy="npx distillmd convert report.pdf --out md/" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
+        <div class="code"><pre><code>npx distill-llm convert report.pdf --out md/</code></pre><button class="copy" type="button" data-copy="npx distill-llm convert report.pdf --out md/" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
       </div>
 
       <div role="tabpanel" id="p-mcp" aria-labelledby="t-mcp" tabindex="0" hidden>
-        <p>An MCP server any agent can call. Tools: <code>distill_file</code>, <code>distill_files</code>, <code>distill_capabilities</code>. Use <code>distillmd mcp --http</code> for remote clients.</p>
-        <div class="code"><pre><code>claude mcp add distill -- npx -y distillmd mcp</code></pre><button class="copy" type="button" data-copy="claude mcp add distill -- npx -y distillmd mcp" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
+        <p>An MCP server any agent can call. Tools: <code>distill_file</code>, <code>distill_files</code>, <code>distill_capabilities</code>. Use <code>distill-llm mcp --http</code> for remote clients.</p>
+        <div class="code"><pre><code>claude mcp add distill -- npx -y distill-llm mcp</code></pre><button class="copy" type="button" data-copy="claude mcp add distill -- npx -y distill-llm mcp" aria-label="Copy command"><span class="copy-t">Copy</span></button></div>
         <p class="mt">Or add it to any client's config:</p>
-        <div class="code"><pre><code>{"mcpServers":{"distill":{"command":"npx","args":["-y","distillmd","mcp"]}}}</code></pre><button class="copy" type="button" data-copy='{"mcpServers":{"distill":{"command":"npx","args":["-y","distillmd","mcp"]}}}' aria-label="Copy config"><span class="copy-t">Copy</span></button></div>
+        <div class="code"><pre><code>{"mcpServers":{"distill":{"command":"npx","args":["-y","distill-llm","mcp"]}}}</code></pre><button class="copy" type="button" data-copy='{"mcpServers":{"distill":{"command":"npx","args":["-y","distill-llm","mcp"]}}}' aria-label="Copy config"><span class="copy-t">Copy</span></button></div>
       </div>
 
       <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" tabindex="0" hidden>
         <p>A Claude Code <code>PreToolUse</code> hook on <code>Read</code> makes the agent read the distilled Markdown instead of the binary. Only PDF and Office files are converted, images are left alone, and a failure never blocks the read.</p>
-        <div class="code"><pre><code>npm i -g distillmd
-distillmd hooks install --claude</code></pre><button class="copy" type="button" data-copy="npm i -g distillmd&#10;distillmd hooks install --claude" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
+        <div class="code"><pre><code>npm i -g distill-llm
+distill-llm hooks install --claude</code></pre><button class="copy" type="button" data-copy="npm i -g distill-llm&#10;distill-llm hooks install --claude" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
       </div>
 
       <div role="tabpanel" id="p-opencode" aria-labelledby="t-opencode" tabindex="0" hidden>
         <p>The same idea as an OpenCode plugin. Only PDF and Office files are converted, images are left alone, and a failure never blocks the read.</p>
-        <div class="code"><pre><code>npm i -g distillmd
-distillmd hooks install --opencode</code></pre><button class="copy" type="button" data-copy="npm i -g distillmd&#10;distillmd hooks install --opencode" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
+        <div class="code"><pre><code>npm i -g distill-llm
+distill-llm hooks install --opencode</code></pre><button class="copy" type="button" data-copy="npm i -g distill-llm&#10;distill-llm hooks install --opencode" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
       </div>
     </div>
   </div>
@@ -269,8 +308,8 @@ distillmd hooks install --opencode</code></pre><button class="copy" type="button
   <div class="wrap final-in">
     <h2>Documents in. <em>Fewer tokens</em> out.</h2>
     <div class="cmd" data-copy-wrap>
-      <span class="prompt" aria-hidden="true">$</span><code>npx distillmd</code>
-      <button class="copy" type="button" data-copy="npx distillmd" aria-label="Copy command: npx distillmd"><span class="copy-t">Copy</span></button>
+      <span class="prompt" aria-hidden="true">$</span><code>npx distill-llm</code>
+      <button class="copy" type="button" data-copy="npx distill-llm" aria-label="Copy command: npx distill-llm"><span class="copy-t">Copy</span></button>
     </div>
   </div>
 </section>

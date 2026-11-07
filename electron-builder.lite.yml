@@ -34,5 +34,5 @@ linux:
   target:
     target: AppImage
     arch: [x64]
-artifactName: Distill-lite-${version}-${os}-${arch}.${ext}
+artifactName: Distill-lite-${os}-${arch}.${ext}
 publish: null

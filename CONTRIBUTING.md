@@ -39,11 +39,11 @@ Keep them focused, include tests, and make sure `npm test`, `npm run typecheck` 
 ## Releasing
 
 1. Bump `version` in `package.json` and commit it.
-2. Tag the commit `vX.Y.Z` and push the tag. The Release workflow builds the installers for macOS, Windows and Linux and attaches them to a draft release. Intel Macs get only the lite installer, because the LLMLingua-2 ONNX runtime supports Apple Silicon, Windows x64 and Linux x64 only.
+2. Tag the commit `vX.Y.Z` and push the tag. The Release workflow builds the installers for macOS, Windows and Linux and attaches them to a draft release. Installer names carry no version (`Distill-lite-mac-arm64.dmg`), so the site's `releases/latest/download/<file>` links keep working; do not add `${version}` back to `artifactName`. Intel Macs get only the lite installer, because the LLMLingua-2 ONNX runtime supports Apple Silicon, Windows x64 and Linux x64 only.
 3. Review the draft, then publish the release.
-4. Publishing triggers the Publish workflow: it publishes `distillmd` to npm with provenance and pushes the multi-arch image to `ghcr.io/nievesjesus/distill`. It fails if `package.json` does not match the tag.
+4. Publishing triggers the Publish workflow: it publishes `distill-llm` to npm with provenance and pushes the multi-arch image to `ghcr.io/nievesjesus/distill`. It fails if `package.json` does not match the tag.
 
-npm uses trusted publishing (OIDC), configured on npmjs.com under the package's Settings > Trusted Publisher (repository `nievesjesus/distill`, workflow `publish.yml`). A trusted publisher can only be added to a package that already exists, so the very first publish is a bootstrap: add a granular npm token with publish rights as the `NPM_TOKEN` secret, publish the first release, set up the trusted publisher, then delete the secret. While `NPM_TOKEN` is absent the workflow uses OIDC.
+npm uses trusted publishing (OIDC), configured on npmjs.com under the `distill-llm` package's Settings > Trusted Publisher (repository `nievesjesus/distill`, workflow `publish.yml`). A trusted publisher can only be added to a package that already exists, so the very first publish is a bootstrap: add a granular npm token with publish rights as the `NPM_TOKEN` secret, publish the first release, set up the trusted publisher, then delete the secret. While `NPM_TOKEN` is absent the workflow uses OIDC.
 
 ### Signing secrets and variables
 

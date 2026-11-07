@@ -33,6 +33,6 @@ export function findOnPath(
 }
 
 export function hookCommand(deps: HookCommandDeps): string {
-  if (deps.npmCommand === 'exec') return `npx -y distillmd@${deps.version}`;
-  return deps.which('distillmd') !== null ? 'distillmd' : `npx -y distillmd@${deps.version}`;
+  if (deps.npmCommand === 'exec') return `npx -y distill-llm@${deps.version}`;
+  return deps.which('distill-llm') !== null ? 'distill-llm' : `npx -y distill-llm@${deps.version}`;
 }
