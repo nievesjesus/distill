@@ -115,6 +115,37 @@ jobs:
             sleep 30
             attempt=$((attempt + 1))
           done
+      - name: Notarize and staple macOS dmg
+        if: env.MAC_SIGNED == 'true'
+        shell: bash
+        run: |
+          variants=lite
+          if [ "${{ matrix.full }}" = "true" ]; then variants="lite full"; fi
+          for variant in $variants; do
+            for dmg in "release/$variant"/Distill-*.dmg; do
+              [ -f "$dmg" ] || { echo "no dmg found for $variant"; exit 1; }
+              attempt=1
+              while true; do
+                if xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait --output-format json > "$RUNNER_TEMP/notary.json"; then
+                  cat "$RUNNER_TEMP/notary.json"
+                  if grep -Eq '"status"[[:space:]]*:[[:space:]]*"Accepted"' "$RUNNER_TEMP/notary.json"; then break; fi
+                  echo "notarization of $dmg was not accepted"
+                  exit 1
+                fi
+                echo "notarytool submit attempt $attempt failed for $dmg"
+                if [ "$attempt" -ge 3 ]; then exit 1; fi
+                sleep $((attempt * 30))
+                attempt=$((attempt + 1))
+              done
+              attempt=1
+              until xcrun stapler staple "$dmg"; do
+                echo "stapler staple attempt $attempt failed for $dmg, retrying"
+                if [ "$attempt" -ge 5 ]; then exit 1; fi
+                sleep $((attempt * 15))
+                attempt=$((attempt + 1))
+              done
+            done
+          done
       - name: Fail on artifacts for another arch
         shell: bash
         run: |
@@ -156,6 +187,18 @@ jobs:
               if [ "$attempt" -ge 5 ]; then exit 1; fi
               sleep $((attempt * 15))
               attempt=$((attempt + 1))
+            done
+            for dmg in "release/$variant"/Distill-*.dmg; do
+              [ -f "$dmg" ] || { echo "no dmg found for $variant"; exit 1; }
+              codesign --verify --strict --verbose=2 "$dmg"
+              spctl -a -t open --context context:primary-signature -vv "$dmg"
+              attempt=1
+              until xcrun stapler validate "$dmg"; do
+                echo "stapler validate attempt $attempt failed for $dmg, retrying"
+                if [ "$attempt" -ge 5 ]; then exit 1; fi
+                sleep $((attempt * 15))
+                attempt=$((attempt + 1))
+              done
             done
             find "$app" -type f \( -name '*.node' -o -name '*.dylib' \) -print0 | while IFS= read -r -d '' binary; do
               codesign --verify --strict "$binary"
