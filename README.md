@@ -148,7 +148,7 @@ Each file prints a summary such as `report.pdf → report.md  5.7k → 4.6k toke
 
 ## Desktop app and Docker
 
-**Desktop:** installers for macOS (arm64, x64), Windows (x64) and Linux (x64) are on [GitHub Releases](https://github.com/nievesjesus/distill/releases). `Distill-lite-*` has everything except LLMLingua-2; `Distill-full-*` bundles its runtime and is published for Apple Silicon, Windows x64 and Linux x64. Intel Macs get the lite build only.
+**Desktop:** installers for macOS (arm64, x64), Windows (x64) and Linux (x64) are on [GitHub Releases](https://github.com/nievesjesus/distill/releases). They are named without a version (`Distill-lite-mac-arm64.dmg`, `Distill-lite-mac-x64.dmg`, `Distill-lite-win-x64.exe`, `Distill-lite-linux-x86_64.AppImage`), so `https://github.com/nievesjesus/distill/releases/latest/download/<file>` always points at the newest release. `Distill-lite-*` has everything except LLMLingua-2; `Distill-full-*` bundles its runtime and is published for Apple Silicon, Windows x64 and Linux x64. Intel Macs get the lite build only.
 
 <details>
 <summary>Unsigned installers: how to open them the first time</summary>

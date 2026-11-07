@@ -174,6 +174,45 @@
   </div>
 </section>
 
+<section class="download" id="download">
+  <div class="wrap">
+    <p class="kicker">Desktop app</p>
+    <h2>Download the desktop app.</h2>
+    <p class="sub">Drop files into a window, no terminal needed. Lite has everything except LLMLingua-2; Full bundles its runtime.</p>
+    <ul class="dl-grid">
+      <li class="dl-card" data-os="mac-arm">
+        <h3>macOS</h3>
+        <p class="dl-sub">Apple Silicon (M1 and later)</p>
+        <a class="btn" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-lite-mac-arm64.dmg">Download Lite</a>
+        <a class="dl-alt" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-full-mac-arm64.dmg">Full, with LLMLingua-2</a>
+        <p class="dl-note">Signed and notarized.</p>
+      </li>
+      <li class="dl-card" data-os="mac-x64">
+        <h3>macOS</h3>
+        <p class="dl-sub">Intel</p>
+        <a class="btn" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-lite-mac-x64.dmg">Download Lite</a>
+        
+        <p class="dl-note">Lite only. Signed and notarized.</p>
+      </li>
+      <li class="dl-card" data-os="win">
+        <h3>Windows</h3>
+        <p class="dl-sub">x64</p>
+        <a class="btn" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-lite-win-x64.exe">Download Lite</a>
+        <a class="dl-alt" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-full-win-x64.exe">Full, with LLMLingua-2</a>
+        <p class="dl-note">Not code-signed yet: More info, then Run anyway.</p>
+      </li>
+      <li class="dl-card" data-os="linux">
+        <h3>Linux</h3>
+        <p class="dl-sub">x64 AppImage</p>
+        <a class="btn" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-lite-linux-x86_64.AppImage">Download Lite</a>
+        <a class="dl-alt" href="https://github.com/nievesjesus/distill/releases/latest/download/Distill-full-linux-x86_64.AppImage">Full, with LLMLingua-2</a>
+        <p class="dl-note">Make it executable, then run it.</p>
+      </li>
+    </ul>
+    <p class="fine">Always the latest release. <a href="https://github.com/nievesjesus/distill/releases">All releases</a>. macOS builds are signed and notarized.</p>
+  </div>
+</section>
+
 <section class="install" id="install">
   <div class="wrap">
     <p class="kicker">Use it everywhere</p>
@@ -197,8 +236,8 @@
       </div>
 
       <div role="tabpanel" id="p-desktop" aria-labelledby="t-desktop" tabindex="0" hidden>
-        <p>Installers for macOS, Windows and Linux are on GitHub Releases, in a lite and a full variant (full bundles the LLMLingua-2 runtime). Installers are not signed yet, so the OS warns on first launch.</p>
-        <p><a class="btn btn-sm" href="https://github.com/nievesjesus/distill/releases">Open Releases</a></p>
+        <p>Installers for macOS, Windows and Linux, in a lite and a full variant (full bundles the LLMLingua-2 runtime). macOS builds are signed and notarized; the Windows installer is not code-signed yet.</p>
+        <p><a class="btn btn-sm" href="#download">Choose your download</a> <a class="btn btn-sm btn-ghost" href="https://github.com/nievesjesus/distill/releases">All releases</a></p>
       </div>
 
       <div role="tabpanel" id="p-docker" aria-labelledby="t-docker" tabindex="0" hidden>
