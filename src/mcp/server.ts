@@ -22,6 +22,7 @@ const linguaStatusSchema = z.object({
   progress: z.number(),
   installError: z.object({ code: z.string(), message: z.string() }).optional(),
   modelError: z.string().optional(),
+  unsupportedReason: z.string().optional(),
 });
 
 export interface McpDeps {

@@ -776,6 +776,14 @@ describe('server app', () => {
       expect(install).not.toHaveBeenCalled();
     });
 
+    it('answers with the unsupported reason when the platform cannot run LLMLingua-2', async () => {
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ lingua: { install, status: () => ({ installed: false, installable: false, model: 'tinybert', state: 'idle', progress: 0, unsupportedReason: 'Intel Macs are out' }) } });
+      const res = await app.request('/api/lingua/install', { method: 'POST' });
+      expect(res.status).toBe(503);
+      expect(((await res.json()) as ApiError).message).toBe('Intel Macs are out');
+    });
+
     it('does not leak an installer failure and keeps the server alive', async () => {
       const install = vi.fn(async () => {
         throw new Error('npm exploded in /home/someone');

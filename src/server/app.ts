@@ -231,7 +231,7 @@ export function createApp(deps: AppDeps): Hono {
     const before = deps.lingua.status();
     if (before.installed) return c.json(before);
     if (before.state === 'installing') return c.json(before, 202);
-    if (!before.installable) return fail(c, 'lingua_unavailable', 'LLMLingua-2 cannot be installed here');
+    if (!before.installable) return fail(c, 'lingua_unavailable', before.unsupportedReason ?? 'LLMLingua-2 cannot be installed here');
     deps.lingua.install().catch(() => undefined);
     return c.json(deps.lingua.status(), 202);
   });

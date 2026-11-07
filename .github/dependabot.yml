@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: electron
+        update-types: [version-update:semver-major]
+      - dependency-name: '@llamaindex/liteparse'
+        update-types: [version-update:semver-major]
+      - dependency-name: '@atjsh/llmlingua-2'
+      - dependency-name: '@huggingface/transformers'
+      - dependency-name: js-tiktoken
+      - dependency-name: onnxruntime-*

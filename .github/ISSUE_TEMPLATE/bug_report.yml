@@ -1,0 +1,64 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never attach confidential documents. If a file triggers the bug, reduce it to a small sample with no sensitive content, or describe its structure instead.
+  - type: input
+    id: version
+    attributes:
+      label: distill version
+      description: Output of `npx distillmd --version`, or the desktop app version.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: For example macOS 15 arm64, Windows 11 x64, Ubuntu 24.04.
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How did you run distill?
+      options:
+        - npx / npm (web app)
+        - Desktop app
+        - Docker
+        - CLI (distillmd convert)
+        - MCP server
+        - Claude Code or OpenCode hook
+    validations:
+      required: true
+  - type: input
+    id: file-type
+    attributes:
+      label: File type
+      description: For example PDF (scanned), DOCX, PPTX, XLSX, image.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Terminal output or error text. Remove paths or content you do not want to share.
+      render: shell

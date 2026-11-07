@@ -581,6 +581,18 @@ describe('lingua roots', () => {
     });
   });
 
+  it('surfaces the installer unsupported reason while not installed', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'distill-roots-'));
+    try {
+      const installer = { probe: async () => false, sweep: async () => undefined, installable: () => false, unsupportedReason: () => 'nope', status: () => ({ state: 'idle' as const }), install: async () => undefined };
+      const l = createLingua({ cacheDir: tmp, roots: () => [join(tmp, 'nothing')], installer });
+      await l.probe();
+      expect(l.status()).toMatchObject({ installed: false, installable: false, unsupportedReason: 'nope' });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('createLingua probes the injected roots and reports installable from the installer', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'distill-roots-'));
     try {

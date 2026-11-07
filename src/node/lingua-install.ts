@@ -10,6 +10,8 @@ import type { LinguaInstallError, LinguaInstallErrorCode } from '../core/types';
 export const REQUIRED_PACKAGES: readonly string[] = ['@atjsh/llmlingua-2', '@huggingface/transformers', 'js-tiktoken'];
 export const NPM_ARGS: readonly string[] = ['ci', '--omit=dev', '--include=peer', '--ignore-scripts', '--no-audit', '--no-fund'];
 
+export const INTEL_MAC_REASON = 'LLMLingua-2 is not available on Intel Macs: its ONNX runtime only supports Apple Silicon.';
+
 const INSTALL_DIR = 'lingua';
 const TEMP_PREFIX = 'lingua.installing-';
 const OLD_PREFIX = 'lingua.old-';
@@ -40,6 +42,7 @@ export interface LinguaInstaller {
   probe(): Promise<boolean>;
   sweep(): Promise<void>;
   installable(): boolean;
+  unsupportedReason?(): string | undefined;
   status(): InstallerStatus;
   install(): Promise<void>;
 }
@@ -60,6 +63,8 @@ export interface InstallerOptions {
   resolveNpm?: () => Promise<NpmCommand | undefined>;
   timeoutMs?: number;
   killGraceMs?: number;
+  platform?: NodeJS.Platform;
+  arch?: string;
 }
 
 export class LinguaInstallFailure extends Error {
@@ -275,6 +280,7 @@ export function createLinguaInstaller(opts: InstallerOptions): LinguaInstaller {
   const backoffMs = opts.renameBackoffMs ?? RENAME_BACKOFF_MS;
   const finalDir = join(opts.cacheDir, INSTALL_DIR);
   const hidden = [opts.cacheDir, opts.runtimeDir, homedir(), tmpdir(), process.cwd()];
+  const unsupported = (opts.platform ?? process.platform) === 'darwin' && (opts.arch ?? process.arch) === 'x64' ? INTEL_MAC_REASON : undefined;
   let npm: NpmCommand | undefined;
   let canInstall = false;
   let state: InstallerStatus = { state: 'idle' };
@@ -299,6 +305,7 @@ export function createLinguaInstaller(opts: InstallerOptions): LinguaInstaller {
   }
 
   async function perform(): Promise<void> {
+    if (unsupported) throw new LinguaInstallFailure('unsupported_platform', unsupported);
     npm ??= await resolveNpm();
     canInstall = npm !== undefined;
     if (!npm) throw new LinguaInstallFailure('npm_missing', 'npm is not available to install LLMLingua-2');
@@ -323,12 +330,14 @@ export function createLinguaInstaller(opts: InstallerOptions): LinguaInstaller {
 
   return {
     async probe() {
+      if (unsupported) return false;
       npm ??= await resolveNpm();
       canInstall = npm !== undefined;
       return canInstall;
     },
     sweep: () => removeStaleTemporaries(opts.cacheDir, staleAfterMs, ops),
-    installable: () => canInstall,
+    installable: () => canInstall && !unsupported,
+    unsupportedReason: () => unsupported,
     status: () => ({ ...state }),
     install() {
       if (running) return running;

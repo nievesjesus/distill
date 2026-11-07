@@ -148,17 +148,17 @@ Each file prints a summary such as `report.pdf → report.md  5.7k → 4.6k toke
 
 ## Desktop app and Docker
 
-**Desktop:** installers for macOS (arm64, x64), Windows (x64) and Linux (x64) are on [GitHub Releases](https://github.com/nievesjesus/distill/releases). `Distill-lite-*` has everything except LLMLingua-2; `Distill-full-*` bundles its runtime.
+**Desktop:** installers for macOS (arm64, x64), Windows (x64) and Linux (x64) are on [GitHub Releases](https://github.com/nievesjesus/distill/releases). `Distill-lite-*` has everything except LLMLingua-2; `Distill-full-*` bundles its runtime and is published for Apple Silicon, Windows x64 and Linux x64. Intel Macs get the lite build only.
 
 <details>
-<summary>The installers are not signed yet: how to open them the first time</summary>
+<summary>Unsigned installers: how to open them the first time</summary>
 
 - **macOS 15 and later:** open the app once and dismiss the warning, then go to System Settings > Privacy & Security and click **Open Anyway**.
 - **macOS 14 and earlier:** right-click the app, choose **Open**, then confirm **Open**.
 - **"The app is damaged":** run `xattr -dr com.apple.quarantine /Applications/distill.app` and open it again.
 - **Windows:** in the SmartScreen dialog click **More info**, then **Run anyway**.
 
-The desktop app has no auto-update. OCR data is bundled; Office files still need LibreOffice installed.
+Release builds are signed when the signing certificates are configured; if your installer is unsigned, the steps above apply. The desktop app has no auto-update. OCR data is bundled; Office files still need LibreOffice installed.
 </details>
 
 **Docker:** LibreOffice and the English OCR data are included, so every format works out of the box.
@@ -193,7 +193,7 @@ Boosters are pure, idempotent functions and never touch fenced code blocks or fr
 <details>
 <summary>LLMLingua-2 details</summary>
 
-LLMLingua-2 is optional and experimental. When `npm` is available, its row shows **Install (~520 MB)**: one click runs `npm ci --omit=dev --include=peer --ignore-scripts` against a lockfile with pinned versions and integrity hashes and installs the runtime into `~/.cache/distillmd/lingua`. The first use downloads the model (TinyBERT, about 57 MB) from Hugging Face into `~/.cache/distillmd/models`; after that it runs offline. Behind a proxy that intercepts HTTPS, give Node your organization's CA with `NODE_EXTRA_CA_CERTS=/path/to/ca.pem`. Never turn off certificate checks.
+LLMLingua-2 is optional and experimental. It needs Apple Silicon, Windows x64 or Linux x64: its ONNX runtime has no Intel Mac build, so on Intel Macs the row explains this instead of offering an install. When `npm` is available, its row shows **Install (~520 MB)**: one click runs `npm ci --omit=dev --include=peer --ignore-scripts` against a lockfile with pinned versions and integrity hashes and installs the runtime into `~/.cache/distillmd/lingua`. The first use downloads the model (TinyBERT, about 57 MB) from Hugging Face into `~/.cache/distillmd/models`; after that it runs offline. Behind a proxy that intercepts HTTPS, give Node your organization's CA with `NODE_EXTRA_CA_CERTS=/path/to/ca.pem`. Never turn off certificate checks.
 </details>
 
 ## Supported formats
@@ -263,7 +263,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). `npm run marketing` regenerates the demo
 <details>
 <summary>Building the desktop app</summary>
 
-Build one architecture per host: `npm run dist:full -- --arm64` on Apple Silicon or `npm run dist:full -- --x64` on Intel. `build/lingua` holds only the sharp binary of the machine that ran `npm ci`, so a cross-architecture installer would ship the wrong native module. Re-running the release workflow for a tag whose draft release already exists does not replace its installers; delete the draft first.
+Build one architecture per host: `npm run dist:full -- --arm64` on Apple Silicon or `npm run dist:full -- --x64` on Windows or Linux (Intel Macs only get `dist:lite`). `build/lingua` holds only the sharp binary of the machine that ran `npm ci`, so a cross-architecture installer would ship the wrong native module. Re-running the release workflow for a tag whose draft release already exists does not replace its installers; delete the draft first.
 </details>
 
 ## License
