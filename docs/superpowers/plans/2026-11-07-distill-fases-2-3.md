@@ -24,15 +24,15 @@
 
 ## Review Focus
 
-1. **Ruta relativa en MCP o en el hook.** Se resuelve contra el cwd del proceso (MCP) o contra `cwd` del payload (hook), no contra el directorio de distill. → Tareas 3 y 5.
-2. **Dos archivos con el mismo nombre en `convert --out`.** `a/report.pdf` y `b/report.pdf` no se pisan: el segundo sale como `report-2.md`. → Tarea 2.
-3. **Archivo cambiado después de convertirlo.** La caché es por hash del contenido más versión y boosters, así que una edición produce un `.md` nuevo y no se sirve uno viejo. → Tarea 4.
-4. **`settings.json` con otros hooks o comentarios inválidos.** Se conservan todas las claves y hooks ajenos; instalar dos veces no duplica la entrada; si el JSON no parsea, aborta. → Tarea 6.
-5. **Path traversal en MCP HTTP** (`../../etc/passwd`, symlink que sale de la raíz). Se rechaza con error de herramienta, comparando rutas reales (`realpath`). → Tarea 3.
+1. **Ruta relativa en MCP o en el hook.** Se resuelve contra el cwd del proceso (MCP) o contra `cwd` del payload (hook), no contra el directorio de distill. → Task 3 y 5.
+2. **Dos archivos con el mismo nombre en `convert --out`.** `a/report.pdf` y `b/report.pdf` no se pisan: el segundo sale como `report-2.md`. → Task 2.
+3. **Archivo cambiado después de convertirlo.** La caché es por hash del contenido más versión y boosters, así que una edición produce un `.md` nuevo y no se sirve uno viejo. → Task 4.
+4. **`settings.json` con otros hooks o comentarios inválidos.** Se conservan todas las claves y hooks ajenos; instalar dos veces no duplica la entrada; si el JSON no parsea, aborta. → Task 6.
+5. **Path traversal en MCP HTTP** (`../../etc/passwd`, symlink que sale de la raíz). Se rechaza con error de herramienta, comparando rutas reales (`realpath`). → Task 3.
 
 ---
 
-### Tarea 1: núcleo `distillFile`
+### Task 1: núcleo `distillFile`
 
 **Archivos:**
 - Crear: `src/node/distill.ts`
@@ -56,7 +56,7 @@
 - [ ] **Paso 4:** implementar; correr `./node_modules/.bin/vitest run tests/node/distill.test.ts tests/core/booster-list.test.ts > $TMP/t.log 2>&1` → PASS.
 - [ ] **Paso 5:** refactor mínimo: `startServer` sigue igual (no tocar el servidor en esta tarea). Commit `feat(core): add distillFile shared by cli, mcp and hooks`.
 
-### Tarea 2: `distillmd convert`
+### Task 2: `distillmd convert`
 
 **Archivos:**
 - Crear: `src/cli/convert.ts`
@@ -80,7 +80,7 @@ Comando: `distillmd convert <files...> [--out <dir>] [--no-optimize] [--boosters
 - [ ] **Paso 2:** implementar y correr el test → PASS. Correr `tests/cli/*.test.ts` completo para confirmar que `web` sigue siendo el comando por defecto.
 - [ ] **Paso 3:** commit `feat(cli): add distillmd convert`.
 
-### Tarea 3: servidor MCP (`distillmd mcp`)
+### Task 3: servidor MCP (`distillmd mcp`)
 
 **Archivos:**
 - Crear: `src/mcp/server.ts`, `src/mcp/roots.ts`, `src/mcp/http.ts`
@@ -108,7 +108,7 @@ CLI: `distillmd mcp [--http] [--port 4322] [--host 127.0.0.1] [--root <dir>]... 
 - [ ] **Paso 4:** test de `run(['mcp'])` con deps falsas: no escribe nada en stdout.
 - [ ] **Paso 5:** implementar, correr `tests/mcp` y `tests/server` → PASS; `npm run typecheck` limpio. Commit `feat(mcp): add distillmd mcp over stdio and http`.
 
-### Tarea 4: caché de conversiones
+### Task 4: caché de conversiones
 
 **Archivos:**
 - Crear: `src/hooks/cache.ts`
@@ -125,7 +125,7 @@ CLI: `distillmd mcp [--http] [--port 4322] [--host 127.0.0.1] [--root <dir>]... 
 - [ ] **Paso 1:** tests: segunda llamada con el mismo contenido → `cached: true` y el distiller se llamó una vez; cambiar un byte → otra clave; cambiar `version` → otra clave; no quedan `.tmp-` tras un error del distiller.
 - [ ] **Paso 2:** implementar, correr → PASS. Commit `feat(hooks): add content-addressed conversion cache`.
 
-### Tarea 5: hooks en tiempo de ejecución (`distillmd hook claude` y `distillmd hook convert`)
+### Task 5: hooks en tiempo de ejecución (`distillmd hook claude` y `distillmd hook convert`)
 
 **Archivos:**
 - Crear: `src/hooks/claude.ts`, `src/hooks/supported.ts`
@@ -150,7 +150,7 @@ Contrato de Claude Code (verificado el 2026-11-07 en https://code.claude.com/doc
 - [ ] **Paso 2:** test de `run(['hook','claude'])` con stdin falso: stdout tiene exactamente un JSON o nada, y la salida es 0 en ambos casos.
 - [ ] **Paso 3:** implementar, correr → PASS. Commit `feat(hooks): add claude PreToolUse handler and hook convert`.
 
-### Tarea 6: `distillmd hooks install|uninstall --claude|--opencode`
+### Task 6: `distillmd hooks install|uninstall --claude|--opencode`
 
 **Archivos:**
 - Crear: `src/hooks/install-claude.ts`, `src/hooks/install-opencode.ts`, `src/hooks/opencode-plugin.ts`, `src/hooks/command.ts`
@@ -172,7 +172,7 @@ Contrato de Claude Code (verificado el 2026-11-07 en https://code.claude.com/doc
 - [ ] **Paso 3:** tests de la CLI con `HOME` falso en tmp: sin TTY ni `--yes` sale 1 y no escribe; con `--yes` escribe; `--project` escribe en el cwd.
 - [ ] **Paso 4:** implementar, correr → PASS. Commit `feat(hooks): install and uninstall claude code and opencode hooks`.
 
-### Tarea 7: humo de punta a punta y docs
+### Task 7: humo de punta a punta y docs
 
 **Archivos:**
 - Modificar: `README.md` (secciones CLI, MCP, Hooks; la hace el hilo de README del lanzamiento si ya está en curso), `docs/superpowers/specs/2026-11-06-distill-design.md` (marcar fases 2 y 3 como implementadas y anotar las decisiones de este plan).
