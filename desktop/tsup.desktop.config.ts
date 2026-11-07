@@ -9,7 +9,7 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
 const shared = {
   outDir: 'dist/desktop',
   platform: 'node',
-  target: 'node20',
+  target: 'node22',
   clean: false,
   sourcemap: false,
   dts: false,

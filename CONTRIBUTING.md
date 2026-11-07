@@ -9,7 +9,7 @@ Thanks for helping. Bug reports, ideas and pull requests are all welcome.
 
 ## Setup
 
-Node 20 or newer (CI uses 22).
+Node 22.12 or newer.
 
 ```bash
 npm ci

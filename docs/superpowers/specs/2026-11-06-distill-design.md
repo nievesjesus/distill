@@ -35,7 +35,7 @@ Esta spec detalla la fase 1 y fija las interfaces de las fases 2 y 3. Cada fase 
 
 ## 3. Arquitectura
 
-Es un solo paquete npm en TypeScript (Node ≥ 20, ESM). Un proceso de Node sirve la API y la SPA ya compilada.
+Es un solo paquete npm en TypeScript (Node ≥ 22.12, ESM). Un proceso de Node sirve la API y la SPA ya compilada.
 
 ```
 distillmd/

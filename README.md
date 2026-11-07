@@ -11,7 +11,7 @@
   <a href="https://github.com/nievesjesus/distill/actions/workflows/ci.yml"><img src="https://github.com/nievesjesus/distill/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://www.npmjs.com/package/distillmd"><img src="https://img.shields.io/npm/v/distillmd?color=C8F53C&labelColor=0B0B10" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-C8F53C?labelColor=0B0B10" alt="License: Apache-2.0"></a>
-  <img src="https://img.shields.io/badge/node-%E2%89%A520-C8F53C?labelColor=0B0B10" alt="Node 20+">
+  <img src="https://img.shields.io/badge/node-%E2%89%A522.12-C8F53C?labelColor=0B0B10" alt="Node 22.12+">
   <img src="https://img.shields.io/badge/runs-100%25%20local-C8F53C?labelColor=0B0B10" alt="Runs 100% local">
 </p>
 
