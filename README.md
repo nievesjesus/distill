@@ -22,7 +22,15 @@ npx distillmd --port 4321 --host 127.0.0.1 --no-open --max-size 100
 
 The server only listens on loopback by default. Passing `--host 0.0.0.0` exposes it to your network and disables the loopback check, so only do that on a network you trust.
 
-`npx distillmd` currently installs the LLMLingua runtime (several hundred MB, mostly onnxruntime) as part of the package. A slimmer install is planned.
+`npx distillmd` currently installs the LLMLingua runtime (several hundred MB, mostly `onnxruntime-node`, about 400 MB) as part of the package. A slimmer install is planned.
+
+On Linux x64, the `onnxruntime-node` postinstall script also downloads the CUDA execution provider binaries from NuGet. That download can fail behind a proxy or without network access to NuGet, and it is not needed for CPU inference. To skip it, set the flag when you run:
+
+```bash
+ONNXRUNTIME_NODE_INSTALL=skip npx distillmd
+```
+
+With the flag set, the postinstall script exits before fetching anything. The CPU runtime that ships inside the npm package is untouched, so LLMLingua-2 keeps working on CPU; only the optional GPU binaries are not downloaded. Parsing and the four local boosters do not use onnxruntime at all.
 
 ## Docker
 
@@ -59,7 +67,7 @@ Boosters run in a fixed order and each one is a pure, idempotent function over t
 
 | Booster | What it does | Loss |
 |---------|--------------|------|
-| Drop repeated boilerplate | Removes short non-structural lines (not headings, table rows or list items) that appear 3 or more times, keeping the first | No information lost |
+| Drop repeated boilerplate | Removes repeated running headers and footers: non-structural lines (not headings, table rows or list items) with at least 4 words and 25 characters that appear 3 or more times, and whole-line page numbers such as `Page 3 of 12`, `3 / 12` or `- 3 -`, keeping the first. Short repeated lines (`Yes`, `N/A`, `Score: 3/4`) are never removed | No information lost |
 | Slim images and links | `![alt](path)` becomes `[alt]` and `[text](url)` becomes `text` | **Drops image paths and URLs** |
 | Compact tables | Removes alignment padding from GFM tables | None |
 | Collapse whitespace | Collapses blank-line runs, trailing spaces and double spaces outside code | None |
@@ -75,7 +83,7 @@ Counts use the `o200k_base` encoding (via `gpt-tokenizer`), computed in your bro
 
 ## Privacy
 
-Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. Distill can make two one-time downloads. First, the first OCR of an image or scan downloads about 15 MB of Tesseract English data (`eng.traineddata`) from GitHub, unless tessdata is already present. To avoid it, point `DISTILL_TESSDATA` or `TESSDATA_PREFIX` at a local tessdata directory (`DISTILL_OCR_LANG` sets the OCR language, default `eng`), or use the Docker image, which ships the data. Second, the LLMLingua model download, only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later. Removing a row or choosing Clear drops its copy from memory too. Nothing is written to disk except what you save yourself, and the list of documents is not remembered between launches: only your settings are.
+Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. Distill can make two one-time downloads. First, the first OCR of an image or scan downloads about 15 MB of Tesseract English data (`eng.traineddata`) from GitHub, unless tessdata is already present. To avoid it, point `DISTILL_TESSDATA` or `TESSDATA_PREFIX` at a local tessdata directory (`DISTILL_OCR_LANG` sets the OCR language, default `eng`), or use the Docker image, which ships the data. Second, the LLMLingua model download, only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later. Removing a row or choosing Clear drops its copy from memory too. Nothing is written to disk except: the files you save yourself; the LLMLingua model cache in `~/.cache/distillmd/models`, if you enable it; the desktop app's window size and position and last save folder (`window-state.json` and `desktop-prefs.json` in its user data folder); and the browser's or Electron profile's own data (your settings live there). The list of documents is not remembered between launches. API responses are sent with `Cache-Control: no-store`, so they are not cached by the browser.
 
 ## Desktop app
 

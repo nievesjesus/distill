@@ -83,7 +83,7 @@ Cada booster es `(md: string) => string`: puro, determinista e idempotente (`b(b
 
 | # | id | Nombre en UI | Qué hace | Pérdida |
 |---|----|--------------|----------|---------|
-| 1 | `dedupe` | Drop repeated boilerplate | Elimina líneas no estructurales (no son títulos, filas de tabla ni ítems de lista) de ≤ 120 caracteres que aparecen 3 o más veces; conserva la primera aparición | Ninguna de información |
+| 1 | `dedupe` | Drop repeated boilerplate | Elimina encabezados y pies repetidos: líneas no estructurales (no son títulos, filas de tabla ni ítems de lista) de ≤ 120 caracteres, con al menos 4 palabras y 25 caracteres, que aparecen 3 o más veces, y los números de página que ocupan toda la línea (`Page 3 of 12`, `3 / 12`, `- 3 -`, `Página 3 de 12`); conserva la primera aparición. Las líneas cortas repetidas (`Yes`, `N/A`, `Score: 3/4`) nunca se eliminan | Ninguna de información |
 | 2 | `media` | Slim images and links | `![alt](ruta)` → `[alt]` (se borra si alt está vacío); `[texto](url)` → `texto` | Se pierden las rutas y las URLs |
 | 3 | `tables` | Compact tables | Quita el relleno de alineación de las tablas GFM: `\| a \| b \|` → `\|a\|b\|`, y el separador queda `\|-\|-\|` | Ninguna |
 | 4 | `ws` | Collapse whitespace | Convierte varias líneas en blanco en una, quita espacios al final y colapsa espacios dobles fuera de bloques de código | Ninguna |
@@ -117,11 +117,16 @@ Por defecto escucha solo en `127.0.0.1:4321` (`--port`, `--host`). No tiene aute
 | `GET /api/health` | — | `{ version, liteparseVersion, libreoffice: bool, lingua: { installed, model, state: idle\|downloading\|ready\|error, progress: 0–1 } }` |
 | `POST /api/parse` | multipart: `file` | `{ id, name, kind, pages, markdown, ms }`, o un error `{ code, message }` |
 | `GET /api/files/:id/json` | — | JSON de LiteParse con bboxes |
+| `DELETE /api/files/:id` | — | `204`, también si el id no existe. Es la única ruta de borrado: «Clear» borra id por id los que el cliente conoce, no hay borrado comodín |
 | `POST /api/compress` | `{ text, rate, model? }` | `{ text }` (puede tardar; responde 503 si el modelo no está listo) |
 | `GET /*` | — | SPA |
 
 - Los archivos subidos van a un directorio temporal y se borran al terminar el parseo. Los bytes originales y el resultado quedan en memoria (LRU, 50 archivos o 200 MB) solo para pedir el JSON después: esa segunda pasada vuelve a escribir un temporal y lo borra al terminar.
-- Límite por archivo: 100 MB (`--max-size`). Códigos de error: `unsupported_type`, `needs_libreoffice`, `too_large`, `password_protected`, `timeout`, `parse_failed`.
+- Límite por archivo: 100 MB (`--max-size`, `maxBytes`); el cuerpo de `/api/parse` admite además 1 MB de sobrecarga multipart, y el de `/api/compress` hasta 5 000 000 de caracteres de texto.
+- Códigos de error `{ code, message }` y su estado HTTP: `bad_request` 400, `unsupported_type` 400, `forbidden` 403, `not_found` 404, `too_large` 413, `needs_libreoffice` 422, `password_protected` 422, `parse_failed` 422 (500 con «Unexpected server error» ante fallos no previstos), `lingua_unavailable` 503, `timeout` 504.
+- `499` sin cuerpo: el cliente abortó la petición (parseo o compresión) y el servidor no guarda el resultado.
+- Toda respuesta de `/api/*`, errores incluidos, lleva `Cache-Control: no-store`.
+- Con el servidor ligado a loopback, se rechaza con `403 forbidden` cualquier petición cuyo `Host` no sea loopback y cualquier petición no segura con un `Origin` que no lo sea.
 - Concurrencia: el cliente sube en paralelo; el servidor pone en cola según el `poolSize` de LiteParse.
 
 ## 6. UI (fase 1)
@@ -170,7 +175,7 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 
 - npm: `distillmd`, con los bins `distillmd` y `distill`. `npx distillmd` equivale a `distillmd web --open`.
 - Repositorio: `github.com/nievesjesus/distill`.
-- Docker: `ghcr.io/nievesjesus/distill`, basada en `node:22-slim` con LibreOffice (writer, calc, impress) y los datos de tesseract en inglés y español. Se ejecuta con `docker run -p 4321:4321`, y dentro del contenedor escucha en `0.0.0.0`.
+- Docker: `ghcr.io/nievesjesus/distill`, basada en `node:22-slim` con LibreOffice (writer, calc, impress) y los datos de tesseract en inglés (`tesseract-ocr-eng`; otros idiomas se piden con `DISTILL_OCR_LANG` y datos propios en `DISTILL_TESSDATA`). Se ejecuta con `docker run -p 4321:4321`, y dentro del contenedor escucha en `0.0.0.0`.
 - Licencia: Apache-2.0, compatible con LiteParse.
 
 ### 9.1 App de escritorio (Electron) — agregado el 2026-11-06
@@ -178,8 +183,8 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 El usuario pidió un binario que se descarga y se ejecuta. Un ejecutable de un solo archivo (Node SEA, `bun --compile`, `pkg`) no sirve: LiteParse carga un addon nativo (`liteparse.<plataforma>.node` + `libpdfium`) que tiene que existir como archivo en disco, y su pool hace `fork()` de `pool-worker.js`, así que necesita un runtime de Node. Por eso la app de escritorio usa Electron, que trae Node integrado.
 
 - **Proceso principal:** importa `startServer` del mismo paquete, levanta el servidor en `127.0.0.1` con puerto 0 (libre) y abre una `BrowserWindow` que carga esa URL. Usa el mismo servidor y la misma UI que `npx distillmd`; no hay un segundo código de UI.
-- **Ventana:** 760×860 por defecto, mínimo 420×560, título "distill" y fondo `#0B0B10` desde el primer frame (sin destello blanco). Instancia única: abrir la app de nuevo enfoca la ventana existente. Al cerrar la ventana se cierra el servidor y la app sale, también en macOS.
-- **Seguridad:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, sin preload. La ventana no puede navegar fuera de su origen: los links externos (GitHub, LibreOffice) se abren en el navegador del sistema con `shell.openExternal`, y solo si son `https:`. `setWindowOpenHandler` deniega las ventanas nuevas.
+- **Ventana:** 640×780 por defecto, mínimo 440×520, título "distill" y fondo `#0B0B10` desde el primer frame (sin destello blanco). La barra de título está integrada: en macOS `hiddenInset` con los semáforos a 16 px del borde y centrados en una barra de 40 px; en Windows `hidden` con `titleBarOverlay` de 40 px; en Linux la barra del sistema. Tamaño y posición se recuerdan en `window-state.json`. Instancia única: abrir la app de nuevo enfoca la ventana existente. Al cerrar la ventana, o con Cmd+Q, se detiene el servidor (con un tope de 2 s) y la app sale, también en macOS.
+- **Seguridad:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, `spellcheck: false` y un preload mínimo en sandbox que expone solo `window.distillDesktop` con `onSaved(callback)` y `reveal(id)`. Los canales IPC (`distill:saved`, `distill:reveal`) validan el remitente y `reveal` recibe un id que el proceso principal traduce a una ruta guardada, nunca una ruta del renderer. Guardar usa el diálogo nativo y recuerda la última carpeta en `desktop-prefs.json`. La ventana no puede navegar fuera de su origen: los links externos (GitHub, LibreOffice) se abren en el navegador del sistema con `shell.openExternal`, y solo si son `https:`. `setWindowOpenHandler` deniega las ventanas nuevas.
 - **LiteParse dentro de Electron:** el `fork()` del pool debe arrancar el binario de Electron en modo Node (`ELECTRON_RUN_AS_NODE`). Los archivos nativos y `pool-worker.js` van fuera del asar (`asarUnpack`). Una prueba de humo en la app empaquetada lo valida.
 - **Variantes:**
   - *lite* excluye `@atjsh/llmlingua-2`, `@huggingface/transformers`, `js-tiktoken`, `onnxruntime-*` y `sharp`; la UI muestra LLMLingua-2 como "not installed".
@@ -202,7 +207,7 @@ El usuario pidió un binario que se descarga y se ejecuta. Un ejecutable de un s
 ## 11. Fuera de alcance (v1)
 
 Auto-update de la app de escritorio; firma y notarización de los instaladores; LibreOffice incluido en la app.
-Subir a la nube o tener cuentas; editar el Markdown; procesar URLs remotas; contraseñas de PDF; traducir la UI; pedir el `%` de progreso por página; tokenizers específicos de cada proveedor; app de escritorio.
+Subir a la nube o tener cuentas; editar el Markdown; procesar URLs remotas; contraseñas de PDF; traducir la UI; pedir el `%` de progreso por página; tokenizers específicos de cada proveedor.
 
 ## 12. Riesgos
 
