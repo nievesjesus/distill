@@ -90,3 +90,13 @@ test('shows the empty state, removes a row, and clears with a confirmation', asy
   await expect(rows).toHaveCount(0);
   await expect(page.locator('.footer')).toHaveCount(0);
 });
+
+test('serves the favicon and sends no-store on API responses', async ({ page, request }) => {
+  await page.goto('/');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.png');
+  const icon = await request.get('/favicon.png');
+  expect(icon.status()).toBe(200);
+  expect(icon.headers()['content-type']).toContain('image/png');
+  const health = await request.get('/api/health');
+  expect(health.headers()['cache-control']).toBe('no-store');
+});
