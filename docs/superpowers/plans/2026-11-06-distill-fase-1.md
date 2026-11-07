@@ -551,3 +551,92 @@ e2e/distill.spec.ts          Playwright
   - Guarda capturas a 440×520, 640×780 y 1280×900 en `test-results/desktop-*.png`.
 - [ ] **Paso 5:** `npm run typecheck`, `npm test`, `npm run test:e2e` y `npm run test:desktop` en verde.
 - [ ] **Paso 6: Commit** con `feat(desktop): native window sizing, remembered bounds and fluid app layout`.
+
+### Tarea 16: Gestión de la lista, guardado nativo y empty state
+
+> Agregada el 2026-11-06 a pedido del usuario. Pidió poder quitar un archivo, limpiar la lista y guardar con el diálogo nativo, que la lista no persista entre aperturas y un empty state "bien lindo" con todo bien alineado y separado. Depende de la Tarea 15.
+
+**Archivos:**
+- Crear:
+  - `desktop/downloads.ts` y `desktop/preload.ts` (preload sandboxed con `contextBridge`)
+  - `tests/desktop/downloads.test.ts`
+  - `web/src/components/EmptyState.tsx`
+  - `web/src/lib/desktop-bridge.ts`
+- Modificar:
+  - `src/server/store.ts` y `src/server/app.ts`
+  - `web/src/state/files.ts`
+  - `web/src/components/{FileRow,FileList,Footer,Preview}.tsx`
+  - `web/src/strings.ts` y `web/src/theme.css`
+  - `desktop/main.ts`, `desktop/window.ts` y `desktop/tsup.desktop.config.ts`
+  - los tests correspondientes, `e2e/distill.spec.ts` y `e2e/desktop.spec.ts`
+
+**Comportamiento esperado:**
+
+1. **Quitar un archivo.**
+   - Cada fila tiene un botón ✕ (`icon-button`, `aria-label` "Remove <name>") al final de sus acciones. Si la fila está en cola, subiendo o comprimiendo, se aborta lo que esté en curso (AbortController y timers) y se limpia su caché de compresión y de JSON.
+   - Las teclas Delete/Backspace sobre la fila enfocada hacen lo mismo.
+   - El foco pasa a la fila siguiente, o a la anterior si era la última. Si la lista queda vacía, va al botón "browse".
+   - Se anuncia "<name> removed" por el announcer.
+2. **Limpiar todo.**
+   - Va un botón de texto "Clear" en el footer, a la izquierda de Download all, deshabilitado sin archivos.
+   - Si hay resultados que no se exportaron (sin descargar, copiar ni incluir en un ZIP), pide una confirmación inline en el mismo footer: "Clear N files? K not saved yet." con "Clear" y "Cancel". Escape cancela. No se usa `window.confirm`.
+   - Aborta todo lo que esté en curso.
+3. **Servidor.**
+   - `Store.delete(id)` y `Store.clear()`.
+   - `DELETE /api/files/:id` y `DELETE /api/files` responden 204 y son idempotentes. Pasan por el mismo guard loopback/Origin que el resto de `/api`.
+   - El cliente los llama al quitar y al limpiar, sin bloquear la UI. Si fallan, se ignora, porque el LRU igual expira.
+4. **La lista no persiste entre aperturas** (decisión del usuario).
+   - Solo persisten los ajustes. Hay que documentarlo en el README, en Privacy: nada se escribe a disco salvo lo que el usuario guarda.
+5. **Guardado nativo en escritorio.**
+   - En `will-download`, `desktop/downloads.ts` usa `dialog.showSaveDialogSync(win, opts)` y luego `item.setSavePath` o `item.cancel()`.
+   - Las opciones las arma una función pura `saveDialogOptions(filename, lastDir, downloadsDir, exists)`:
+     - `defaultPath` = última carpeta usada si existe; si no, Descargas.
+     - Filtros por extensión: Markdown para `.md`, ZIP para `.zip` y JSON para `.json`.
+   - La última carpeta se guarda en `userData/desktop-prefs.json`, con escritura atómica. Si leerla falla, nunca bloquea.
+   - Al completarse, el main avisa al renderer por el preload:
+     - API mínima `window.distillDesktop = { onSaved(cb), reveal(id) }`;
+     - `reveal` recibe un id que el main mapea a la ruta, nunca una ruta del renderer;
+     - el main llama a `shell.showItemInFolder`.
+   - En macOS se llama a `app.dock.downloadFinished(path)`.
+   - La web muestra en el footer un aviso breve: "Saved <file>" con un link "Show in Finder" (macOS) o "Show in folder" (Windows/Linux). Se va solo a los ~6 s o con Escape.
+   - En el navegador no hay bridge y todo sigue igual.
+   - El preload se compila a CJS, se carga con `sandbox: true` y `contextIsolation: true`, y no expone `ipcRenderer` crudo.
+6. **Empty state** (los dos shells), en la zona de la lista cuando no hay archivos:
+   - En escritorio ocupa el espacio libre entre la barra de optimización y el borde inferior, centrado en vertical y horizontal. En el navegador es un bloque de unos 180 px.
+   - De arriba hacia abajo, con espaciado de 8/12/16 px:
+     1. Una ilustración SVG inline, de línea de 1.5 px y unos 56 px: dos hojas apiladas con una gota/embudo, el trazo en `--muted` y un detalle en `--accent` con un glow sutil (`--glow`). Va con `aria-hidden`.
+     2. Un título en Space Grotesk 600–700 de 15 px: "Nothing distilled yet".
+     3. Una línea en `--muted` de 12–13 px: "Drop documents anywhere in this window — they never leave your machine." En el navegador: "Drop documents here — they never leave your machine."
+     4. Una fila de chips con las etiquetas de tipo (PDF, DOCX, PPTX, XLSX, IMG) usando sus colores de `--kind-*`, con la misma forma que la etiqueta de las filas.
+     5. Un botón secundario "Browse files" que abre el mismo input del dropzone.
+   - Con alto ≤ 600 px se oculta la ilustración y queda compacto.
+   - Mientras se arrastran archivos sobre la ventana, el empty state también se resalta (borde dashed `--drop-border` → `--accent`).
+   - **Sin archivos, el footer se oculta**, porque "0% · 0/0 files" y Download all deshabilitado se ven muertos. Aparece en cuanto hay al menos un archivo.
+7. **Alineación y espaciado** (pasada en `theme.css`, sin tocar las medidas de densidad):
+   - Una escala de espaciado con variables (`--space-1..6` = 4/8/12/16/20/24) aplicada a la columna, la barra de optimización, las filas, el footer y el empty state.
+   - El borde izquierdo de la etiqueta de tipo, el título del dropzone, el switch de Optimize y el % del footer se alinean a la misma guía vertical.
+   - Las acciones de la derecha de cada fila (copy, download, remove) quedan alineadas en columna entre filas.
+   - El footer y la barra de optimización usan el mismo padding horizontal que la lista.
+   - Hay que verificar con capturas a 440×520, 640×780 y 1280×900, tanto vacío como con archivos, más una de la web en el navegador.
+
+- [ ] **Paso 1 (TDD):**
+  - Store y rutas DELETE (204, idempotente, Origin ajeno → 403).
+  - `remove`/`clear` en el estado: aborta en curso y limpia cachés.
+  - El foco tras quitar.
+  - La confirmación de Clear (con y sin pendientes de guardar, Escape).
+  - `saveDialogOptions` y prefs (carpeta inexistente → Descargas, JSON corrupto).
+  - El empty state aparece sin archivos y el footer se oculta.
+- [ ] **Paso 2:** servidor y estado.
+- [ ] **Paso 3:** UI: quitar, Clear, empty state y la pasada de espaciado.
+- [ ] **Paso 4:** escritorio: `downloads.ts`, preload y bridge, más el aviso "Saved…".
+- [ ] **Paso 5:** e2e.
+  - Navegador: quitar una fila, Clear con confirmación, empty state visible.
+  - Escritorio:
+    - stubbea `dialog.showSaveDialogSync` vía `app.evaluate` para que devuelva una ruta temporal;
+    - Download all → el `.zip` existe y es un ZIP válido;
+    - aparece "Show in Finder" y al hacer clic llama a `shell.showItemInFolder` (también stubbeado) con esa ruta;
+    - se recuerda la carpeta;
+    - Cancel en el diálogo no escribe nada.
+  - Capturas en `test-results/t16-*.png`.
+- [ ] **Paso 6:** typecheck, `npm test`, `test:e2e` y `test:desktop` en verde.
+- [ ] **Paso 7: Commit** con `feat: remove/clear files, native save dialog and empty state`.
