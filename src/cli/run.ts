@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
+import { isLoopbackHost } from '../core/loopback';
 import { startServer as defaultStartServer } from '../server/start';
 
 type Server = { url: string; close(): Promise<void> };
@@ -16,7 +17,6 @@ export interface CliDeps {
   handleSignals?: boolean;
 }
 
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const BYTES_PER_MB = 1024 * 1024;
 
 function readVersion(): string {
@@ -46,14 +46,27 @@ function parseMaxSize(value: string): number {
   return mb;
 }
 
+export interface OpenCommand {
+  file: string;
+  args: string[];
+  windowsVerbatimArguments: boolean;
+}
+
+export function openCommand(url: string, platform: NodeJS.Platform = process.platform): OpenCommand {
+  if (platform === 'darwin') return { file: 'open', args: [url], windowsVerbatimArguments: false };
+  if (platform === 'win32') {
+    return { file: 'rundll32', args: ['url.dll,FileProtocolHandler', url], windowsVerbatimArguments: true };
+  }
+  return { file: 'xdg-open', args: [url], windowsVerbatimArguments: false };
+}
+
 export function openInBrowser(url: string): void {
-  const command =
-    process.platform === 'darwin'
-      ? { file: 'open', args: [url] }
-      : process.platform === 'win32'
-        ? { file: 'cmd', args: ['/c', 'start', '""', url] }
-        : { file: 'xdg-open', args: [url] };
-  const child = spawn(command.file, command.args, { detached: true, stdio: 'ignore' });
+  const command = openCommand(url);
+  const child = spawn(command.file, command.args, {
+    detached: true,
+    stdio: 'ignore',
+    windowsVerbatimArguments: command.windowsVerbatimArguments,
+  });
   child.on('error', () => {});
   child.unref();
 }
@@ -110,7 +123,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       }
 
       stdout(`distill running at ${server.url}`);
-      if (!LOOPBACK_HOSTS.has(options.host.toLowerCase())) {
+      if (!isLoopbackHost(options.host)) {
         stderr(`Warning: listening on ${options.host} — anyone on your network can reach distill`);
       }
       if (options.open) openUrl(server.url);

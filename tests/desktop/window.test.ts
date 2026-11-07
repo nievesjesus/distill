@@ -11,7 +11,7 @@ describe('windowOptions', () => {
       title: 'distill',
       backgroundColor: '#0B0B10',
       show: false,
-      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
     });
   });
 
@@ -24,6 +24,7 @@ describe('windowOptions', () => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      spellcheck: false,
       preload: '/app/preload.cjs',
     });
   });

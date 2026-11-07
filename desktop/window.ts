@@ -29,7 +29,7 @@ export function windowOptions(platform: NodeJS.Platform, preload?: string): Brow
     backgroundColor: BACKGROUND,
     show: false,
     ...titleBarOptions(platform),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, ...(preload ? { preload } : {}) },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, ...(preload ? { preload } : {}) },
   };
 }
 

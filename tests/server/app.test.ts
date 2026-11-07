@@ -440,17 +440,18 @@ describe('server app', () => {
       expect(unknown.status).toBe(204);
     });
 
-    it('clears every stored file with 204 and is idempotent', async () => {
+    it('has no wildcard delete: DELETE /api/files is a 404 and keeps every stored file', async () => {
       const { app, store } = setup();
       put(store, 'a');
       put(store, 'b');
-      expect((await app.request('/api/files', { method: 'DELETE' })).status).toBe(204);
-      expect(store.get('a')).toBeUndefined();
-      expect(store.get('b')).toBeUndefined();
-      expect((await app.request('/api/files', { method: 'DELETE' })).status).toBe(204);
+      const res = await app.request('/api/files', { method: 'DELETE' });
+      expect(res.status).toBe(404);
+      expect(((await res.json()) as ApiError).code).toBe('not_found');
+      expect(store.get('a')).toBeDefined();
+      expect(store.get('b')).toBeDefined();
     });
 
-    it.each(['/api/files', '/api/files/a'])('blocks DELETE %s with a foreign Origin', async (path) => {
+    it.each(['/api/files/a'])('blocks DELETE %s with a foreign Origin', async (path) => {
       const { app, store } = setup({ guardLoopback: true });
       put(store, 'a');
       const res = await app.request(path, { method: 'DELETE', headers: { host: 'localhost:4321', origin: 'https://evil.example' } });
@@ -472,6 +473,53 @@ describe('server app', () => {
       const res = await app.request('/api/files/a', { method: 'DELETE', headers: { host: '127.0.0.1:4321', origin: 'http://127.0.0.1:4321' } });
       expect(res.status).toBe(204);
       expect(store.get('a')).toBeUndefined();
+    });
+  });
+
+  describe('Cache-Control', () => {
+    it.each([
+      ['GET', '/api/health', undefined],
+      ['GET', '/api/files/nope/json', undefined],
+      ['GET', '/api/unknown', undefined],
+      ['DELETE', '/api/files/a', undefined],
+      ['POST', '/api/parse', 'bad'],
+      ['POST', '/api/compress', 'bad'],
+    ])('sets no-store on %s %s', async (method, path, kind) => {
+      const { app } = setup({ installed: true });
+      const init: RequestInit =
+        kind === 'bad' ? { method, headers: { 'content-type': 'application/json' }, body: '{' } : { method };
+      const res = await app.request(path, init);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+    });
+
+    it('sets no-store on a successful parse and on a 500', async () => {
+      const ok = setup();
+      expect((await ok.app.request('/api/parse', upload('a.pdf'))).headers.get('cache-control')).toBe('no-store');
+      const broken = setup({
+        parser: {
+          async toMarkdown() {
+            throw new Error('boom');
+          },
+        },
+      });
+      const res = await broken.app.request('/api/parse', upload('a.pdf'));
+      expect(res.status).toBe(500);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+    });
+
+    it('sets no-store on blocked requests', async () => {
+      const { app } = setup({ guardLoopback: true });
+      const res = await app.request('/api/health', { headers: { host: 'evil.example:4321' } });
+      expect(res.status).toBe(403);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+    });
+
+    it('does not mark static files', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'distill-web-'));
+      writeFileSync(join(dir, 'index.html'), '<html></html>');
+      const { app } = setup({ webRoot: dir });
+      const res = await app.request('/');
+      expect(res.headers.get('cache-control')).toBeNull();
     });
   });
 

@@ -38,8 +38,7 @@ export function OptimizeBar({
   const linguaStatus = health?.lingua;
   const installed = linguaStatus?.installed === true;
   const { optimize, optionsOpen, detailed, active, lingua } = settings;
-  const linguaStatus0 = health?.lingua;
-  const linguaEffective = lingua.on && (linguaStatus0 === undefined || linguaStatus0.installed === true);
+  const linguaEffective = lingua.on && (linguaStatus === undefined || linguaStatus.installed === true);
   const count = active.length + (linguaEffective ? 1 : 0);
 
   return (

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { run } from '../../src/cli/run';
+import { openCommand, run } from '../../src/cli/run';
 
 function harness(startImpl?: (opts: unknown) => Promise<{ url: string; close(): Promise<void> }>) {
   const stdout: string[] = [];
@@ -98,5 +98,22 @@ describe('run', () => {
     const h = harness();
     await run(['--host', 'localhost', '--no-open'], h.deps);
     expect(h.stderr).toEqual([]);
+  });
+});
+
+describe('openCommand', () => {
+  it('opens with rundll32 and verbatim arguments on Windows, never through cmd', () => {
+    const command = openCommand('http://127.0.0.1:4321', 'win32');
+    expect(command).toEqual({
+      file: 'rundll32',
+      args: ['url.dll,FileProtocolHandler', 'http://127.0.0.1:4321'],
+      windowsVerbatimArguments: true,
+    });
+    expect(command.file).not.toBe('cmd');
+  });
+
+  it('uses open on macOS and xdg-open elsewhere', () => {
+    expect(openCommand('http://x', 'darwin')).toMatchObject({ file: 'open', args: ['http://x'] });
+    expect(openCommand('http://x', 'linux')).toMatchObject({ file: 'xdg-open', args: ['http://x'] });
   });
 });

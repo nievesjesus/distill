@@ -5,25 +5,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { serve } from '@hono/node-server';
+import { isLoopbackHost } from '../core/loopback';
 import { hasLibreOffice } from '../node/capabilities';
-import { createLingua } from '../node/lingua';
+import { createLingua, findPackageRoot } from '../node/lingua';
 import { createParser } from '../node/parse';
 import { createApp } from './app';
 import { createStore } from './store';
 
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const MAX_STORED_FILES = 50;
 const MAX_STORED_BYTES = 200 * 1024 * 1024;
-
-function findPackageRoot(): string {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  while (!existsSync(join(dir, 'package.json'))) {
-    const parent = dirname(dir);
-    if (parent === dir) throw new Error('distillmd package.json not found');
-    dir = parent;
-  }
-  return dir;
-}
 
 function readVersion(packageJsonPath: string): string {
   return (JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version: string }).version;
@@ -34,7 +24,8 @@ export async function startServer(opts: {
   host: string;
   maxBytes: number;
 }): Promise<{ url: string; close(): Promise<void> }> {
-  const packageRoot = findPackageRoot();
+  const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url)));
+  if (packageRoot === undefined) throw new Error('distillmd package.json not found');
   const require = createRequire(import.meta.url);
   const version = readVersion(join(packageRoot, 'package.json'));
   const liteparseVersion = readVersion(require.resolve('@llamaindex/liteparse/package.json'));
@@ -53,7 +44,7 @@ export async function startServer(opts: {
       version,
       liteparseVersion,
       webRoot: existsSync(webRoot) ? webRoot : undefined,
-      guardLoopback: LOOPBACK_HOSTS.has(opts.host.toLowerCase()),
+      guardLoopback: isLoopbackHost(opts.host),
     });
 
     const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {

@@ -8,6 +8,7 @@ import { bodyLimit } from 'hono/body-limit';
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { detectKind, needsLibreOffice } from '../core/kind';
+import { isLoopbackHost } from '../core/loopback';
 import type { ApiError, ErrorCode, Health, LinguaModel, ParseResponse } from '../core/types';
 import { DistillError } from '../node/errors';
 import type { Lingua } from '../node/lingua';
@@ -30,7 +31,6 @@ const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 const MAX_COMPRESS_CHARS = 5_000_000;
 const MAX_COMPRESS_BODY_BYTES = MAX_COMPRESS_CHARS * 4 + MULTIPART_OVERHEAD_BYTES;
 const SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'OPTIONS']);
-const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const LINGUA_MODELS: ReadonlySet<string> = new Set<LinguaModel>(['tinybert', 'mobilebert', 'xlm-roberta']);
 
 const STATUS_BY_CODE: Record<ErrorCode, ContentfulStatusCode> = {
@@ -88,14 +88,19 @@ export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
   const tooLarge = () => `File exceeds the ${deps.maxBytes} byte limit`;
 
+  app.use('/api/*', async (c, next) => {
+    await next();
+    c.header('Cache-Control', 'no-store');
+  });
+
   if (deps.guardLoopback) {
     const blocked = (c: Context) => fail(c, 'forbidden', 'Request blocked: distill only accepts local requests');
     app.use('*', async (c, next) => {
-      if (!LOOPBACK_HOSTNAMES.has(hostnameOf(c.req.header('host') ?? ''))) return blocked(c);
+      if (!isLoopbackHost(hostnameOf(c.req.header('host') ?? ''))) return blocked(c);
       const origin = c.req.header('origin');
       if (!SAFE_METHODS.has(c.req.method) && origin !== undefined) {
         const hostname = originHostname(origin);
-        if (hostname === null || !LOOPBACK_HOSTNAMES.has(hostname)) return blocked(c);
+        if (hostname === null || !isLoopbackHost(hostname)) return blocked(c);
       }
       return next();
     });
@@ -164,11 +169,6 @@ export function createApp(deps: AppDeps): Hono {
 
   app.delete('/api/files/:id', (c) => {
     deps.store.delete(c.req.param('id'));
-    return c.body(null, 204);
-  });
-
-  app.delete('/api/files', (c) => {
-    deps.store.clear();
     return c.body(null, 204);
   });
 
