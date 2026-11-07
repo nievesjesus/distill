@@ -9,7 +9,7 @@ export default defineConfig({
     projects: [
       {
         resolve: { alias },
-        test: { name: 'node', environment: 'node', include: ['tests/**/*.test.ts'] },
+        test: { name: 'node', environment: 'node', include: ['tests/**/*.test.ts'], exclude: ['tests/e2e-cli/**', '**/node_modules/**'] },
       },
       {
         resolve: { alias },

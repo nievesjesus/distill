@@ -31,6 +31,8 @@ Tiene tres caras sobre el mismo núcleo:
 
 Esta spec detalla la fase 1 y fija las interfaces de las fases 2 y 3. Cada fase tendrá su propio plan de implementación.
 
+**Estado (2026-11-07):** las fases 2 y 3 están implementadas (`distillmd convert`, `distillmd mcp`, `distillmd hook claude|convert`, `distillmd hooks install|uninstall`). Ver las decisiones de implementación al final de la sección 8.
+
 ## 3. Arquitectura
 
 Es un solo paquete npm en TypeScript (Node ≥ 20, ESM). Un proceso de Node sirve la API y la SPA ya compilada.
@@ -182,6 +184,16 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 - **OpenCode:** un plugin con `tool.execute.before` sobre la tool `read`, con la misma lógica.
 - Codex y otros clientes se integran por MCP. Si tienen hooks, se agregan en una versión posterior.
 - Se verificará la API exacta de cada cliente al planear la fase 3; esta sección fija la intención, no la firma final.
+
+### Decisiones de implementación (fases 2 y 3) — 2026-11-07
+
+- **MCP HTTP:** transporte stateless (un servidor y un transporte por petición). Confina las lecturas a `--root` (por defecto, el cwd) resolviendo symlinks; una ruta fuera devuelve `forbidden`. Aplica las mismas guardas de host y origen que el servidor web. Stdio solo usa el cwd y no escribe nada en stdout fuera de JSON-RPC.
+- **Hooks de Claude:** nunca bloquean. Salen con código 0, no emiten `permissionDecision` y, ante cualquier fallo, dejan pasar la lectura original. `updatedInput` reemplaza la entrada completa, así que se copian `offset` y `limit`. El instalador agrega también la regla `allow` para `~/.cache/distillmd/out/**`, para que la lectura del Markdown no pida permiso.
+- **Formatos:** solo se convierten PDF y Office/ODF. Las imágenes y el CSV se dejan pasar sin tocar, porque convertirlos no ahorra tokens.
+- **Caché:** direccionada por contenido (hash del archivo y de las opciones). Un acierto no vuelve a parsear.
+- **OpenCode:** el plugin reescribe `filePath`, `file_path` o `path` según la tool y rechaza rutas riesgosas en Windows.
+- **Instalador:** conserva symlinks y modos de archivo, rechaza symlinks del proyecto que escapen del cwd y enmascara los valores en el diff antes de pedir confirmación.
+- **Pruebas:** el humo de punta a punta vive en `tests/e2e-cli/` (`npm run test:smoke`), corre sobre `dist/cli.js` con un `HOME` temporal y está fuera de `npm test`.
 
 ## 9. Distribución
 

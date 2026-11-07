@@ -24,6 +24,7 @@
     "prepack": "npm run build",
     "dev:web": "vite --config web/vite.config.ts",
     "check:deps": "node scripts/check-lock.mjs",
+    "test:smoke": "npm run build && vitest run --config vitest.smoke.config.ts",
     "test:e2e": "playwright test",
     "build:desktop": "npm run build && tsup --config desktop/tsup.desktop.config.ts",
     "desktop": "npm run build:desktop && electron .",
