@@ -7,3 +7,4 @@ test-results/
 .cache/
 release/
 build/lingua/
+/electron-builder.*.signed.yml
