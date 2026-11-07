@@ -10,7 +10,7 @@ let proj: string;
 let home: string;
 
 beforeEach(() => {
-  base = realpathSync(mkdtempSync(join(tmpdir(), 'distill-claude-')));
+  base = realpathSync.native(mkdtempSync(join(tmpdir(), 'distill-claude-')));
   proj = join(base, 'proj');
   home = join(base, 'home');
   mkdirSync(proj);

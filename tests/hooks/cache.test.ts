@@ -1,6 +1,6 @@
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Distiller } from '../../src/node/distill';
 import { convertCached as convertWith } from '../../src/hooks/cache';
@@ -11,7 +11,7 @@ function fakeDistiller(impl?: () => Promise<never>) {
   const distillFile = vi.fn(
     impl ??
       (async (path: string) => ({
-        name: path.split('/').pop() as string,
+        name: basename(path),
         markdown: '# Title\n\nbody',
         tokens: { raw: 120, out: 40 },
       })),
@@ -124,7 +124,7 @@ describe('convertCached', () => {
 
     expect(a.mdPath).toBe(b.mdPath);
     const entries = await readdir(join(cacheDir, 'out'));
-    expect(entries).toEqual([`${a.mdPath.split('/').pop()}`]);
+    expect(entries).toEqual([basename(a.mdPath)]);
   });
 
   it('does not call getDistiller on a cache hit', async () => {

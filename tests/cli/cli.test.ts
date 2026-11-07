@@ -8,12 +8,12 @@ const version = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as
 
 describe('distillmd binary', () => {
   beforeAll(() => {
-    const build = spawnSync('npx', ['tsup'], { cwd: root, encoding: 'utf8' });
+    const build = spawnSync(process.execPath, [join(root, 'node_modules', 'tsup', 'dist', 'cli-default.js')], { cwd: root, encoding: 'utf8' });
     expect(build.status, build.stderr).toBe(0);
   }, 120_000);
 
   it('serves /api/health on an ephemeral port and exits on SIGTERM', async () => {
-    const child = spawn('node', ['dist/cli.js', '--port', '0', '--no-open'], { cwd: root });
+    const child = spawn(process.execPath, ['dist/cli.js', '--port', '0', '--no-open'], { cwd: root });
     let stderr = '';
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
@@ -35,6 +35,7 @@ describe('distillmd binary', () => {
     } finally {
       child.kill('SIGTERM');
     }
-    expect(await exited).toBe(0);
+    const code = await exited;
+    if (process.platform !== 'win32') expect(code).toBe(0);
   }, 30_000);
 });

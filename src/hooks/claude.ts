@@ -1,5 +1,6 @@
 import { readFile, realpath } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { isInside } from '../node/inside';
 import { isHookConvertible } from './supported';
 
 export interface ClaudeHookDeps {
@@ -10,11 +11,6 @@ export interface ClaudeHookDeps {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isInside(path: string, root: string): boolean {
-  const prefix = root.endsWith(sep) ? root : `${root}${sep}`;
-  return path === root || path.startsWith(prefix);
 }
 
 function readRuleList(permissions: Record<string, unknown>, key: string): boolean {

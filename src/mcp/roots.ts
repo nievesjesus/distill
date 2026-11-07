@@ -1,10 +1,21 @@
 import { realpath } from 'node:fs/promises';
-import { isAbsolute, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { DistillError } from '../node/errors';
+import { isInside } from '../node/inside';
 
-function isInside(path: string, root: string): boolean {
-  const prefix = root.endsWith(sep) ? root : `${root}${sep}`;
-  return path === root || path.startsWith(prefix);
+async function realpathOfExistingAncestor(absolute: string): Promise<string> {
+  const tail: string[] = [];
+  let current = absolute;
+  for (;;) {
+    try {
+      return join(await realpath(current), ...tail.reverse());
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return absolute;
+      tail.push(basename(current));
+      current = parent;
+    }
+  }
 }
 
 export async function resolveRoots(roots: string[], cwd: string): Promise<string[]> {
@@ -30,7 +41,8 @@ export function rootResolver(roots: string[], cwd: string): (p: string) => Promi
     try {
       real = await realpath(absolute);
     } catch (error) {
-      if (!allowed.some((root) => isInside(absolute, root))) {
+      const anchored = await realpathOfExistingAncestor(absolute);
+      if (!allowed.some((root) => isInside(anchored, root))) {
         throw new DistillError('forbidden', 'Path is outside the allowed roots');
       }
       const code = (error as NodeJS.ErrnoException).code;

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { rename as realRename, rm as realRm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createLinguaInstaller, findNpm, NPM_ARGS, REQUIRED_PACKAGES } from '../../src/node/lingua-install';
@@ -239,7 +239,7 @@ describe('lingua installer', () => {
     const installer = make(succeed, {
       fileOps: {
         rename: async (from: string, to: string) => {
-          names.push(from.split('/').pop()!, to.split('/').pop()!);
+          names.push(basename(from), basename(to));
           return realRename(from, to);
         },
       },
@@ -340,7 +340,7 @@ describe('lingua installer', () => {
     const installer = make(succeed, {
       fileOps: {
         rename: async (from: string, to: string) => {
-          renames.push(`${from.split('/').pop()!.replace(/-\d{13}-[0-9a-f]+$/, '-*')}>${to.split('/').pop()!.replace(/-\d{13}-[0-9a-f]+$/, '-*')}`);
+          renames.push(`${basename(from).replace(/-\d{13}-[0-9a-f]+$/, '-*')}>${basename(to).replace(/-\d{13}-[0-9a-f]+$/, '-*')}`);
           return realRename(from, to);
         },
       },

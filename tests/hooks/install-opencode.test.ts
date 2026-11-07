@@ -32,6 +32,7 @@ function real(name: string): string {
   return file;
 }
 
+const posixOnly = process.platform === 'win32';
 const OK = '#!/bin/sh\necho \'{"path":"/cache/out/x.md"}\'\n';
 const FAIL = '#!/bin/sh\nexit 1\n';
 
@@ -41,7 +42,7 @@ describe('opencodePluginSource', () => {
     expect(typeof before).toBe('function');
   });
 
-  it('rewrites filePath for a pdf', async () => {
+  it.skipIf(posixOnly)('rewrites filePath for a pdf', async () => {
     const before = await loadPlugin(OK);
     const output = { args: { filePath: real('a.pdf') } };
     await before({ tool: 'read' }, output);
@@ -81,7 +82,7 @@ describe('opencodePluginSource', () => {
     expect(output.args.filePath).toBe(file);
   });
 
-  it('rewrites whichever argument name is present and writes it back to the same key', async () => {
+  it.skipIf(posixOnly)('rewrites whichever argument name is present and writes it back to the same key', async () => {
     const before = await loadPlugin(OK);
     for (const key of ['file_path', 'path']) {
       const output = { args: { [key]: real('e.docx') } };
@@ -90,7 +91,7 @@ describe('opencodePluginSource', () => {
     }
   });
 
-  it('resolves relative paths against the plugin directory', async () => {
+  it.skipIf(posixOnly)('resolves relative paths against the plugin directory', async () => {
     const echo = '#!/bin/sh\nprintf \'{"path":"%s.md"}\' "$3"\n';
     const before = await loadPlugin(echo, { directory: fixtures });
     real('docs/f.pdf');
@@ -134,7 +135,7 @@ describe('opencodePluginSource', () => {
     expect(existsSync(marker)).toBe(false);
   });
 
-  it('converts a file inside the project', async () => {
+  it.skipIf(posixOnly)('converts a file inside the project', async () => {
     const before = await loadPlugin(OK);
     const output = { args: { filePath: real('inside/k.pdf') } };
     await before({ tool: 'read' }, output);
@@ -153,8 +154,8 @@ describe('opencodePluginSource', () => {
 
 describe('opencode paths and plans', () => {
   it('resolves global and project locations', () => {
-    expect(opencodePluginPath({ home: '/h', cwd: '/c', project: false })).toBe('/h/.config/opencode/plugins/distill.js');
-    expect(opencodePluginPath({ home: '/h', cwd: '/c', project: true })).toBe('/c/.opencode/plugins/distill.js');
+    expect(opencodePluginPath({ home: '/h', cwd: '/c', project: false })).toBe(join('/h', '.config', 'opencode', 'plugins', 'distill.js'));
+    expect(opencodePluginPath({ home: '/h', cwd: '/c', project: true })).toBe(join('/c', '.opencode', 'plugins', 'distill.js'));
   });
 
   it('plans an install and detects an identical file', () => {

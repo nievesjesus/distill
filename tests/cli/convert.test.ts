@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../../src/cli/run';
 import { DistillError } from '../../src/node/errors';
@@ -22,7 +22,7 @@ function fakeDistiller(fail: Set<string> = new Set()) {
   const distiller: Distiller = {
     async distillFile(path, opts) {
       calls.push({ path, opts });
-      const name = path.split('/').pop() as string;
+      const name = basename(path);
       if (fail.has(name)) throw new DistillError('parse_failed', 'broken file');
       return { path, name, kind: 'PDF', pages: 3, markdown: `# ${name}\n`, tokens: { raw: 38900, out: 27100 }, ms: 12 };
     },
