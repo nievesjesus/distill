@@ -20,4 +20,10 @@ describe('FileRow', () => {
     expect(previous.isConnected).toBe(false);
     expect(error).toHaveTextContent('Unsupported file type');
   });
+
+  it('keeps the full file name in a title so a truncated name stays readable', () => {
+    const name = 'a-very-long-quarterly-financial-statement-and-supporting-schedules-2026.pdf';
+    render(<ul><FileRow file={{ ...queued, name, kind: 'PDF' }} /></ul>);
+    expect(screen.getByText(name)).toHaveAttribute('title', name);
+  });
 });
