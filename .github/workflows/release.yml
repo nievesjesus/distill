@@ -54,12 +54,15 @@ jobs:
         run: |
           shopt -s globstar nullglob
           bad=0
+          found=0
           for f in release/**/Distill-*.dmg release/**/Distill-*.exe release/**/Distill-*.AppImage; do
+            found=1
             case "$f" in
               *-${{ matrix.arch }}.*) ;;
               *) echo "unexpected artifact: $f"; bad=1 ;;
             esac
           done
+          if [ "$found" -eq 0 ]; then echo "no installers produced"; bad=1; fi
           exit $bad
       - name: Verify lite variant
         shell: bash

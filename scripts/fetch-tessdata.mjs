@@ -38,10 +38,11 @@ try {
   const actual = sha256(readFileSync(temp));
   if (actual !== SHA256) {
     console.error(`tessdata checksum mismatch: expected ${SHA256}, got ${actual}`);
-    process.exit(1);
+    process.exitCode = 1;
+  } else {
+    renameSync(temp, target);
+    console.log('tessdata downloaded');
   }
-  renameSync(temp, target);
 } finally {
   rmSync(temp, { force: true });
 }
-console.log('tessdata downloaded');
