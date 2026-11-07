@@ -219,6 +219,68 @@ describe('lingua installer', () => {
     expect(existsSync(join(other, 'package.json'))).toBe(true);
   });
 
+  it('dates leftovers by the time in their name, not by their contents', async () => {
+    const longAgo = new Date(Date.now() - 60_000_000);
+    const fresh = join(cacheDir, `lingua.old-${Date.now()}-abcd`);
+    const expired = join(cacheDir, `lingua.old-${Date.now() - 600_000}-abcd`);
+    for (const dir of [fresh, expired]) {
+      mkdirSync(dir, { recursive: true });
+      utimesSync(dir, longAgo, longAgo);
+    }
+    const installer = make(succeed, { timeoutMs: 1000 });
+    await installer.install();
+    expect(existsSync(fresh)).toBe(true);
+    expect(existsSync(expired)).toBe(false);
+  });
+
+  it('names the temporary and aside directories with their creation time', async () => {
+    mkdirSync(join(cacheDir, 'lingua', 'node_modules'), { recursive: true });
+    const names: string[] = [];
+    const installer = make(succeed, {
+      fileOps: {
+        rename: async (from: string, to: string) => {
+          names.push(from.split('/').pop()!, to.split('/').pop()!);
+          return realRename(from, to);
+        },
+      },
+    });
+    const before = Date.now();
+    await installer.install();
+    const stamped = names.filter((name) => name !== 'lingua');
+    expect(stamped).toHaveLength(2);
+    for (const name of stamped) {
+      const time = Number(/^lingua\.(?:installing|old)-(\d{13})-[0-9a-f]+$/.exec(name)?.[1]);
+      expect(time).toBeGreaterThanOrEqual(before);
+      expect(time).toBeLessThanOrEqual(Date.now());
+    }
+  });
+
+  it('sweeps expired leftovers without installing', async () => {
+    const expired = join(cacheDir, `lingua.installing-${Date.now() - 600_000}-abcd`);
+    const fresh = join(cacheDir, `lingua.installing-${Date.now()}-abcd`);
+    mkdirSync(expired, { recursive: true });
+    mkdirSync(fresh, { recursive: true });
+    const installer = make(succeed, { timeoutMs: 1000 });
+    await installer.sweep();
+    expect(existsSync(expired)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('leaves the temporary directory in place when npm never closes after the kill', async () => {
+    const installer = make(
+      (child) => {
+        child.kill = (signal?: string) => {
+          child.killed = signal ?? 'SIGTERM';
+          return true;
+        };
+      },
+      { timeoutMs: 20, killGraceMs: 20 },
+    );
+    await expect(installer.install()).rejects.toMatchObject({ code: 'timeout' });
+    expect(readdirSync(cacheDir).filter((name) => name.startsWith('lingua.installing-'))).toHaveLength(1);
+  });
+
   it('never removes unrelated directories while cleaning', async () => {
     const unrelated = join(cacheDir, 'models');
     mkdirSync(unrelated, { recursive: true });
@@ -278,7 +340,7 @@ describe('lingua installer', () => {
     const installer = make(succeed, {
       fileOps: {
         rename: async (from: string, to: string) => {
-          renames.push(`${from.split('/').pop()!.replace(/-[0-9a-f]+$/, '-*')}>${to.split('/').pop()!.replace(/-[0-9a-f]+$/, '-*')}`);
+          renames.push(`${from.split('/').pop()!.replace(/-\d{13}-[0-9a-f]+$/, '-*')}>${to.split('/').pop()!.replace(/-\d{13}-[0-9a-f]+$/, '-*')}`);
           return realRename(from, to);
         },
       },

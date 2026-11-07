@@ -538,7 +538,7 @@ describe('lingua roots', () => {
       const lingua = join(cache, 'lingua');
       mkdirSync(lingua, { recursive: true });
       names.forEach((name) => makePkg(lingua, name));
-      const installer = { probe: async () => true, installable: () => true, status: () => ({ state: 'idle' as const }), install: async () => undefined };
+      const installer = { probe: async () => true, sweep: async () => undefined, installable: () => true, status: () => ({ state: 'idle' as const }), install: async () => undefined };
       const l = createLingua({ cacheDir: cache, roots: () => [lingua], installer });
       await expect(l.probe()).resolves.toBe(true);
       expect(l.status()).toMatchObject({ installed: true, installable: true, state: 'idle' });
@@ -556,16 +556,26 @@ describe('createLingua probe laziness', () => {
 
   it('does not look for npm when LLMLingua-2 is already installed', async () => {
     const probe = vi.fn(async () => true);
-    const installer = { probe, installable: () => false, status: () => idle, install: async () => undefined };
+    const installer = { probe, sweep: async () => undefined, installable: () => false, status: () => idle, install: async () => undefined };
     const l = createLingua({ cacheDir: '/tmp/x', installer, resolvePackages: async () => true });
     await expect(l.probe()).resolves.toBe(true);
     expect(probe).not.toHaveBeenCalled();
     expect(l.status().installed).toBe(true);
   });
 
+  it('sweeps leftover install directories at startup, installed or not', async () => {
+    for (const installed of [true, false]) {
+      const sweep = vi.fn(async () => undefined);
+      const installer = { probe: async () => true, sweep, installable: () => true, status: () => idle, install: async () => undefined };
+      const l = createLingua({ cacheDir: '/tmp/x', installer, resolvePackages: async () => installed });
+      await l.probe();
+      expect(sweep).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it('looks for npm when LLMLingua-2 is not installed', async () => {
     const probe = vi.fn(async () => true);
-    const installer = { probe, installable: () => true, status: () => idle, install: async () => undefined };
+    const installer = { probe, sweep: async () => undefined, installable: () => true, status: () => idle, install: async () => undefined };
     const l = createLingua({ cacheDir: '/tmp/x', installer, resolvePackages: async () => false });
     await expect(l.probe()).resolves.toBe(false);
     expect(probe).toHaveBeenCalledTimes(1);
@@ -579,6 +589,7 @@ describe('createLingua install', () => {
     const gate = deferred<void>();
     const installer = {
       probe: async () => true,
+      sweep: async () => undefined,
       installable: () => true,
       status: () => ({ ...status }),
       install: async () => {
@@ -635,7 +646,7 @@ describe('createLingua install', () => {
       calls += 1;
       return present ? f.load() : Promise.reject(new Error('missing'));
     };
-    const installer = { probe: async () => true, installable: () => true, status: () => ({ state: 'idle' as const }), install: async () => { present = true; } };
+    const installer = { probe: async () => true, sweep: async () => undefined, installable: () => true, status: () => ({ state: 'idle' as const }), install: async () => { present = true; } };
     const l = createLingua({ cacheDir: '/tmp/x', load, installer, resolvePackages: async () => present });
     await expect(l.compress('hello', { rate: 0.5 })).rejects.toThrow('missing');
     expect(l.status().state).toBe('error');

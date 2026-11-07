@@ -19,6 +19,7 @@ const PROBE_TIMEOUT_MS = 10_000;
 const KILL_GRACE_MS = 5000;
 const RENAME_ATTEMPTS = 5;
 const RENAME_BACKOFF_MS = 50;
+const STAMPED_LEFTOVER = /^lingua\.(?:installing|old)-(\d{13})-[0-9a-f]+$/;
 const RETRYABLE_RENAME_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY']);
 const MAX_CAPTURE = 16 * 1024;
 const MAX_MESSAGE = 300;
@@ -37,6 +38,7 @@ export interface InstallerStatus {
 
 export interface LinguaInstaller {
   probe(): Promise<boolean>;
+  sweep(): Promise<void>;
   installable(): boolean;
   status(): InstallerStatus;
   install(): Promise<void>;
@@ -57,10 +59,15 @@ export interface InstallerOptions {
   spawn?: SpawnFn;
   resolveNpm?: () => Promise<NpmCommand | undefined>;
   timeoutMs?: number;
+  killGraceMs?: number;
 }
 
 export class LinguaInstallFailure extends Error {
-  constructor(readonly code: LinguaInstallErrorCode, message: string) {
+  constructor(
+    readonly code: LinguaInstallErrorCode,
+    message: string,
+    readonly keepTemporary = false,
+  ) {
     super(message);
     this.name = 'LinguaInstallFailure';
   }
@@ -150,6 +157,7 @@ function runNpm(
   npm: NpmCommand,
   cwd: string,
   timeoutMs: number,
+  killGraceMs: number,
   hidden: string[],
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -188,7 +196,7 @@ function runNpm(
     const timeoutFailure = () => new LinguaInstallFailure('timeout', 'npm did not finish in time');
     const timer = setTimeout(() => {
       timedOut = true;
-      graceTimer = setTimeout(() => finish(timeoutFailure()), KILL_GRACE_MS);
+      graceTimer = setTimeout(() => finish(new LinguaInstallFailure('timeout', 'npm did not finish in time', true)), killGraceMs);
       try {
         child.kill('SIGKILL');
       } catch {
@@ -209,6 +217,15 @@ async function hasPackages(dir: string): Promise<boolean> {
   return (await Promise.all(checks)).every(Boolean);
 }
 
+function stamped(prefix: string): string {
+  return `${prefix}${Date.now()}-${randomBytes(6).toString('hex')}`;
+}
+
+async function createdAt(path: string, name: string): Promise<number> {
+  const match = STAMPED_LEFTOVER.exec(name);
+  return match ? Number(match[1]) : (await stat(path)).mtimeMs;
+}
+
 async function removeStaleTemporaries(cacheDir: string, olderThanMs: number, ops: FileOps): Promise<void> {
   let entries: string[];
   try {
@@ -222,7 +239,7 @@ async function removeStaleTemporaries(cacheDir: string, olderThanMs: number, ops
     leftovers.map(async (name) => {
       const path = join(cacheDir, name);
       try {
-        if ((await stat(path)).mtimeMs >= cutoff) return;
+        if ((await createdAt(path, name)) >= cutoff) return;
         await ops.rm(path, { recursive: true, force: true });
       } catch {
         return;
@@ -252,6 +269,8 @@ export function createLinguaInstaller(opts: InstallerOptions): LinguaInstaller {
   const spawn = opts.spawn ?? (nodeSpawn as SpawnFn);
   const resolveNpm = opts.resolveNpm ?? (() => findNpm());
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const killGraceMs = opts.killGraceMs ?? KILL_GRACE_MS;
+  const staleAfterMs = 2 * timeoutMs + killGraceMs;
   const ops: FileOps = { rename, rm, ...opts.fileOps };
   const backoffMs = opts.renameBackoffMs ?? RENAME_BACKOFF_MS;
   const finalDir = join(opts.cacheDir, INSTALL_DIR);
@@ -262,7 +281,7 @@ export function createLinguaInstaller(opts: InstallerOptions): LinguaInstaller {
   let running: Promise<void> | undefined;
 
   async function swapIn(tempDir: string): Promise<void> {
-    const asideDir = join(opts.cacheDir, `${OLD_PREFIX}${randomBytes(6).toString('hex')}`);
+    const asideDir = join(opts.cacheDir, stamped(OLD_PREFIX));
     let movedAside = false;
     try {
       await renameWithRetry(ops, finalDir, asideDir, backoffMs);
@@ -283,19 +302,20 @@ export function createLinguaInstaller(opts: InstallerOptions): LinguaInstaller {
     npm ??= await resolveNpm();
     canInstall = npm !== undefined;
     if (!npm) throw new LinguaInstallFailure('npm_missing', 'npm is not available to install LLMLingua-2');
-    const tempDir = join(opts.cacheDir, `${TEMP_PREFIX}${randomBytes(6).toString('hex')}`);
+    const tempDir = join(opts.cacheDir, stamped(TEMP_PREFIX));
     try {
       await mkdir(opts.cacheDir, { recursive: true });
-      await removeStaleTemporaries(opts.cacheDir, timeoutMs, ops);
+      await removeStaleTemporaries(opts.cacheDir, staleAfterMs, ops);
       await mkdir(tempDir, { recursive: true });
       for (const file of RUNTIME_FILES) await copyFile(join(opts.runtimeDir, file), join(tempDir, file));
-      await runNpm(spawn, npm, tempDir, timeoutMs, [...hidden, tempDir]);
+      await runNpm(spawn, npm, tempDir, timeoutMs, killGraceMs, [...hidden, tempDir]);
       if (!(await hasPackages(tempDir))) {
         throw new LinguaInstallFailure('verify_failed', 'LLMLingua-2 packages are missing after install');
       }
       await swapIn(tempDir);
     } catch (error) {
-      await ops.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+      const keepTemporary = error instanceof LinguaInstallFailure && error.keepTemporary;
+      if (!keepTemporary) await ops.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
       if (error instanceof LinguaInstallFailure) throw error;
       throw new LinguaInstallFailure('filesystem', 'Could not write the LLMLingua-2 install directory');
     }
@@ -307,6 +327,7 @@ export function createLinguaInstaller(opts: InstallerOptions): LinguaInstaller {
       canInstall = npm !== undefined;
       return canInstall;
     },
+    sweep: () => removeStaleTemporaries(opts.cacheDir, staleAfterMs, ops),
     installable: () => canInstall,
     status: () => ({ ...state }),
     install() {
