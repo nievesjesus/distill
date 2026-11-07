@@ -37,7 +37,7 @@ const pdf = (name = 'b.pdf', dir = proj): string => {
   return file;
 };
 
-const deps = () => ({ homeDir: home });
+const deps = (extra: Record<string, unknown> = {}) => ({ homeDir: home, managedSettingsPaths: [], ...extra });
 
 describe('handleClaudePreToolUse', () => {
   it('rewrites a pdf read and keeps offset and limit', async () => {
@@ -162,6 +162,64 @@ describe('handleClaudePreToolUse', () => {
       const convert = vi.fn(async () => '/c.md');
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
       expect(convert).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes through when a project-root deny rule applies and cwd is a subdirectory', async () => {
+      const sub = join(proj, 'sub');
+      mkdirSync(join(sub, 'private'), { recursive: true });
+      mkdirSync(join(proj, '.claude'));
+      writeFileSync(join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(./sub/private/**)'] } }));
+      const convert = vi.fn(async () => '/c.md');
+      const file = pdf('x.pdf', join(sub, 'private'));
+      expect(await handleClaudePreToolUse(payload({ file_path: file }, { cwd: sub }), convert, deps())).toBeNull();
+      expect(convert).not.toHaveBeenCalled();
+    });
+
+    it('passes through when a Read ask rule exists', async () => {
+      mkdirSync(join(proj, '.claude'));
+      writeFileSync(join(proj, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { ask: ['Read(./docs/**)'] } }));
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
+      expect(convert).not.toHaveBeenCalled();
+    });
+
+    it('passes through when a managed settings file denies Read', async () => {
+      const managed = join(base, 'managed-settings.json');
+      writeFileSync(managed, JSON.stringify({ permissions: { deny: ['Read(**/*.pdf)'] } }));
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ managedSettingsPaths: [managed] }))).toBeNull();
+      expect(convert).not.toHaveBeenCalled();
+    });
+
+    it('reads settings from CLAUDE_PROJECT_DIR', async () => {
+      const sub = join(proj, 'sub');
+      mkdirSync(sub);
+      mkdirSync(join(proj, '.claude'));
+      writeFileSync(join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(./x/**)'] } }));
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf('y.pdf', sub) }, { cwd: sub }), convert, deps({ projectDir: proj }))).toBeNull();
+    });
+  });
+
+  describe('CLAUDE_PROJECT_DIR root', () => {
+    it('converts a file in a sibling subdirectory when cwd is a subdirectory', async () => {
+      const a = join(proj, 'a');
+      const b = join(proj, 'b');
+      mkdirSync(a);
+      mkdirSync(b);
+      const file = pdf('s.pdf', b);
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: file }, { cwd: a }), convert, deps({ projectDir: proj }))).not.toBeNull();
+      expect(convert).toHaveBeenCalledWith(file);
+    });
+
+    it('still blocks files outside both roots', async () => {
+      const a = join(proj, 'a');
+      const outside = join(base, 'outside');
+      mkdirSync(a);
+      mkdirSync(outside);
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf('o.pdf', outside) }, { cwd: a }), convert, deps({ projectDir: proj }))).toBeNull();
     });
   });
 });

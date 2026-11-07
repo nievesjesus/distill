@@ -368,7 +368,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir });
+        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
