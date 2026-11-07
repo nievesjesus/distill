@@ -23,5 +23,11 @@ if (!text.includes(unsignedMac)) {
   console.error(`${source}: ad-hoc mac block not found`);
   process.exit(1);
 }
-writeFileSync(target, text.replace(unsignedMac, signedMac));
+let signedText = text.replace(unsignedMac, signedMac);
+if (/^dmg:[ \t]*$/m.test(signedText)) {
+  signedText = signedText.replace(/^dmg:[ \t]*\n(?:[ \t]+sign:.*\n)?/m, 'dmg:\n  sign: true\n');
+} else {
+  signedText = `${signedText.replace(/\n*$/, '\n')}dmg:\n  sign: true\n`;
+}
+writeFileSync(target, signedText);
 console.log(`wrote ${target}`);
