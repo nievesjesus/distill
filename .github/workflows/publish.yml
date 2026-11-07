@@ -27,13 +27,9 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - name: Use an npm that supports trusted publishing
+      - name: Install npm 12 (supports npm stage)
         run: |
-          required=11.5.1
-          current=$(npm --version)
-          if [ "$(printf '%s\n' "$required" "$current" | sort -V | head -n1)" != "$required" ]; then
-            npm install -g npm@latest
-          fi
+          npm install -g npm@12
           npm --version
       - run: npm ci
       - run: npm run typecheck
@@ -47,20 +43,17 @@ jobs:
             echo "package.json version v$version does not match release tag $TAG"
             exit 1
           fi
-      - name: Detect bootstrap token
-        id: bootstrap
+      - name: Stage the release on npm (trusted publishing, OIDC)
+        run: npm stage publish --access public
+      - name: Summarize staged release
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ -n "$NPM_TOKEN" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else echo "enabled=false" >> "$GITHUB_OUTPUT"; fi
-      - name: Publish with trusted publishing (OIDC)
-        if: steps.bootstrap.outputs.enabled != 'true'
-        run: npm publish --access public
-      - name: Publish with NPM_TOKEN (bootstrap only)
-        if: steps.bootstrap.outputs.enabled == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+          {
+            echo "### distill-llm ${TAG} staged on npm"
+            echo ""
+            echo "The version is staged, not public yet. A maintainer must approve it with 2FA on https://www.npmjs.com/package/distill-llm (Staged Packages)."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   docker:
     runs-on: ubuntu-latest
