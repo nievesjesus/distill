@@ -8,7 +8,7 @@ import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
 import { handleClaudePreToolUse } from '../hooks/claude';
 import { convertCached } from '../hooks/cache';
-import { readIfExists, writeAtomic } from '../hooks/atomic';
+import { readIfExists, realTarget, writeAtomic } from '../hooks/atomic';
 import { hookCommand } from '../hooks/command';
 import { lineDiff } from '../hooks/diff';
 import { normalizeSettings, planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
@@ -460,25 +460,24 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     try {
       isLink = lstatSync(path).isSymbolicLink();
     } catch {}
-    if (isLink) {
-      let resolved: string;
-      try {
-        resolved = realpathSync(path);
-      } catch {
-        stderr(`Refusing to follow dangling symlink ${path}.`);
+    let resolved: string;
+    try {
+      if (isLink) realpathSync(path);
+      resolved = realTarget(path);
+    } catch {
+      stderr(`Refusing to follow ${isLink ? 'dangling symlink' : 'unresolvable path'} ${path}.`);
+      exit(1);
+      return false;
+    }
+    if (location.project) {
+      const root = realpathSync(cwd);
+      if (resolved !== root && !resolved.startsWith(`${root}${sep}`)) {
+        stderr(`Refusing to write ${path}: it links outside the project (${resolved}).`);
         exit(1);
         return false;
       }
-      if (location.project) {
-        const root = realpathSync(cwd);
-        if (resolved !== root && !resolved.startsWith(`${root}${sep}`)) {
-          stderr(`Refusing to write ${path}: it links outside the project (${resolved}).`);
-          exit(1);
-          return false;
-        }
-      }
-      if (resolved !== path) label = `${path} -> ${resolved}`;
     }
+    if (resolved !== path) label = `${path} -> ${resolved}`;
     let current: string | null;
     try {
       current = readIfExists(path);

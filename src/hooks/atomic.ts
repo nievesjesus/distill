@@ -1,5 +1,5 @@
 import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 export function readIfExists(path: string): string | null {
   try {
@@ -26,5 +26,20 @@ export function writeAtomic(path: string, content: string): void {
   } catch (error) {
     rmSync(tmp, { force: true });
     throw error;
+  }
+}
+
+export function realTarget(path: string): string {
+  const tail: string[] = [];
+  let current = path;
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...tail.reverse());
+    } catch (error) {
+      const parent = dirname(current);
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || parent === current) throw error;
+      tail.push(basename(current));
+      current = parent;
+    }
   }
 }

@@ -294,3 +294,42 @@ describe('hooks install symlink and masking safety', () => {
     expect(existsSync(`${target}.${process.pid}.tmp`)).toBe(false);
   });
 });
+
+describe('hooks install real-target and masking', () => {
+  it.each([
+    ['claude', '.claude', 'settings.json'],
+    ['opencode', '.opencode', join('plugins', 'distill.js')],
+  ])('refuses a project %s directory symlinked outside', async (target, dir, rest) => {
+    const s = setup();
+    const outside = mkdtempSync(join(tmpdir(), 'distill-outside-'));
+    symlinkSync(outside, join(s.cwd, dir));
+    await run(['hooks', 'install', `--${target}`, '--project', '--yes'], s.deps);
+    expect(s.exit).toHaveBeenCalledWith(1);
+    expect(s.stderr).toHaveLength(1);
+    expect(s.stderr[0]).toContain('links outside the project');
+    expect(existsSync(join(outside, rest))).toBe(false);
+    expect(existsSync(join(outside, 'plugins'))).toBe(false);
+  });
+
+  it('allows a symlinked .claude directory that stays inside the project', async () => {
+    const s = setup();
+    const inside = join(s.cwd, 'shared-claude');
+    mkdirSync(inside);
+    symlinkSync(inside, join(s.cwd, '.claude'));
+    await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
+    expect(s.exit).not.toHaveBeenCalled();
+    expect(s.stdout.some((line) => line.startsWith('File: ') && line.includes(' -> '))).toBe(true);
+    expect(existsSync(join(inside, 'settings.json'))).toBe(true);
+  });
+
+  it('does not print a value that only gains a trailing comma', async () => {
+    const s = setup();
+    const file = join(s.home, '.claude', 'settings.json');
+    mkdirSync(join(s.home, '.claude'), { recursive: true });
+    writeFileSync(file, '{"env":{"A":"1"},"apiToken":"hunter2"}');
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    const out = s.stdout.join('\n');
+    expect(out).not.toContain('hunter2');
+    expect(out).toContain('distillmd hook claude');
+  });
+});
