@@ -4,13 +4,18 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
+import { openDistiller as defaultOpenDistiller } from '../node/distill';
+import type { Distiller } from '../node/distill';
 import { startServer as defaultStartServer } from '../server/start';
+import { parseBoosters, parseRate, runConvert } from './convert';
+import type { ConvertOptions } from './convert';
 
 type Server = { url: string; close(): Promise<void> };
 
 export interface CliDeps {
   startServer?: (opts: { port: number; host: string; maxBytes: number; allowedHosts: string[] }) => Promise<Server>;
   openUrl?: (url: string) => void;
+  openDistiller?: (maxBytes?: number) => Promise<Distiller>;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
   exit?: (code: number) => never;
@@ -90,6 +95,7 @@ interface WebOptions {
 export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const startServer = deps.startServer ?? defaultStartServer;
   const openUrl = deps.openUrl ?? openInBrowser;
+  const openDistiller = deps.openDistiller ?? defaultOpenDistiller;
   const stdout = deps.stdout ?? ((line: string) => process.stdout.write(`${line}\n`));
   const stderr = deps.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
   const exit = deps.exit ?? ((code: number) => process.exit(code));
@@ -156,6 +162,23 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         process.on('SIGINT', shutdown);
         process.on('SIGTERM', shutdown);
       }
+    });
+
+  program
+    .command('convert')
+    .description('Convert documents to optimized Markdown')
+    .argument('<files...>', 'files to convert')
+    .option('--out <dir>', 'write the Markdown files into this directory')
+    .option('--no-optimize', 'skip all boosters')
+    .option('--boosters <list>', 'comma-separated boosters: dedupe, media, tables, ws', parseBoosters)
+    .option('--lingua', 'compress with LLMLingua-2')
+    .option('--rate <n>', 'LLMLingua-2 keep rate (0..1)', parseRate)
+    .option('--json', 'print a JSON array with the results')
+    .option('--stdout', 'print the Markdown of a single file instead of writing it')
+    .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
+    .action(async (files: string[], options: ConvertOptions) => {
+      const code = await runConvert(files, options, { stdout, stderr, openDistiller });
+      if (code !== 0) exit(code);
     });
 
   try {
