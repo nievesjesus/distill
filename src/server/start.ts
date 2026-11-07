@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { serve } from '@hono/node-server';
 import { isLoopbackHost } from '../core/loopback';
-import { hasLibreOffice } from '../node/capabilities';
+import { exposeLibreOffice } from '../node/capabilities';
 import { createLingua, findPackageRoot } from '../node/lingua';
 import { createParser } from '../node/parse';
 import { createApp } from './app';
@@ -31,10 +31,11 @@ export async function startServer(opts: {
   const liteparseVersion = readVersion(require.resolve('@llamaindex/liteparse/package.json'));
   const webRoot = join(packageRoot, 'dist', 'web');
 
+  const libreoffice = await exposeLibreOffice();
   const parser = createParser();
   try {
     const lingua = createLingua({ cacheDir: join(homedir(), '.cache', 'distillmd') });
-    const [libreoffice] = await Promise.all([hasLibreOffice(), lingua.probe()]);
+    await lingua.probe();
     const app = createApp({
       parser,
       lingua,

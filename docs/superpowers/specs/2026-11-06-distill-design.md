@@ -114,7 +114,7 @@ Por defecto escucha solo en `127.0.0.1:4321` (`--port`, `--host`). No tiene aute
 
 | Método y ruta | Entrada | Salida |
 |---------------|---------|--------|
-| `GET /api/health` | — | `{ version, liteparseVersion, libreoffice: bool, lingua: { installed, model, state: idle\|downloading\|ready\|error, progress: 0–1 } }` |
+| `GET /api/health` | — | `{ version, liteparseVersion, maxBytes, libreoffice: bool, lingua: { installed, model, state: idle\|downloading\|ready\|error, progress: 0–1 } }` |
 | `POST /api/parse` | multipart: `file` | `{ id, name, kind, pages, markdown, ms }`, o un error `{ code, message }` |
 | `GET /api/files/:id/json` | — | JSON de LiteParse con bboxes |
 | `DELETE /api/files/:id` | — | `204`, también si el id no existe. Es la única ruta de borrado: «Clear» borra id por id los que el cliente conoce, no hay borrado comodín |
@@ -175,7 +175,7 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 
 - npm: `distillmd`, con los bins `distillmd` y `distill`. `npx distillmd` equivale a `distillmd web --open`.
 - Repositorio: `github.com/nievesjesus/distill`.
-- Docker: `ghcr.io/nievesjesus/distill`, basada en `node:22-slim` con LibreOffice (writer, calc, impress) y los datos de tesseract en inglés (`tesseract-ocr-eng`; otros idiomas se piden con `DISTILL_OCR_LANG` y datos propios en `DISTILL_TESSDATA`). Se ejecuta con `docker run -p 4321:4321`, y dentro del contenedor escucha en `0.0.0.0`.
+- Docker: `ghcr.io/nievesjesus/distill`, basada en `node:22-bookworm-slim` con LibreOffice (writer, calc, impress) y los datos de tesseract en inglés (`tesseract-ocr-eng`; otros idiomas se piden con `DISTILL_OCR_LANG` y datos propios en `DISTILL_TESSDATA`). Se ejecuta con `docker run -p 4321:4321`, y dentro del contenedor escucha en `0.0.0.0`.
 - Licencia: Apache-2.0, compatible con LiteParse.
 
 ### 9.1 App de escritorio (Electron) — agregado el 2026-11-06

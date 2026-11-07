@@ -55,6 +55,13 @@ describe('zipEntryName', () => {
     expect(zipEntryName('COM10.md')).toBe('COM10.md');
   });
 
+  it('checks reserved device names against the part before the first dot', () => {
+    expect(zipEntryName('CON.txt.md')).toBe('_CON.txt.md');
+    expect(zipEntryName('aux.tar.gz.md')).toBe('_aux.tar.gz.md');
+    expect(zipEntryName('lpt1.final.md')).toBe('_lpt1.final.md');
+    expect(zipEntryName('console.log.md')).toBe('console.log.md');
+  });
+
   it('keeps unicode and ordinary names', () => {
     expect(zipEntryName('Informe Año 2025 📊.md')).toBe('Informe Año 2025 📊.md');
   });

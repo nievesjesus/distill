@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasLibreOffice, sofficeCandidates } from '../../src/node/capabilities';
+import { exposeLibreOffice, hasLibreOffice, sofficeCandidates } from '../../src/node/capabilities';
 
 const programFiles = 'D:\\Apps';
 const programFilesX86 = 'E:\\Apps (x86)';
@@ -72,5 +72,52 @@ describe('hasLibreOffice on other platforms', () => {
       '/opt/bin/soffice',
       '/opt/bin/libreoffice',
     ]);
+  });
+});
+
+describe('exposeLibreOffice', () => {
+  it('prepends the Windows program directory to the injected PATH', async () => {
+    const env: NodeJS.ProcessEnv = { ProgramFiles: programFiles, PATH: 'C:\\Windows' };
+    const found = await exposeLibreOffice({
+      platform: 'win32',
+      env,
+      isExecutable: existsOnly('D:\\Apps\\LibreOffice\\program\\soffice.exe'),
+    });
+    expect(found).toBe(true);
+    expect(env.PATH).toBe('D:\\Apps\\LibreOffice\\program;C:\\Windows');
+  });
+
+  it('prepends the macOS bundle directory', async () => {
+    const env: NodeJS.ProcessEnv = { PATH: '/usr/bin' };
+    await exposeLibreOffice({
+      platform: 'darwin',
+      env,
+      isExecutable: existsOnly('/Applications/LibreOffice.app/Contents/MacOS/soffice'),
+    });
+    expect(env.PATH).toBe('/Applications/LibreOffice.app/Contents/MacOS:/usr/bin');
+  });
+
+  it('leaves PATH untouched when soffice is already on it', async () => {
+    const env: NodeJS.ProcessEnv = { PATH: '/usr/bin:/opt/bin' };
+    const found = await exposeLibreOffice({ platform: 'linux', env, isExecutable: existsOnly('/opt/bin/soffice') });
+    expect(found).toBe(true);
+    expect(env.PATH).toBe('/usr/bin:/opt/bin');
+  });
+
+  it('leaves PATH untouched when LibreOffice is missing', async () => {
+    const env: NodeJS.ProcessEnv = { PATH: '/usr/bin' };
+    expect(await exposeLibreOffice({ platform: 'linux', env, isExecutable: existsOnly() })).toBe(false);
+    expect(env.PATH).toBe('/usr/bin');
+  });
+
+  it('writes to Path when that is the only key on Windows', async () => {
+    const env: NodeJS.ProcessEnv = { ProgramFiles: programFiles, Path: 'C:\\Windows' };
+    await exposeLibreOffice({
+      platform: 'win32',
+      env,
+      isExecutable: existsOnly('D:\\Apps\\LibreOffice\\program\\soffice.exe'),
+    });
+    expect(env.Path).toBe('D:\\Apps\\LibreOffice\\program;C:\\Windows');
+    expect(env.PATH).toBeUndefined();
   });
 });

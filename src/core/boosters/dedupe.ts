@@ -6,13 +6,14 @@ const STRUCTURAL_START = /^(#|\||[-*+>]|\d+[.)])/;
 const DEEP_INDENT = /^( {4}|\t)/;
 const UNESCAPED_PIPE = /(?<!\\)\|/;
 const PAGE_WORD = '(?:page|pg|p\\.|pág\\.?|pagina|página)';
-const KEYWORD_INDICATOR = `\\b${PAGE_WORD}\\s*\\d+(?:\\s*(?:of|de|/)\\s*\\d+)?`;
+const KEYWORD_WITH_TOTAL = `\\b${PAGE_WORD}\\s*\\d+\\s*(?:of|de|/)\\s*\\d+`;
+const TOTAL_WITH_KEYWORD = '\\b\\d+\\s*(?:of|de)\\s*\\d+\\s*pages?';
+const KEYWORD_INDICATOR = `(?:${KEYWORD_WITH_TOTAL}|${TOTAL_WITH_KEYWORD})`;
 const SEPARATOR = '[\\s—–|·:-]';
 const LEADING_INDICATOR = new RegExp(`^(${KEYWORD_INDICATOR})(?=${SEPARATOR}|$)`, 'i');
 const TRAILING_INDICATOR = new RegExp(`(?<=^|${SEPARATOR})(${KEYWORD_INDICATOR})$`, 'i');
 const WHOLE_LINE_INDICATORS: readonly RegExp[] = [
-  new RegExp(`^${PAGE_WORD}\\s*\\d+(?:\\s*(?:of|de|/)\\s*\\d+)?$`, 'i'),
-  /^\d+\s*(?:of|de|\/)\s*\d+$/i,
+  new RegExp(`^${KEYWORD_INDICATOR}$`, 'i'),
   /^[-—–]\s*\d+\s*[-—–]$/,
 ];
 const MIN_REPEAT_WORDS = 4;

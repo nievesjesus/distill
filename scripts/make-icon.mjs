@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 
 const ACCENT = '#C8F53C';
@@ -34,8 +35,8 @@ mkdirSync(new URL('../build/', import.meta.url), { recursive: true });
 mkdirSync(new URL('../web/public/', import.meta.url), { recursive: true });
 const browser = await chromium.launch();
 try {
-  await render(browser, 1024, 100, new URL('../build/icon.png', import.meta.url).pathname);
-  await render(browser, 64, 2, new URL('../web/public/favicon.png', import.meta.url).pathname);
+  await render(browser, 1024, 100, fileURLToPath(new URL('../build/icon.png', import.meta.url)));
+  await render(browser, 64, 2, fileURLToPath(new URL('../web/public/favicon.png', import.meta.url)));
 } finally {
   await browser.close();
 }

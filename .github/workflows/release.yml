@@ -95,8 +95,25 @@ jobs:
           pattern: installers-*
           path: installers
           merge-multiple: true
+      - name: Refuse to modify a published release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if output=$(gh api "repos/$REPOSITORY/releases/tags/$TAG" --jq '.html_url' 2>&1); then
+            echo "release for $TAG is already published: $output"
+            exit 1
+          fi
+          case "$output" in
+            *"Not Found"*) echo "no published release for $TAG" ;;
+            *) echo "could not check releases for $TAG: $output"; exit 1 ;;
+          esac
       - name: action-gh-release v2.6.2
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           draft: true
+          fail_on_unmatched_files: true
+          overwrite_files: false
           files: installers/**/Distill-*

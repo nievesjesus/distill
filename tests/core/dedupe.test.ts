@@ -51,10 +51,24 @@ describe('dropRepeatedBoilerplate', () => {
   });
 
   it('dedupes whole-line page indicators in every supported form', () => {
-    expect(dropRepeatedBoilerplate('3 / 12\nA\n4 / 12\nB\n5 / 12\nC')).toBe('3 / 12\nA\nB\nC');
+    expect(dropRepeatedBoilerplate('p. 3/12\nA\np. 4/12\nB\np. 5/12\nC')).toBe('p. 3/12\nA\nB\nC');
+    expect(dropRepeatedBoilerplate('3 of 12 pages\nA\n4 of 12 pages\nB\n5 of 12 pages\nC')).toBe('3 of 12 pages\nA\nB\nC');
     expect(dropRepeatedBoilerplate('Page 3 of 12\nA\nPage 4 of 12\nB\nPage 5 of 12\nC')).toBe('Page 3 of 12\nA\nB\nC');
     expect(dropRepeatedBoilerplate('Página 3 de 12\nA\nPágina 4 de 12\nB\nPágina 5 de 12\nC')).toBe('Página 3 de 12\nA\nB\nC');
     expect(dropRepeatedBoilerplate('- 3 -\nA\n- 4 -\nB\n- 5 -\nC')).toBe('- 3 -\nA\nB\nC');
+  });
+
+  it('keeps bare page references and whole-line bare fractions byte for byte', () => {
+    const references = [
+      'For details see the appendix table on page 12',
+      'For details see the appendix table on page 15',
+      'For details see the appendix table on page 20',
+    ].join('\n');
+    const quiz = 'Question one\n3/4\nQuestion two\n1/4\nQuestion three\n2/4\nQuestion four\n3/4\n1/4\n2/4\n3 / 4\n2 of 5\n2 of 5\n2 of 5';
+    expect(dropRepeatedBoilerplate(references)).toBe(references);
+    expect(dropRepeatedBoilerplate(quiz)).toBe(quiz);
+    const bareThrice = '3/4\n3/4\n3/4\n2 of 5\n2 of 5\n2 of 5';
+    expect(dropRepeatedBoilerplate(bareThrice)).toBe(bareThrice);
   });
 
   it('does not treat n/m inside a longer line as a page indicator', () => {

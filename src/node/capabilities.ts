@@ -41,3 +41,19 @@ export async function hasLibreOffice(probe: CapabilityProbe = {}): Promise<boole
   const results = await Promise.all(sofficeCandidates(platform, env).map(isExecutable));
   return results.some(Boolean);
 }
+
+export async function exposeLibreOffice(probe: CapabilityProbe = {}): Promise<boolean> {
+  const platform = probe.platform ?? process.platform;
+  const env = probe.env ?? process.env;
+  const isExecutable = probe.isExecutable ?? defaultIsExecutable;
+  const path = platform === 'win32' ? win32 : posix;
+  const candidates = sofficeCandidates(platform, env);
+  const results = await Promise.all(candidates.map(isExecutable));
+  const index = results.findIndex(Boolean);
+  if (index === -1) return false;
+  const directory = path.dirname(candidates[index]);
+  const key = platform === 'win32' && env.PATH === undefined && env.Path !== undefined ? 'Path' : 'PATH';
+  const entries = (env[key] ?? '').split(path.delimiter).filter(Boolean);
+  if (!entries.includes(directory)) env[key] = [directory, ...entries].join(path.delimiter);
+  return true;
+}
