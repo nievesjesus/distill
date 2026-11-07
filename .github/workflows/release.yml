@@ -100,16 +100,18 @@ jobs:
       - name: Fail on artifacts for another arch
         shell: bash
         run: |
-          shopt -s globstar nullglob
+          arch="${{ matrix.arch }}"
+          alias="$arch"
+          if [ "$arch" = "x64" ]; then alias="x86_64"; fi
           bad=0
           found=0
-          for f in release/**/Distill-*.dmg release/**/Distill-*.exe release/**/Distill-*.AppImage; do
+          while IFS= read -r f; do
             found=1
             case "$f" in
-              *-${{ matrix.arch }}.*) ;;
+              *-"$arch".*|*-"$alias".*) ;;
               *) echo "unexpected artifact: $f"; bad=1 ;;
             esac
-          done
+          done < <(find release \( -name 'Distill-*.dmg' -o -name 'Distill-*.exe' -o -name 'Distill-*.AppImage' \))
           if [ "$found" -eq 0 ]; then echo "no installers produced"; bad=1; fi
           exit $bad
       - name: Verify lite variant
