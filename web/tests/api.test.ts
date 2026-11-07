@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { clearFiles, compress, deleteFile, getHealth, getJson, parseFile } from '../src/api';
+import { compress, deleteFile, getHealth, getJson, parseFile } from '../src/api';
 
 function stubFetch(impl: (url: string, init?: RequestInit) => Promise<Response>) {
   vi.stubGlobal('fetch', vi.fn(impl));
@@ -48,12 +48,11 @@ describe('api', () => {
     expect(JSON.parse(body)).toEqual({ text: 'long text', rate: 0.5, model: 'tinybert' });
   });
 
-  it('deletes one file by encoded id and the whole list with DELETE', async () => {
+  it('deletes one file by encoded id', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
     await deleteFile('a b/1');
-    await clearFiles();
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/files/a%20b%2F1', { method: 'DELETE' });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/files', { method: 'DELETE' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/files/a%20b%2F1', { method: 'DELETE' });
   });
 });

@@ -48,6 +48,10 @@ function rememberRawTokens(raw: string, tokens: number): void {
   }
 }
 
+export function forgetRaw(raw: string): void {
+  rawTokenCache.delete(raw);
+}
+
 export function distill(raw: string, active: LocalBoosterId[]): Promise<DistillResult> {
   return new Promise<DistillResult>((resolve, reject) => {
     const id = nextId++;

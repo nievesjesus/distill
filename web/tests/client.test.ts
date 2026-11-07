@@ -98,6 +98,19 @@ describe('worker client', () => {
     await expect(next).resolves.toMatchObject({ out: 'out-three' });
   });
 
+  it('forgets the cached raw token count for a removed document', async () => {
+    const { distill, forgetRaw } = await loadClient();
+    const first = distill('gone raw', ['ws']);
+    const [worker] = workers();
+    worker.reply({ id: worker.posted[0].id, ok: true, out: 'x', rawTokens: 42, outTokens: 7 });
+    await first;
+    forgetRaw('gone raw');
+    const second = distill('gone raw', ['ws']);
+    expect(worker.posted[1].knownRawTokens).toBeUndefined();
+    worker.reply({ id: worker.posted[1].id, ok: true, out: 'x', rawTokens: 42, outTokens: 7 });
+    await second;
+  });
+
   it('sends the cached raw token count on a repeated raw string', async () => {
     const { distill } = await loadClient();
     const first = distill('same raw', ['ws']);

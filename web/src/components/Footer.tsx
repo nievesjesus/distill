@@ -3,7 +3,8 @@ import { savedPercent, shortCount } from '@core/format';
 import type { FileEntry } from '../state/files';
 import { revealLabel, useSavedNotice } from '../lib/desktop-bridge';
 import { downloadZip, zipName } from '../lib/download';
-import { mdName, uniqueNames } from '../lib/names';
+import { mdName, uniqueNames, zipEntryName } from '../lib/names';
+import { useAnnounce } from '../state/announcer';
 import { S } from '../strings';
 
 interface FooterProps {
@@ -17,6 +18,7 @@ export function Footer({ files, onClear, onExported }: FooterProps) {
   const clearRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const { saved, dismiss, reveal } = useSavedNotice();
+  const announce = useAnnounce();
   const active = confirming || saved !== null;
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export function Footer({ files, onClear, onExported }: FooterProps) {
   }, [active, confirming, dismiss]);
 
   if (files.length === 0) return null;
-  const done = files.filter((file) => file.status === 'done');
+  const done = files.filter((file) => file.status === 'done' && file.out !== undefined);
   const unsaved = done.filter((file) => !file.exported).length;
   const measured = done.filter((file) => file.rawTokens !== undefined && file.outTokens !== undefined);
   const raw = measured.reduce((sum, file) => sum + (file.rawTokens ?? 0), 0);
@@ -52,12 +54,12 @@ export function Footer({ files, onClear, onExported }: FooterProps) {
   const saving = savedPercent(raw, out);
 
   const downloadAll = () => {
-    const names = uniqueNames(done.map((file) => mdName(file.name)));
+    const names = uniqueNames(done.map((file) => zipEntryName(mdName(file.name))));
     const ids = done.map((file) => file.localId);
     const archive = zipName();
     downloadZip(done.map((file, index) => ({ name: names[index], text: file.out ?? '' }))).then(
       () => onExported?.(ids, archive),
-      () => undefined,
+      () => announce(S.zipFailed),
     );
   };
 

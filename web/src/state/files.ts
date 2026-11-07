@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiError, ErrorCode, FileKind, Health } from '@core/types';
 import { detectKind } from '@core/kind';
-import { clearFiles, compress, deleteFile, getHealth, parseFile } from '../api';
+import { compress, deleteFile, getHealth, parseFile } from '../api';
 import { clearJsonCache, forgetJson } from '../lib/json-cache';
-import { distill } from '../worker/client';
+import { ERROR_MESSAGES } from '../strings';
+import { distill, forgetRaw } from '../worker/client';
 import type { Settings } from './settings';
 
 export const MAX_CONCURRENT_UPLOADS = 3;
 export const LINGUA_DEBOUNCE_MS = 400;
 export const HEALTH_POLL_MS = 1000;
 export const COMPRESS_CACHE_LIMIT = 50;
+export const HEALTH_RETRY_BASE_MS = 1000;
+export const HEALTH_RETRY_MAX_MS = 10_000;
 
 export interface FileEntry {
   localId: string;
@@ -41,18 +44,7 @@ export interface FilesApi {
   retryLingua: () => void;
 }
 
-const KNOWN_CODES: readonly ErrorCode[] = [
-  'unsupported_type',
-  'needs_libreoffice',
-  'too_large',
-  'password_protected',
-  'timeout',
-  'parse_failed',
-  'bad_request',
-  'not_found',
-  'lingua_unavailable',
-  'forbidden',
-];
+const KNOWN_CODES = Object.keys(ERROR_MESSAGES) as ErrorCode[];
 
 let nextLocalId = 1;
 
@@ -131,18 +123,27 @@ export function useFiles(settings: Settings): FilesApi {
 
   useEffect(() => {
     let cancelled = false;
-    getHealth().then(
-      (loaded) => {
-        if (cancelled) return;
-        setHealth(loaded);
-        setMaxBytes(loaded.maxBytes);
-      },
-      (error: unknown) => {
-        if (!cancelled) setHealthError(toApiError(error));
-      },
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attempt = (failures: number) => {
+      getHealth().then(
+        (loaded) => {
+          if (cancelled) return;
+          setHealthError(null);
+          setHealth(loaded);
+          setMaxBytes(loaded.maxBytes);
+        },
+        (error: unknown) => {
+          if (cancelled) return;
+          setHealthError(toApiError(error));
+          const delay = Math.min(HEALTH_RETRY_BASE_MS * 2 ** failures, HEALTH_RETRY_MAX_MS);
+          timer = setTimeout(() => attempt(failures + 1), delay);
+        },
+      );
+    };
+    attempt(0);
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, []);
 
@@ -163,7 +164,7 @@ export function useFiles(settings: Settings): FilesApi {
     );
   }, []);
 
-  const release = useCallback((localId: string, serverId?: string) => {
+  const release = useCallback((localId: string, serverId?: string, raw?: string) => {
     blobs.current.delete(localId);
     started.current.delete(localId);
     appliedKey.current.delete(localId);
@@ -182,13 +183,14 @@ export function useFiles(settings: Settings): FilesApi {
       if (key.startsWith(`${localId}:`)) compressCache.current.delete(key);
     }
     if (serverId !== undefined) forgetJson(serverId);
+    if (raw !== undefined) forgetRaw(raw);
   }, []);
 
   const remove = useCallback(
     (localId: string) => {
       const entry = filesRef.current.find((candidate) => candidate.localId === localId);
       if (!entry) return;
-      release(localId, entry.serverId);
+      release(localId, entry.serverId, entry.raw);
       setFiles((current) => current.filter((candidate) => candidate.localId !== localId));
       if (entry.serverId !== undefined) deleteFile(entry.serverId).catch(ignoreFailure);
     },
@@ -196,12 +198,15 @@ export function useFiles(settings: Settings): FilesApi {
   );
 
   const clear = useCallback(() => {
-    for (const entry of filesRef.current) release(entry.localId, entry.serverId);
+    const known = filesRef.current;
+    for (const entry of known) release(entry.localId, entry.serverId, entry.raw);
     compressCache.current.clear();
     clearJsonCache();
     setFiles([]);
     setLinguaFailed(false);
-    clearFiles().catch(ignoreFailure);
+    for (const entry of known) {
+      if (entry.serverId !== undefined) deleteFile(entry.serverId).catch(ignoreFailure);
+    }
   }, [release]);
 
   const markExported = useCallback((localIds: string[]) => {

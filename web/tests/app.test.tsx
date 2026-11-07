@@ -5,7 +5,7 @@ import { App } from '../src/App';
 
 const distillMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../src/worker/client', () => ({ distill: distillMock }));
+vi.mock('../src/worker/client', () => ({ distill: distillMock, forgetRaw: vi.fn() }));
 
 const RAW = 'x'.repeat(2000);
 

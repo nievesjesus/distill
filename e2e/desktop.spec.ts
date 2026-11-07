@@ -420,7 +420,7 @@ test('list management, alignment and confirm in the desktop shell', async () => 
 
     await page.getByRole('button', { name: 'Remove beta.pdf' }).click();
     await expect(page.getByRole('button', { name: 'Remove gamma.pdf' })).toBeFocused();
-    await page.getByRole('button', { name: 'Remove gamma.pdf' }).press('Delete');
+    await page.locator('.file-toggle', { hasText: 'gamma.pdf' }).press('Delete');
     await expect(page.getByRole('button', { name: 'Remove alpha.pdf' })).toBeFocused();
 
     await page.locator('input[type="file"]').setInputFiles(pdfs.slice(1));

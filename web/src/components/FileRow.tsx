@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { savedPercent, shortCount } from '@core/format';
 import { useAnnounce } from '../state/announcer';
 import { copyText } from '../lib/clipboard';
@@ -161,23 +162,32 @@ function DoneActions({ file, onRemove, onExported }: { file: FileEntry; onRemove
   );
 }
 
+function removalKey(event: ReactKeyboardEvent): boolean {
+  if (event.key === 'Delete') return true;
+  return event.key === 'Backspace' && (event.metaKey || event.ctrlKey);
+}
+
 export function FileRow({ file, expanded = false, detailed = false, onToggle, onRemove, onExported }: FileRowProps) {
   const isDone = file.status === 'done';
+  const isReady = isDone && file.out !== undefined;
   const previewId = `preview-${file.localId}`;
   const isOpen = isDone && expanded;
   return (
     <li className="file" data-status={file.status}>
-      <div
-        className="file-row"
-        onKeyDown={(event) => {
-          if (event.key !== 'Delete' && event.key !== 'Backspace') return;
-          if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select')) return;
-          event.preventDefault();
-          onRemove?.();
-        }}
-      >
+      <div className="file-row">
         {isDone ? (
-          <button type="button" className="file-main file-toggle" aria-expanded={isOpen} aria-controls={previewId} onClick={onToggle}>
+          <button
+            type="button"
+            className="file-main file-toggle"
+            aria-expanded={isOpen}
+            aria-controls={previewId}
+            onClick={onToggle}
+            onKeyDown={(event) => {
+              if (!removalKey(event)) return;
+              event.preventDefault();
+              onRemove?.();
+            }}
+          >
             <FileMain file={file} />
           </button>
         ) : (
@@ -185,7 +195,7 @@ export function FileRow({ file, expanded = false, detailed = false, onToggle, on
             <FileMain file={file} />
           </span>
         )}
-        {isDone ? (
+        {isReady ? (
           <DoneActions file={file} onRemove={onRemove} onExported={onExported} />
         ) : (
           <div className="file-actions">

@@ -1,5 +1,7 @@
 const SEPARATORS = /[\\/]/;
 const FALLBACK = 'document';
+const WINDOWS_FORBIDDEN = /[<>:"/\\|?*\u0000-\u001F]/g;
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 
 function baseName(original: string): string {
   const parts = original.split(SEPARATORS).filter((part) => part.length > 0);
@@ -30,4 +32,11 @@ export function uniqueNames(names: string[]): string[] {
     taken.add(candidate.toLowerCase());
     return candidate;
   });
+}
+
+export function zipEntryName(name: string): string {
+  const stem = name.endsWith('.md') ? name.slice(0, -3) : name;
+  const cleaned = stem.replace(WINDOWS_FORBIDDEN, '_').replace(/[. ]+$/, '');
+  const base = cleaned === '' ? FALLBACK : cleaned;
+  return `${WINDOWS_RESERVED.test(base) ? `_${base}` : base}.md`;
 }

@@ -17,6 +17,7 @@ export const S = {
   remove: (name: string) => `Remove ${name}`,
   removed: (name: string) => `${name} removed`,
   cleared: 'List cleared',
+  zipFailed: 'Could not build the ZIP — download the files one by one instead',
   saved: (filename: string) => `Saved ${filename}`,
   showInFinder: 'Show in Finder',
   showInFolder: 'Show in folder',

@@ -9,11 +9,12 @@ import { FileList } from '../src/components/FileList';
 import { FileRow } from '../src/components/FileRow';
 import { Footer } from '../src/components/Footer';
 import { useExportTracking } from '../src/lib/desktop-bridge';
+import { AnnouncerProvider } from '../src/state/announcer';
 import type { FileEntry } from '../src/state/files';
 
 const distillMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../src/worker/client', () => ({ distill: distillMock }));
+vi.mock('../src/worker/client', () => ({ distill: distillMock, forgetRaw: vi.fn() }));
 
 function entry(id: string, name: string, overrides: Partial<FileEntry> = {}): FileEntry {
   return { localId: id, name, size: 1, kind: 'PDF', status: 'done', out: `out of ${name}`, rawTokens: 10, outTokens: 5, ...overrides };
@@ -46,18 +47,50 @@ describe('FileRow removal', () => {
     }
   });
 
-  it.each(['Delete', 'Backspace'])('removes the row on %s while it is focused', (key) => {
+  const toggle = () => document.querySelector('.file-toggle') as HTMLElement;
+
+  it('removes the row on Delete from the row toggle', () => {
     const onRemove = vi.fn();
     render(<ul><FileRow file={entry('1', 'a.pdf')} onRemove={onRemove} /></ul>);
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Copy Markdown' }), { key });
+    fireEvent.keyDown(toggle(), { key: 'Delete' });
     expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([{ metaKey: true }, { ctrlKey: true }])('removes the row on Backspace with %o from the row toggle', (modifier) => {
+    const onRemove = vi.fn();
+    render(<ul><FileRow file={entry('1', 'a.pdf')} onRemove={onRemove} /></ul>);
+    fireEvent.keyDown(toggle(), { key: 'Backspace', ...modifier });
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it('never removes on a plain Backspace', () => {
+    const onRemove = vi.fn();
+    render(<ul><FileRow file={entry('1', 'a.pdf')} onRemove={onRemove} /></ul>);
+    fireEvent.keyDown(toggle(), { key: 'Backspace' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Copy Markdown' }), { key: 'Backspace' });
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('does not remove on Delete from the action buttons', () => {
+    const onRemove = vi.fn();
+    render(<ul><FileRow file={entry('1', 'a.pdf')} onRemove={onRemove} /></ul>);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Copy Markdown' }), { key: 'Delete' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Download Markdown' }), { key: 'Delete' });
+    expect(onRemove).not.toHaveBeenCalled();
   });
 
   it('ignores other keys', () => {
     const onRemove = vi.fn();
     render(<ul><FileRow file={entry('1', 'a.pdf')} onRemove={onRemove} /></ul>);
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Copy Markdown' }), { key: 'a' });
+    fireEvent.keyDown(toggle(), { key: 'a' });
     expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('offers only Remove until the distilled Markdown exists', () => {
+    render(<ul><FileRow file={entry('1', 'a.pdf', { out: undefined })} /></ul>);
+    expect(screen.queryByRole('button', { name: 'Copy Markdown' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Download Markdown' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Remove a.pdf' })).toBeInTheDocument();
   });
 
   it('reports exports from copy and single download', async () => {
@@ -164,6 +197,37 @@ describe('Footer clear', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Download all' }));
     });
     expect(onExported).not.toHaveBeenCalled();
+  });
+
+  it('announces a ZIP build failure', async () => {
+    Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => { throw new Error('boom'); }), configurable: true });
+    render(
+      <AnnouncerProvider>
+        <Footer files={[entry('1', 'a.pdf')]} />
+      </AnnouncerProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Download all' }));
+    });
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Could not build the ZIP'));
+  });
+
+  it('keeps Download all disabled and exports nothing while no row has its Markdown yet', () => {
+    const onExported = vi.fn();
+    render(<Footer files={[entry('1', 'a.pdf', { out: undefined }), entry('2', 'b.pdf', { out: undefined })]} onExported={onExported} />);
+    expect(screen.getByRole('button', { name: 'Download all' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Download all' }));
+    expect(onExported).not.toHaveBeenCalled();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('zips only rows whose Markdown exists', async () => {
+    const onExported = vi.fn();
+    render(<Footer files={[entry('1', 'a.pdf'), entry('2', 'b.pdf', { out: undefined })]} onExported={onExported} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Download all' }));
+    });
+    expect(onExported).toHaveBeenCalledWith(['1'], expect.any(String));
   });
 
   it('does not come back in confirm mode after the list empties', () => {
@@ -406,7 +470,11 @@ describe('App list management', () => {
     fireEvent.click(within(screen.getByRole('contentinfo')).getAllByRole('button', { name: 'Clear' })[0]);
     expect(screen.getByText('Nothing distilled yet')).toBeInTheDocument();
     expect(screen.queryByRole('contentinfo')).toBeNull();
-    await waitFor(() => expect(calls).toContainEqual({ url: '/api/files', method: 'DELETE' }));
+    await waitFor(() => {
+      expect(calls).toContainEqual({ url: '/api/files/srv-a.pdf', method: 'DELETE' });
+      expect(calls).toContainEqual({ url: '/api/files/srv-b.pdf', method: 'DELETE' });
+    });
+    expect(calls).not.toContainEqual({ url: '/api/files', method: 'DELETE' });
     await waitFor(() => expect(screen.getByRole('button', { name: 'browse' })).toHaveFocus());
   });
 

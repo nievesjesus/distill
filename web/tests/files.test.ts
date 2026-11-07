@@ -6,8 +6,9 @@ import type { Settings } from '../src/state/settings';
 import { useFiles } from '../src/state/files';
 
 const distillMock = vi.hoisted(() => vi.fn());
+const forgetRawMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../src/worker/client', () => ({ distill: distillMock }));
+vi.mock('../src/worker/client', () => ({ distill: distillMock, forgetRaw: forgetRawMock }));
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -44,13 +45,17 @@ const settingsWith = (patch: Partial<Settings>): Settings => ({ ...DEFAULT_SETTI
 
 beforeEach(() => {
   distillMock.mockReset();
+  forgetRawMock.mockReset();
   distillMock.mockImplementation(async (raw: string, active: LocalBoosterId[]) => {
     const out = raw.slice(0, raw.length - active.length);
     return { out, rawTokens: raw.length, outTokens: out.length };
   });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe('useFiles', () => {
   it('rejects files over max size client-side without uploading', async () => {
@@ -298,12 +303,33 @@ describe('useFiles remove and clear', () => {
     expect(result.current.files).toEqual([]);
     const uploads = calls.filter((call) => call.url === '/api/parse');
     expect(uploads.every((call) => call.signal?.aborted)).toBe(true);
-    expect(calls).toContainEqual(expect.objectContaining({ url: '/api/files', method: 'DELETE' }));
+    expect(calls).not.toContainEqual(expect.objectContaining({ url: '/api/files', method: 'DELETE' }));
     await act(async () => {
       gates.forEach((gate) => gate.resolve(parsed('late.pdf')));
     });
     expect(result.current.files).toEqual([]);
     expect(gates).toHaveLength(3);
+  });
+
+  it('clear deletes only the ids this client knows, one by one', async () => {
+    const { calls } = recordingFetch();
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add([fileOf('a.pdf'), fileOf('b.pdf')]));
+    await waitFor(() => expect(result.current.files.every((f) => f.status === 'done')).toBe(true));
+    act(() => result.current.clear());
+    const deletes = calls.filter((call) => call.method === 'DELETE').map((call) => call.url).sort();
+    expect(deletes).toEqual(['/api/files/srv-a.pdf', '/api/files/srv-b.pdf']);
+  });
+
+  it('forgets the raw text in the worker client on remove and clear', async () => {
+    recordingFetch();
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add([fileOf('a.pdf'), fileOf('b.pdf')]));
+    await waitFor(() => expect(result.current.files.every((f) => f.status === 'done')).toBe(true));
+    act(() => result.current.remove(result.current.files[0].localId));
+    expect(forgetRawMock).toHaveBeenCalledWith('# a.pdf\n\n\n\nbody');
+    act(() => result.current.clear());
+    expect(forgetRawMock).toHaveBeenCalledWith('# b.pdf\n\n\n\nbody');
   });
 
   it('survives a failing server delete', async () => {
@@ -332,5 +358,98 @@ describe('useFiles remove and clear', () => {
     act(() => result.current.markExported([first.localId]));
     expect(result.current.files.find((f) => f.localId === first.localId)?.exported).toBe(true);
     expect(result.current.files.find((f) => f.localId === second.localId)?.exported).toBeUndefined();
+  });
+
+  it('keeps retrying /api/health with backoff until it answers, then starts queued rows', async () => {
+    vi.useFakeTimers();
+    let healthCalls = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/health') {
+        healthCalls += 1;
+        if (healthCalls < 4) throw new TypeError('not up yet');
+        return health();
+      }
+      return parsed('a.pdf');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add([fileOf('a.pdf')]));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(healthCalls).toBe(1);
+    expect(result.current.healthError).not.toBeNull();
+    expect(result.current.files[0].status).toBe('queued');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    expect(healthCalls).toBe(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(healthCalls).toBe(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(healthCalls).toBe(3);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    expect(healthCalls).toBe(4);
+    expect(result.current.healthError).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(result.current.files[0].status).toBe('done');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(healthCalls).toBe(4);
+  });
+
+  it('caps the health retry delay at 10 seconds', async () => {
+    vi.useFakeTimers();
+    let healthCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        healthCalls += 1;
+        throw new TypeError('down');
+      }),
+    );
+    renderHook(() => useFiles(DEFAULT_SETTINGS));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000 + 2000 + 4000 + 8000);
+    });
+    expect(healthCalls).toBe(5);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(healthCalls).toBe(6);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(healthCalls).toBe(7);
+  });
+
+  it('stops retrying health after unmount', async () => {
+    vi.useFakeTimers();
+    let healthCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        healthCalls += 1;
+        throw new TypeError('down');
+      }),
+    );
+    const { unmount } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(healthCalls).toBe(1);
   });
 });
