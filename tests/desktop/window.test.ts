@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { isAllowedExternal, isPermissionAllowed, isSameOrigin, tessdataDir, windowOptions } from '../../desktop/window';
+import { desktopUrl, isAllowedExternal, isPermissionAllowed, isSameOrigin, tessdataDir, windowOptions } from '../../desktop/window';
 
 describe('windowOptions', () => {
   it('uses the hardened distill window defaults', () => {
-    expect(windowOptions()).toMatchObject({
-      width: 760,
-      height: 860,
-      minWidth: 420,
-      minHeight: 560,
+    expect(windowOptions('linux')).toMatchObject({
+      width: 640,
+      height: 780,
+      minWidth: 440,
+      minHeight: 520,
       title: 'distill',
       backgroundColor: '#0B0B10',
       show: false,
@@ -16,7 +16,35 @@ describe('windowOptions', () => {
   });
 
   it('declares no preload script', () => {
-    expect(windowOptions().webPreferences).not.toHaveProperty('preload');
+    expect(windowOptions('darwin').webPreferences).not.toHaveProperty('preload');
+  });
+
+  it('integrates the title bar with inset traffic lights on macOS', () => {
+    const options = windowOptions('darwin');
+    expect(options.titleBarStyle).toBe('hiddenInset');
+    expect(options.trafficLightPosition).toEqual({ x: 16, y: 14 });
+    expect(options).not.toHaveProperty('titleBarOverlay');
+  });
+
+  it('draws the window controls overlay on Windows', () => {
+    expect(windowOptions('win32')).toMatchObject({
+      titleBarStyle: 'hidden',
+      titleBarOverlay: { color: '#0B0B10', symbolColor: '#A0A0AE', height: 40 },
+    });
+  });
+
+  it('keeps the native frame on Linux', () => {
+    const options = windowOptions('linux');
+    expect(options).not.toHaveProperty('titleBarStyle');
+    expect(options).not.toHaveProperty('titleBarOverlay');
+  });
+});
+
+describe('desktopUrl', () => {
+  it('adds the shell and platform query and stays same-origin', () => {
+    const url = desktopUrl('http://127.0.0.1:5123/', 'darwin');
+    expect(url).toBe('http://127.0.0.1:5123/?shell=desktop&platform=darwin');
+    expect(isSameOrigin(url, 'http://127.0.0.1:5123/')).toBe(true);
   });
 });
 

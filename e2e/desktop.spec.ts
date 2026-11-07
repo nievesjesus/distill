@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 import { makeSamplePdf } from '../tests/fixtures/make-pdf';
 
 const PAGE_HEADER = 'Example Co. - Report   Page 1 of 3';
@@ -51,5 +52,115 @@ test('desktop shell loads the UI, converts a PDF through the LiteParse fork and 
   } finally {
     if (child.exitCode === null) child.kill('SIGKILL');
     rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+function launch(userDataDir: string): Promise<ElectronApplication> {
+  const packagedApp = process.env.DISTILL_APP_PATH;
+  const userData = `--user-data-dir=${userDataDir}`;
+  return electron.launch(packagedApp ? { executablePath: packagedApp, args: [userData] } : { args: ['.', userData] });
+}
+
+function resize(app: ElectronApplication, width: number, height: number): Promise<number[]> {
+  return app.evaluate(
+    ({ BrowserWindow }, [w, h]) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      window.setSize(w, h);
+      return window.getSize();
+    },
+    [width, height],
+  );
+}
+
+function shot(name: string): string {
+  mkdirSync('test-results', { recursive: true });
+  return join('test-results', `desktop-${name}.png`);
+}
+
+function geometry(page: Page) {
+  return page.evaluate(() => {
+    const footer = document.querySelector('.footer')?.getBoundingClientRect();
+    const column = document.querySelector('.body')?.getBoundingClientRect();
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      bodyScrollable: document.body.scrollHeight > document.body.clientHeight,
+      innerHeight: window.innerHeight,
+      footerBottom: footer?.bottom ?? null,
+      columnWidth: column?.width ?? null,
+      columnLeft: column?.left ?? null,
+    };
+  });
+}
+
+test('desktop window adapts to its size and keeps the footer in view', async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
+  const workDir = mkdtempSync(join(tmpdir(), 'distill-desktop-'));
+  const files = Array.from({ length: 12 }, (_, index) => {
+    const path = join(workDir, `doc-${index}.pdf`);
+    writeFileSync(path, makeSamplePdf(sampleLines()));
+    return path;
+  });
+  const app = await launch(userData);
+  try {
+    const page = await app.firstWindow();
+    await expect(page.getByText('Fewer tokens')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-shell', 'desktop');
+
+    expect(await resize(app, 300, 300)).toEqual([440, 520]);
+    await page.locator('input[type="file"]').setInputFiles(files);
+    await expect(page.getByRole('listitem')).toHaveCount(12);
+    await expect(page.locator('.footer')).toBeVisible();
+    const small = await geometry(page);
+    expect(small.scrollWidth).toBeLessThanOrEqual(small.clientWidth);
+    expect(small.bodyScrollable).toBe(false);
+    expect(small.footerBottom).toBeLessThanOrEqual(small.innerHeight);
+    const listScrolls = await page.locator('.file-list').evaluate((el) => el.scrollHeight > el.clientHeight);
+    expect(listScrolls).toBe(true);
+    await page.screenshot({ path: shot('440x520') });
+    if (process.platform === 'darwin') {
+      const mark = await page.locator('.brand-mark').boundingBox();
+      expect(mark).not.toBeNull();
+      expect(mark!.x).toBeGreaterThanOrEqual(80);
+      expect(Math.abs(mark!.y + mark!.height / 2 - 20)).toBeLessThanOrEqual(3);
+      await page.screenshot({ path: shot('titlebar-mac'), clip: { x: 0, y: 0, width: 240, height: 40 } });
+    }
+
+    await resize(app, 640, 780);
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: shot('640x780') });
+
+    await resize(app, 1280, 900);
+    await page.waitForTimeout(200);
+    const wide = await geometry(page);
+    expect(wide.columnWidth).toBe(720);
+    expect(wide.columnLeft).toBe((wide.clientWidth - 720) / 2);
+    expect(wide.footerBottom).toBeLessThanOrEqual(wide.innerHeight);
+    await page.screenshot({ path: shot('1280x900') });
+  } finally {
+    await app.close();
+    rmSync(workDir, { recursive: true, force: true });
+    rmSync(userData, { recursive: true, force: true });
+  }
+});
+
+test('desktop window remembers its size between launches', async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
+  try {
+    const first = await launch(userData);
+    const firstExit = new Promise<void>((resolve) => first.process().once('exit', () => resolve()));
+    const firstPage = await first.firstWindow();
+    await expect(firstPage.getByText('Fewer tokens')).toBeVisible();
+    expect(await resize(first, 700, 640)).toEqual([700, 640]);
+    void first.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((window) => window.close())).catch(() => undefined);
+    await firstExit;
+
+    const second = await launch(userData);
+    await second.firstWindow();
+    const restored = await second.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize());
+    expect(restored).toEqual([700, 640]);
+    await second.close();
+  } finally {
+    rmSync(userData, { recursive: true, force: true });
   }
 });

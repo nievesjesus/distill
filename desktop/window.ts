@@ -1,17 +1,42 @@
 import { join } from 'node:path';
 import type { BrowserWindowConstructorOptions } from 'electron';
 
-export function windowOptions(): BrowserWindowConstructorOptions {
+export const WINDOW_DEFAULTS = { width: 640, height: 780 };
+export const WINDOW_MINIMUMS = { width: 440, height: 520 };
+export const TITLE_BAR_HEIGHT = 40;
+const BACKGROUND = '#0B0B10';
+
+function titleBarOptions(platform: NodeJS.Platform): BrowserWindowConstructorOptions {
+  if (platform === 'darwin') {
+    return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: (TITLE_BAR_HEIGHT - 12) / 2 } };
+  }
+  if (platform === 'win32') {
+    return {
+      titleBarStyle: 'hidden',
+      titleBarOverlay: { color: BACKGROUND, symbolColor: '#A0A0AE', height: TITLE_BAR_HEIGHT },
+    };
+  }
+  return {};
+}
+
+export function windowOptions(platform: NodeJS.Platform): BrowserWindowConstructorOptions {
   return {
-    width: 760,
-    height: 860,
-    minWidth: 420,
-    minHeight: 560,
+    ...WINDOW_DEFAULTS,
+    minWidth: WINDOW_MINIMUMS.width,
+    minHeight: WINDOW_MINIMUMS.height,
     title: 'distill',
-    backgroundColor: '#0B0B10',
+    backgroundColor: BACKGROUND,
     show: false,
+    ...titleBarOptions(platform),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   };
+}
+
+export function desktopUrl(appUrl: string, platform: NodeJS.Platform): string {
+  const url = new URL(appUrl);
+  url.searchParams.set('shell', 'desktop');
+  url.searchParams.set('platform', platform);
+  return url.toString();
 }
 
 export function isAllowedExternal(url: string): boolean {

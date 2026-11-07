@@ -50,30 +50,32 @@ function AppBody() {
     <div className="page">
       <div className="column">
         <Header mode={mode} onModeChange={(next) => update({ detailed: next === 'detailed', optionsOpen: next === 'detailed' })} />
-        <h1 className="tagline">
-          {taglineStart}
-          <em>{taglineAccent}</em>
-          {taglineEnd}
-        </h1>
-        <Dropzone onFiles={add} />
-        {healthError ? (
-          <p className="app-error" role="alert">
-            {healthError.message === S.unreachable ? S.unreachable : ERROR_MESSAGES[healthError.code]}
-          </p>
-        ) : null}
-        <OptimizeBar
-          settings={settings}
-          onOptimizeChange={(optimize) => update({ optimize })}
-          onOptionsOpenChange={(optionsOpen) => update({ optionsOpen })}
-          onToggleBooster={toggleBooster}
-          onToggleLingua={toggleLingua}
-          health={health}
-          linguaFailed={linguaFailed}
-          onLinguaChange={(patch) => update({ lingua: { ...settings.lingua, ...patch } })}
-          onRetryLingua={retryLingua}
-        />
-        <FileList files={files} detailed={settings.detailed} />
-        <Footer files={files} />
+        <div className="body">
+          <h1 className="tagline">
+            {taglineStart}
+            <em>{taglineAccent}</em>
+            {taglineEnd}
+          </h1>
+          <Dropzone onFiles={add} />
+          {healthError ? (
+            <p className="app-error" role="alert">
+              {healthError.message === S.unreachable ? S.unreachable : ERROR_MESSAGES[healthError.code]}
+            </p>
+          ) : null}
+          <OptimizeBar
+            settings={settings}
+            onOptimizeChange={(optimize) => update({ optimize })}
+            onOptionsOpenChange={(optionsOpen) => update({ optionsOpen })}
+            onToggleBooster={toggleBooster}
+            onToggleLingua={toggleLingua}
+            health={health}
+            linguaFailed={linguaFailed}
+            onLinguaChange={(patch) => update({ lingua: { ...settings.lingua, ...patch } })}
+            onRetryLingua={retryLingua}
+          />
+          <FileList files={files} detailed={settings.detailed} />
+          <Footer files={files} />
+        </div>
       </div>
     </div>
   );

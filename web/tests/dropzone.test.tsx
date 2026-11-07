@@ -42,6 +42,26 @@ describe('Dropzone', () => {
     expect(zone()).toHaveAttribute('data-dragging', 'false');
   });
 
+  it('adds files dropped anywhere on the window and prevents navigation', async () => {
+    const onFiles = vi.fn();
+    render(<Dropzone onFiles={onFiles} />);
+    const file = new File(['x'], 'outside.pdf');
+    const drop = createEvent.drop(document.body, { dataTransfer: { files: [file] } });
+    fireEvent(document.body, drop);
+    expect(drop.defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(onFiles).toHaveBeenCalledWith([file]));
+  });
+
+  it('highlights the zone while a drag is over the window', () => {
+    render(<Dropzone onFiles={() => {}} />);
+    fireEvent.dragOver(document.body);
+    expect(zone()).toHaveAttribute('data-dragging', 'true');
+    const leaving = createEvent.dragLeave(document.body);
+    Object.defineProperty(leaving, 'relatedTarget', { value: null });
+    fireEvent(document.body, leaving);
+    expect(zone()).toHaveAttribute('data-dragging', 'false');
+  });
+
   it('collects files dropped from a dataTransfer', async () => {
     const onFiles = vi.fn();
     render(<Dropzone onFiles={onFiles} />);
