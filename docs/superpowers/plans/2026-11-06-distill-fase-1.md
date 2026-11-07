@@ -640,3 +640,62 @@ e2e/distill.spec.ts          Playwright
   - Capturas en `test-results/t16-*.png`.
 - [ ] **Paso 6:** typecheck, `npm test`, `test:e2e` y `test:desktop` en verde.
 - [ ] **Paso 7: Commit** con `feat: remove/clear files, native save dialog and empty state`.
+
+### Tarea 17: LLMLingua-2 bajo demanda
+
+> Agregada el 2026-11-06 por decisión del usuario ("Bajo demanda"). Se hace después de la ronda de arreglos de la review final. Reemplaza el fallback del Ruling 13.
+
+**Objetivo:**
+- `npx distillmd` deja de instalar la pila de LLMLingua (unos 400 MB, más el paquete CUDA que en Linux x64 se baja de NuGet).
+- LLMLingua-2 se instala solo cuando el usuario lo activa, en `~/.cache/distillmd/lingua`, con versiones e integridad fijadas.
+
+**Archivos:**
+- Crear:
+  - `lingua-runtime/package.json` y `lingua-runtime/package-lock.json` (versiones exactas de `@atjsh/llmlingua-2`, `@huggingface/transformers` y `js-tiktoken`)
+  - `src/node/lingua-install.ts` y `tests/node/lingua-install.test.ts`
+- Modificar:
+  - `package.json` (sacar las tres de `dependencies`)
+  - `src/node/lingua.ts` (raíces de resolución), `src/server/app.ts` (ruta de instalación) y `src/core/types.ts` (estados nuevos)
+  - `web/src/components/OptimizeBar.tsx`, `web/src/state/files.ts` y `web/src/strings.ts`
+  - `electron-builder.full.yml`, `scripts/check-variant.mjs`, `Dockerfile`, `README.md`, el spec (§4.3 y §9) y los tests correspondientes
+
+**Comportamiento esperado:**
+
+1. **Raíces de resolución** (amplía el Ruling 23). LLMLingua se carga, en este orden, desde la primera raíz donde `createRequire` resuelva los tres paquetes y la ruta real quede dentro de esa raíz:
+   1. el `node_modules` propio de distill (desarrollo);
+   2. `process.resourcesPath/lingua/node_modules` (app de escritorio full);
+   3. `<cacheDir>/lingua/node_modules` (instalación bajo demanda).
+   
+   Nunca se buscan directorios ancestros. El `import()` usa la ruta resuelta de esa raíz, cuidando que `env.cacheDir` quede en la misma instancia ESM de transformers que usa llmlingua.
+2. **Estado.** Si no está instalado, `Health.lingua` reporta `installable: true|false`. Es `true` cuando hay `npm` disponible (npx/CLI/Docker) y `false` en la app de escritorio lite. Los estados nuevos son `installing` y `install_failed`, este último con un código de error.
+3. **Instalación**, con `POST /api/lingua/install` (guard loopback/Origin, idempotente, una sola a la vez):
+   - copia `lingua-runtime/package.json` y `package-lock.json` a `<cacheDir>/lingua`;
+   - corre `npm ci --omit=dev --ignore-scripts --no-audit --no-fund` con `cwd` en ese directorio, sin shell y con timeout. `--ignore-scripts` evita el postinstall de onnxruntime-node que baja CUDA; hay que verificar que el binario CPU viene en el tarball y que sharp funciona sin scripts;
+   - instala primero en un directorio temporal y lo renombra al final, así un fallo no deja una instalación a medias;
+   - si falla, pasa a `install_failed`, con el mensaje de npm recortado y sin rutas del usuario.
+4. **UI:**
+   - Si LLMLingua no está instalado y es instalable, la fila de LLMLingua-2 muestra "Install (~400 MB)" con una nota de privacidad: se descarga de npm una sola vez y después corre offline.
+   - Durante la instalación muestra un progreso indeterminado ("Installing…") y al terminar pasa a la descarga del modelo, que ya existe.
+   - En la app de escritorio lite muestra "Available in distill full" con un link al release.
+   - Todos los textos van en `strings.ts`.
+5. **Empaquetado:**
+   - `dist:full` instala `lingua-runtime` con `npm ci --ignore-scripts` en `build/lingua` y lo incluye como `extraResources` (`lingua/`). Ya no depende de las `dependencies` raíz.
+   - La variante lite no lo incluye.
+   - `check-variant` verifica `resources/lingua/node_modules/@atjsh/llmlingua-2` en la full y su ausencia en la lite.
+6. **Docker:** la imagen no trae LLMLingua y se instala bajo demanda en el volumen de caché. Se documenta en el README.
+7. **README y spec:**
+   - el install de npx vuelve a ser liviano;
+   - cómo se activa LLMLingua y qué descarga;
+   - se quita la nota de `ONNXRUNTIME_NODE_INSTALL`, que ya no hace falta.
+
+- [ ] **Paso 1 (TDD):**
+  - Resolución por raíces: orden, rechazo de ancestros y rechazo de una ruta real fuera de la raíz.
+  - El instalador con `spawn` inyectado: argumentos exactos, timeout, rename atómico, fallo que limpia el temporal y concurrencia (una sola instalación).
+  - La ruta POST: Origin ajeno → 403, idempotente.
+  - La UI en los tres casos: instalable, instalando y lite.
+- [ ] **Paso 2:** implementa la resolución, el instalador, la ruta y la UI.
+- [ ] **Paso 3:** prueba real de la instalación bajo demanda contra el registry (`NODE_OPTIONS=--use-system-ca` si el proxy lo exige; nunca desactivar TLS). Si el proxy lo bloquea, reportarlo con la salida exacta.
+- [ ] **Paso 4:** `dist:full` y `dist:lite` con `--dir`, más `check-variant` y el humo empaquetado de la full con `DISTILL_EXPECT_LINGUA=installed`.
+- [ ] **Paso 5:** `npm pack --dry-run` muestra que el tarball no arrastra la pila de LLMLingua, y un `npm install` limpio del paquete pesa una fracción del actual (registrar los tamaños).
+- [ ] **Paso 6:** typecheck, `npm test`, `test:e2e`, `test:desktop -- --workers 1` y `check:deps` en verde.
+- [ ] **Paso 7: Commit** con `feat(lingua): install LLMLingua-2 on demand instead of shipping it with npx`.
