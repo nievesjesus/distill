@@ -8,7 +8,7 @@ export default defineConfig({
   target: 'node20',
   banner: { js: '#!/usr/bin/env node' },
   splitting: true,
-  clean: false,
+  clean: ['!web/**', '!desktop/**'],
   sourcemap: false,
   dts: false,
   external: ['@llamaindex/liteparse'],
