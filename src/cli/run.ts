@@ -1,9 +1,13 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
+import { handleClaudePreToolUse } from '../hooks/claude';
+import { convertCached } from '../hooks/cache';
+import { isHookConvertible } from '../hooks/supported';
 import { openDistiller as defaultOpenDistiller } from '../node/distill';
 import type { Distiller } from '../node/distill';
 import { serveMcpHttp as defaultServeMcpHttp } from '../mcp/http';
@@ -28,11 +32,18 @@ export interface CliDeps {
   exit?: (code: number) => never;
   handleSignals?: boolean;
   env?: Record<string, string | undefined>;
+  readStdin?: () => Promise<string>;
 }
 
 const BYTES_PER_MB = 1024 * 1024;
 
-function readVersion(): string {
+async function defaultReadStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+export function readVersion(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   while (dir !== dirname(dir)) {
     try {
@@ -118,6 +129,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   const handleSignals = deps.handleSignals ?? true;
   const env = deps.env ?? process.env;
+  const readStdin = deps.readStdin ?? defaultReadStdin;
 
   const program = new Command();
   program
@@ -271,6 +283,70 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         process.on('SIGINT', shutdown);
         process.on('SIGTERM', shutdown);
       }
+    });
+
+  const hook = program.command('hook').description('Runtimes for agent hooks');
+
+  const convertViaCache = async (distiller: Distiller, absPath: string): Promise<string> =>
+    (await convertCached(absPath, {
+      distiller,
+      cacheDir: join(homedir(), '.cache', 'distillmd'),
+      version: readVersion(),
+    })).mdPath;
+
+  hook
+    .command('claude')
+    .description('Claude Code PreToolUse hook: reads JSON on stdin')
+    .action(async () => {
+      let distiller: Distiller | null = null;
+      try {
+        let payload: unknown;
+        try {
+          payload = JSON.parse(await readStdin());
+        } catch {
+          stderr('distill hook: invalid hook input, passing through');
+          exit(0);
+          return;
+        }
+        if (env.DISTILL_HOOK === 'off') {
+          exit(0);
+          return;
+        }
+        const result = await handleClaudePreToolUse(payload, async (absPath) => {
+          distiller ??= await openDistiller();
+          return convertViaCache(distiller, absPath);
+        });
+        if (result !== null) stdout(JSON.stringify(result));
+      } catch (error) {
+        stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        (distiller as Distiller | null)?.close();
+      }
+      exit(0);
+    });
+
+  hook
+    .command('convert')
+    .description('Convert a document to cached Markdown and print its path as JSON')
+    .argument('<file>', 'file to convert')
+    .action(async (file: string) => {
+      if (!isHookConvertible(file)) {
+        exit(1);
+        return;
+      }
+      let distiller: Distiller | null = null;
+      try {
+        distiller = await openDistiller();
+        const absPath = isAbsolute(file) ? file : resolve(process.cwd(), file);
+        const path = await convertViaCache(distiller, absPath);
+        stdout(JSON.stringify({ path }));
+      } catch (error) {
+        stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
+        distiller?.close();
+        exit(1);
+        return;
+      }
+      distiller.close();
     });
 
   try {
