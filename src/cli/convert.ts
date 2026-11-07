@@ -59,8 +59,8 @@ function planDestinations(files: string[], out: string | undefined): string[] {
     const base = basename(file, extname(file));
     const folder = out ?? dirname(file);
     let candidate = join(folder, `${base}.md`);
-    for (let n = 2; taken.has(candidate); n++) candidate = join(folder, `${base}-${n}.md`);
-    taken.add(candidate);
+    for (let n = 2; taken.has(candidate.toLowerCase()); n++) candidate = join(folder, `${base}-${n}.md`);
+    taken.add(candidate.toLowerCase());
     return candidate;
   });
 }
@@ -80,7 +80,17 @@ export async function runConvert(files: string[], options: ConvertOptions, io: C
   const boosters = options.optimize ? options.boosters : new Set<LocalBoosterId>();
   const destinations = planDestinations(files, options.out);
   const outcomes: Outcome[] = new Array(files.length);
-  const distiller = await io.openDistiller(Math.round(options.maxSize * 1024 * 1024));
+  let distiller: Distiller;
+  try {
+    distiller = await io.openDistiller(Math.round(options.maxSize * 1024 * 1024));
+  } catch (error) {
+    if (options.json) {
+      io.stdout(JSON.stringify(files.map((input) => failure(input, error))));
+    } else {
+      io.stderr(`error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return 1;
+  }
 
   async function convertOne(index: number): Promise<void> {
     const input = files[index];

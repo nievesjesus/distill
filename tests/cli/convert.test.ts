@@ -184,4 +184,35 @@ describe('convert', () => {
     await run(['convert', ...files, '--json'], h.deps);
     expect(peak).toBe(4);
   });
+
+  it('reports an openDistiller failure on stderr and exits 1', async () => {
+    const h = harness();
+    h.openDistiller.mockRejectedValueOnce(new Error('no parser'));
+    const [pdf] = touch('a.pdf');
+    await run(['convert', pdf], h.deps);
+    expect(h.stderr).toEqual(['error: no parser']);
+    expect(h.stdout).toEqual([]);
+    expect(h.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('reports an openDistiller failure as JSON entries with --json', async () => {
+    const h = harness();
+    h.openDistiller.mockRejectedValueOnce(new Error('no parser'));
+    const [a, b] = touch('a.pdf', 'b.pdf');
+    await run(['convert', a, b, '--json'], h.deps);
+    expect(h.stdout).toHaveLength(1);
+    expect(JSON.parse(h.stdout[0])).toEqual([
+      { input: a, error: { code: 'internal', message: 'no parser' } },
+      { input: b, error: { code: 'internal', message: 'no parser' } },
+    ]);
+    expect(h.stderr).toEqual([]);
+    expect(h.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('detects destination collisions case-insensitively', async () => {
+    const h = harness();
+    const [a, b] = touch('Report.pdf', 'report.docx');
+    await run(['convert', a, b, '--out', join(dir, 'out')], h.deps);
+    expect(readdirSync(join(dir, 'out')).sort()).toEqual(['Report.md', 'report-2.md']);
+  });
 });
