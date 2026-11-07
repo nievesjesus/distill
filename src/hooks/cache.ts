@@ -24,6 +24,13 @@ export interface CachedConversion {
 const KEY_LENGTH = 32;
 const ACTIVE_BOOSTERS = BOOSTER_ORDER.filter((id) => DEFAULT_ACTIVE.has(id)).join(',');
 
+const EMPTY_MESSAGE = 'Conversion produced no text';
+const FENCE_LINE = /^\s*(```|~~~)[^\n]*$/gm;
+
+function isEmptyMarkdown(markdown: string): boolean {
+  return markdown.replace(FENCE_LINE, '').trim() === '';
+}
+
 async function cacheKey(version: string, liteparseVersion: string, path: string): Promise<string> {
   const hash = createHash('sha256').update(version).update('\0').update(liteparseVersion).update('\0').update(ACTIVE_BOOSTERS).update('\0');
   for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
@@ -44,13 +51,21 @@ export async function convertCached(path: string, deps: CacheDeps): Promise<Cach
   if (info.size > maxBytes) throw new DistillError('too_large', `File exceeds the ${maxBytes} byte limit`);
 
   const outDir = join(deps.cacheDir, 'out');
-  const mdPath = join(outDir, `${await cacheKey(deps.version, deps.liteparseVersion, path)}.md`);
+  const key = await cacheKey(deps.version, deps.liteparseVersion, path);
+  const mdPath = join(outDir, `${key}.md`);
+  const emptyPath = join(outDir, `${key}.empty`);
 
   if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true };
+  if (await isFile(emptyPath)) throw new DistillError('parse_failed', EMPTY_MESSAGE);
 
   const distiller = await deps.getDistiller();
   const result = await distiller.distillFile(path);
-  if (result.markdown.trim() === '') throw new DistillError('parse_failed', 'Conversion produced no text');
+  if (isEmptyMarkdown(result.markdown)) {
+    await mkdir(outDir, { recursive: true, mode: 0o700 });
+    await chmod(outDir, 0o700).catch(() => {});
+    await writeFile(emptyPath, '', { mode: 0o600 }).catch(() => {});
+    throw new DistillError('parse_failed', EMPTY_MESSAGE);
+  }
   const header = `<!-- distill: ${result.name} · ${result.tokens.raw} → ${result.tokens.out} tokens -->`;
   await mkdir(outDir, { recursive: true, mode: 0o700 });
   await chmod(outDir, 0o700).catch(() => {});

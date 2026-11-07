@@ -157,6 +157,8 @@ describe('convertCached', () => {
   it.each([
     ['empty', ''],
     ['whitespace only', ' \n\t\n'],
+    ['an empty LiteParse fence', '```text\n\n```'],
+    ['empty fences with whitespace', '~~~\n \n~~~\n\n```\n```\n'],
   ])('rejects %s output without writing the cache', async (_label, markdown) => {
     const distiller = fakeDistiller(async () => ({ name: 'report.pdf', markdown, tokens: { raw: 5, out: 0 } }) as never);
     const error = await convertCached(file, { distiller, cacheDir, version: '1.0.0' }).catch((e) => e);
@@ -164,7 +166,29 @@ describe('convertCached', () => {
     expect(error).toBeInstanceOf(DistillError);
     expect(error.code).toBe('parse_failed');
     expect(error.message).toBe('Conversion produced no text');
-    expect(await readdir(join(cacheDir, 'out')).catch(() => [])).toEqual([]);
+    expect((await readdir(join(cacheDir, 'out'))).every((name) => name.endsWith('.empty'))).toBe(true);
+  });
+
+  it('remembers an empty conversion and fails again without opening the distiller', async () => {
+    const distiller = fakeDistiller(async () => ({ name: 'report.pdf', markdown: '```text\n\n```', tokens: { raw: 5, out: 0 } }) as never);
+    await convertCached(file, { distiller, cacheDir, version: '1.0.0' }).catch(() => {});
+    const names = await readdir(join(cacheDir, 'out'));
+    expect(names).toHaveLength(1);
+    expect(names[0]).toMatch(/^[0-9a-f]{32}\.empty$/);
+    if (process.platform !== 'win32') expect((await stat(join(cacheDir, 'out', names[0]))).mode & 0o777).toBe(0o600);
+
+    const getDistiller = vi.fn(async () => distiller);
+    const error = await convertWith(file, { getDistiller, cacheDir, version: '1.0.0', liteparseVersion: '1.0.0' }).catch((e) => e);
+    expect(error).toBeInstanceOf(DistillError);
+    expect(error.code).toBe('parse_failed');
+    expect(getDistiller).not.toHaveBeenCalled();
+    expect(distiller.distillFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a fenced block with content', async () => {
+    const distiller = fakeDistiller(async () => ({ name: 'report.pdf', markdown: '```text\nhello\n```', tokens: { raw: 5, out: 3 } }) as never);
+    const result = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    expect(result.cached).toBe(false);
   });
 
   it.skipIf(process.platform === 'win32')('creates the out directory 0700 and the markdown 0600', async () => {
