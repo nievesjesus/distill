@@ -18,6 +18,7 @@ export interface LinguaOptions {
   resolvePackages?: () => Promise<boolean>;
   roots?: () => string[];
   installer?: LinguaInstaller;
+  log?: (line: string) => void;
 }
 
 interface Compressor {
@@ -42,6 +43,27 @@ const MODEL_IDS: Record<LinguaModel, string> = {
   mobilebert: 'atjsh/llmlingua-2-js-mobilebert-meetingbank',
   'xlm-roberta': 'atjsh/llmlingua-2-js-xlm-roberta-large-meetingbank',
 };
+
+const CERTIFICATE_CODES: ReadonlySet<string> = new Set([
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'CERT_HAS_EXPIRED',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+const NETWORK_CODES: ReadonlySet<string> = new Set([
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENETUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT',
+]);
+const MAX_ERROR_CHAIN = 5;
+const MAX_MODEL_ERROR_CHARS = 200;
+const PATH_LIKE = /(?:[A-Za-z]:)?(?:[\\/][\w.@-]+){2,}/g;
 
 const MIN_RATE = 0.3;
 const MAX_RATE = 0.9;
@@ -203,9 +225,31 @@ export function chunkText(text: string): string[] {
   return packUnits(units, '\n\n');
 }
 
+function errorCodeOf(error: unknown): string | undefined {
+  let current = error;
+  for (let depth = 0; depth < MAX_ERROR_CHAIN && current !== undefined && current !== null; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
+export function describeModelError(error: unknown): string {
+  const code = errorCodeOf(error);
+  if (code !== undefined && CERTIFICATE_CODES.has(code)) {
+    return 'the HTTPS certificate of huggingface.co is not trusted (a proxy may be intercepting HTTPS)';
+  }
+  if (code !== undefined && NETWORK_CODES.has(code)) return 'huggingface.co could not be reached';
+  const message = error instanceof Error ? error.message : String(error);
+  const firstLine = (message.split('\n')[0] ?? '').replace(PATH_LIKE, '…').trim();
+  return firstLine.slice(0, MAX_MODEL_ERROR_CHARS) || 'unknown error';
+}
+
 export function createLingua(opts: LinguaOptions): Lingua {
   const roots = opts.roots ?? (() => defaultRoots(opts.cacheDir));
   const installer = opts.installer;
+  const log = opts.log ?? ((line: string) => process.stderr.write(`${line}\n`));
   const load =
     opts.load ??
     (async () => {
@@ -254,12 +298,15 @@ export function createLingua(opts: LinguaOptions): Lingua {
       if (isCurrent()) {
         state.state = 'ready';
         state.progress = 1;
+        delete state.modelError;
       }
       return promptCompressor;
     } catch (error) {
       if (isCurrent()) {
         state.state = 'error';
+        state.modelError = describeModelError(error);
         current = undefined;
+        log(`LLMLingua-2 model load failed (${errorCodeOf(error) ?? 'no code'}): ${state.modelError}`);
       }
       throw error;
     }

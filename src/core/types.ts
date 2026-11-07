@@ -15,5 +15,6 @@ export interface LinguaStatus {
   state: 'idle' | 'downloading' | 'ready' | 'error' | 'installing' | 'install_failed';
   progress: number;
   installError?: LinguaInstallError;
+  modelError?: string;
 }
 export interface Health { version: string; liteparseVersion: string; libreoffice: boolean; lingua: LinguaStatus; maxBytes: number }

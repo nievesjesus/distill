@@ -68,6 +68,7 @@ export const S = {
   linguaReady: 'LLMLingua-2 model ready',
   linguaDownloading: (pct: number) => `Downloading model ${pct}%`,
   linguaDownloadFailed: 'Model download failed — check your connection and try again',
+  linguaDownloadFailedBecause: (reason: string) => `Model download failed: ${reason}.`,
   modelLabel: 'Model',
   rateLabel: 'Compression rate',
   keepRate: (pct: number) => `keep ${pct}%`,

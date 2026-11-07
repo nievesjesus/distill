@@ -258,6 +258,10 @@ export function createApp(deps: AppDeps): Hono {
     } catch (error) {
       if (error instanceof RangeError) return fail(c, 'bad_request', error.message);
       if (error instanceof DOMException && error.name === 'AbortError') return new Response(null, { status: 499 });
+      const status = deps.lingua.status();
+      if (status.state === 'error') {
+        return fail(c, 'lingua_unavailable', `Could not load the LLMLingua-2 model: ${status.modelError ?? 'unknown error'}`);
+      }
       throw error;
     }
   });

@@ -151,7 +151,7 @@ export function OptimizeBar({
         ) : null}
         {linguaEffective && optimize && linguaStatus?.state === 'error' ? (
           <p className="lingua-line">
-            {S.linguaDownloadFailed}{' '}
+            {linguaStatus.modelError ? S.linguaDownloadFailedBecause(linguaStatus.modelError) : S.linguaDownloadFailed}{' '}
             <button type="button" className="text-button" onClick={onRetryLingua}>
               {S.retry}
             </button>

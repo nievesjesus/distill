@@ -533,6 +533,14 @@ describe('LLMLingua-2 model download', () => {
     expect(server.healthCalls).toBe(3);
   });
 
+  it('shows why the model download failed when the server knows', async () => {
+    preset({ optionsOpen: true, lingua: { on: true, model: 'tinybert', rate: 0.6 } });
+    server.lingua = { ...installed({ state: 'error', progress: 0 }), modelError: 'huggingface.co could not be reached' };
+    render(<App />);
+    expect(await screen.findByText('Model download failed: huggingface.co could not be reached.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
   it('shows the download error with a Retry that requests compression again', async () => {
     preset({ optionsOpen: true, lingua: { on: true, model: 'tinybert', rate: 0.6 } });
     server.lingua = installed({ state: 'error', progress: 0 });

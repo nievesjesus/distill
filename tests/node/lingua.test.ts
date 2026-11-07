@@ -379,6 +379,56 @@ describe('createLingua', () => {
     expect(l.status().state).toBe('ready');
   });
 
+  it('explains a model download failure, logs it once and clears it after a successful retry', async () => {
+    let attempts = 0;
+    const certError = Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error('self-signed certificate in certificate chain'), { code: 'SELF_SIGNED_CERT_IN_CHAIN' }),
+    });
+    const load = async () => ({
+      LLMLingua2: {
+        WithBERTMultilingual: async () => {
+          attempts += 1;
+          if (attempts === 1) throw certError;
+          return { promptCompressor: { compress: async (t: string) => t } };
+        },
+        WithXLMRoBERTa: async () => {
+          throw new Error('unused');
+        },
+      },
+      configure: () => undefined,
+      createTokenizer: () => ({}),
+    });
+    const log = vi.fn();
+    const l = createLingua({ cacheDir: '/tmp/x', load, log });
+    await expect(l.compress('hello', { rate: 0.5 })).rejects.toBe(certError);
+    expect(l.status().modelError).toBe('the HTTPS certificate of huggingface.co is not trusted (a proxy may be intercepting HTTPS)');
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toContain('SELF_SIGNED_CERT_IN_CHAIN');
+    await expect(l.compress('hello', { rate: 0.5 })).resolves.toBe('hello');
+    expect(l.status().modelError).toBeUndefined();
+  });
+
+  it.each([
+    [Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('getaddrinfo ENOTFOUND huggingface.co'), { code: 'ENOTFOUND' }) }), 'huggingface.co could not be reached'],
+    [new Error(`unexpected thing\nat /home/user/secret/path.js:1`), 'unexpected thing'],
+  ])('summarizes other model failures without paths or stack lines', async (error, expected) => {
+    const load = async () => ({
+      LLMLingua2: {
+        WithBERTMultilingual: async () => {
+          throw error;
+        },
+        WithXLMRoBERTa: async () => {
+          throw error;
+        },
+      },
+      configure: () => undefined,
+      createTokenizer: () => ({}),
+    });
+    const l = createLingua({ cacheDir: '/tmp/x', load, log: () => undefined });
+    await expect(l.compress('hello', { rate: 0.5 })).rejects.toBe(error);
+    expect(l.status().modelError).toBe(expected);
+  });
+
   it('splits an oversized paragraph by sentences and joins chunks with blank lines', async () => {
     const f = makeFake();
     const l = createLingua({ cacheDir: '/tmp/x', load: f.load });

@@ -695,6 +695,33 @@ describe('server app', () => {
     });
   });
 
+  describe('POST /api/compress when the model cannot load', () => {
+    it('answers 503 lingua_unavailable with the reason instead of a generic 500', async () => {
+      const { app } = setup({
+        installed: true,
+        lingua: {
+          compress: async () => {
+            throw new TypeError('fetch failed');
+          },
+          status: () => ({
+            installed: true,
+            installable: true,
+            model: 'tinybert',
+            state: 'error',
+            progress: 0,
+            modelError: 'huggingface.co could not be reached',
+          }),
+        },
+      });
+      const res = await app.request('/api/compress', jsonPost({ text: 'hello', rate: 0.5 }));
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({
+        code: 'lingua_unavailable',
+        message: 'Could not load the LLMLingua-2 model: huggingface.co could not be reached',
+      });
+    });
+  });
+
   describe('POST /api/lingua/install', () => {
     const statusWith = (state: 'idle' | 'installing', installed = false) => () => ({
       installed,
