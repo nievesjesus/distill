@@ -120,6 +120,7 @@ h2{font-size:clamp(32px,5vw,54px);max-width:16em}
 .bars li{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center}
 .fn{font-weight:500;font-size:15px;overflow-wrap:anywhere}
 .pc{font:500 14px/1 var(--mono);color:var(--accent);text-align:right;grid-column:2;grid-row:1}
+.meter-note{margin:24px 0 0;padding-top:20px;border-top:1px solid var(--border);font-size:14.5px;line-height:1.6;color:var(--muted)}
 .bar{grid-column:1/-1;grid-row:2;height:6px;border-radius:99px;background:#1f1f28;overflow:hidden}
 .bar b{display:block;height:100%;width:calc(var(--w) * 4%);background:var(--accent);border-radius:99px;transform-origin:left;animation:grow 1s .1s cubic-bezier(.2,.7,.2,1) both;animation-play-state:paused}
 .bars.in .bar b{animation-play-state:running}
@@ -145,7 +146,7 @@ td code{background:#1f1f28;border:1px solid var(--border);padding:1px 6px;border
 .tablist{display:flex;overflow-x:auto;border-bottom:1px solid var(--border);background:#101016;scrollbar-width:none}
 .tablist::-webkit-scrollbar{display:none}
 [role=tab]{flex:none;appearance:none;background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);font:500 15px/1 var(--ui);padding:18px 20px;cursor:pointer;transition:color .15s;margin-bottom:-1px}
-[role=tab]:hover{color:var(--text)}
+[role=tab]:not([aria-selected=true]):hover{background:#17171f}
 [role=tab][aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);background:var(--bg)}
 [role=tab]:focus-visible{outline-offset:-4px}
 [role=tabpanel]{padding:clamp(22px,4vw,36px)}
