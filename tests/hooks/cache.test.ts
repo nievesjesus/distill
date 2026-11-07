@@ -1,9 +1,10 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Distiller } from '../../src/node/distill';
 import { convertCached } from '../../src/hooks/cache';
+import { DistillError } from '../../src/node/errors';
 
 function fakeDistiller(impl?: () => Promise<never>) {
   const distillFile = vi.fn(
@@ -86,5 +87,37 @@ describe('convertCached', () => {
     const entries = await readdir(join(cacheDir, 'out')).catch(() => []);
     expect(entries.filter((entry) => entry.includes('.tmp-'))).toEqual([]);
     expect(entries).toEqual([]);
+  });
+
+  it('refuses files over maxBytes before calling the distiller', async () => {
+    const distiller = fakeDistiller();
+    const error = await convertCached(file, { distiller, cacheDir, version: '1.0.0', maxBytes: 4 }).catch((e) => e);
+
+    expect(error).toBeInstanceOf(DistillError);
+    expect(error.code).toBe('too_large');
+    expect(distiller.distillFile).not.toHaveBeenCalled();
+  });
+
+  it('leaves no temp files when the final write fails', async () => {
+    const distiller = fakeDistiller();
+    const first = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    await rm(first.mdPath);
+    await mkdir(join(first.mdPath, 'blocker'), { recursive: true });
+
+    await expect(convertCached(file, { distiller, cacheDir, version: '1.0.0' })).rejects.toThrow();
+    const entries = await readdir(join(cacheDir, 'out'));
+    expect(entries.filter((entry) => entry.includes('.tmp-'))).toEqual([]);
+  });
+
+  it('resolves two concurrent calls to the same file without leftovers', async () => {
+    const distiller = fakeDistiller();
+    const [a, b] = await Promise.all([
+      convertCached(file, { distiller, cacheDir, version: '1.0.0' }),
+      convertCached(file, { distiller, cacheDir, version: '1.0.0' }),
+    ]);
+
+    expect(a.mdPath).toBe(b.mdPath);
+    const entries = await readdir(join(cacheDir, 'out'));
+    expect(entries).toEqual([`${a.mdPath.split('/').pop()}`]);
   });
 });

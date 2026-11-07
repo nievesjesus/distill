@@ -16,7 +16,7 @@ import { createLinguaInstaller } from './lingua-install';
 import { createParser } from './parse';
 import type { Parser } from './parse';
 
-const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
+export const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
 const DEFAULT_RATE = 0.5;
 const NO_LINGUA: LinguaStatus = { installed: false, installable: false, model: 'tinybert', state: 'idle', progress: 0 };
 const LINGUA_NOT_INSTALLED = 'LLMLingua-2 is not installed. Install it once from the web app (npx distillmd).';
