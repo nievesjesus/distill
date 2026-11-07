@@ -61,6 +61,20 @@ function launch(userDataDir: string): Promise<ElectronApplication> {
   return electron.launch(packagedApp ? { executablePath: packagedApp, args: [userData] } : { args: ['.', userData] });
 }
 
+async function quit(app: ElectronApplication): Promise<void> {
+  const child = app.process();
+  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  void app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((window) => window.close())).catch(() => undefined);
+  try {
+    await Promise.race([
+      exited,
+      new Promise<void>((_, reject) => setTimeout(() => reject(new Error('electron did not exit within 5s')), 5_000)),
+    ]);
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL');
+  }
+}
+
 function resize(app: ElectronApplication, width: number, height: number): Promise<number[]> {
   return app.evaluate(
     ({ BrowserWindow }, [w, h]) => {
@@ -138,8 +152,60 @@ test('desktop window adapts to its size and keeps the footer in view', async () 
     expect(wide.footerBottom).toBeLessThanOrEqual(wide.innerHeight);
     await page.screenshot({ path: shot('1280x900') });
   } finally {
-    await app.close();
+    await quit(app);
     rmSync(workDir, { recursive: true, force: true });
+    rmSync(userData, { recursive: true, force: true });
+  }
+});
+
+test('detailed mode with options open keeps the footer inside a minimum window', async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
+  const workDir = mkdtempSync(join(tmpdir(), 'distill-desktop-'));
+  const pdf = join(workDir, 'one.pdf');
+  writeFileSync(pdf, makeSamplePdf(sampleLines()));
+  const app = await launch(userData);
+  try {
+    const page = await app.firstWindow();
+    await expect(page.getByText('Fewer tokens')).toBeVisible();
+    expect(await resize(app, 440, 520)).toEqual([440, 520]);
+    await page.locator('input[type="file"]').setInputFiles(pdf);
+    await page.getByRole('button', { name: 'Detailed' }).click();
+    await expect(page.locator('.booster-list')).toBeVisible();
+    const layout = await page.evaluate(() => {
+      const footer = document.querySelector('.footer')?.getBoundingClientRect();
+      const list = document.querySelector('.file-list')?.getBoundingClientRect();
+      return { footerTop: footer?.top ?? -1, footerBottom: footer?.bottom ?? -1, listHeight: list?.height ?? -1, innerHeight: window.innerHeight };
+    });
+    expect(layout.footerTop).toBeGreaterThanOrEqual(0);
+    expect(layout.footerBottom).toBeLessThanOrEqual(layout.innerHeight);
+    expect(layout.listHeight).toBeGreaterThan(0);
+    await page.screenshot({ path: shot('440x520-detailed') });
+  } finally {
+    await quit(app);
+    rmSync(workDir, { recursive: true, force: true });
+    rmSync(userData, { recursive: true, force: true });
+  }
+});
+
+test('connect drawer stays clear of the window controls', async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
+  const app = await launch(userData);
+  try {
+    const page = await app.firstWindow();
+    await expect(page.getByText('Fewer tokens')).toBeVisible();
+    expect(await resize(app, 640, 780)).toEqual([640, 780]);
+    await page.getByRole('button', { name: 'Connect' }).click();
+    const close = page.getByRole('button', { name: 'Close' });
+    await expect(close).toBeVisible();
+    const closeBox = await close.boundingBox();
+    expect(closeBox).not.toBeNull();
+    expect(closeBox!.y).toBeGreaterThanOrEqual(40);
+    const title = await page.locator('.connect-title').boundingBox();
+    expect(title).not.toBeNull();
+    if (process.platform === 'darwin') expect(title!.x >= 80 || title!.y >= 40).toBe(true);
+    await page.screenshot({ path: shot('640x780-connect') });
+  } finally {
+    await quit(app);
     rmSync(userData, { recursive: true, force: true });
   }
 });
@@ -148,18 +214,17 @@ test('desktop window remembers its size between launches', async () => {
   const userData = mkdtempSync(join(tmpdir(), 'distill-userdata-'));
   try {
     const first = await launch(userData);
-    const firstExit = new Promise<void>((resolve) => first.process().once('exit', () => resolve()));
     const firstPage = await first.firstWindow();
     await expect(firstPage.getByText('Fewer tokens')).toBeVisible();
     expect(await resize(first, 700, 640)).toEqual([700, 640]);
-    void first.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((window) => window.close())).catch(() => undefined);
-    await firstExit;
+    await quit(first);
 
     const second = await launch(userData);
-    await second.firstWindow();
+    const secondPage = await second.firstWindow();
+    await expect(secondPage.getByText('Fewer tokens')).toBeVisible();
     const restored = await second.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize());
     expect(restored).toEqual([700, 640]);
-    await second.close();
+    await quit(second);
   } finally {
     rmSync(userData, { recursive: true, force: true });
   }

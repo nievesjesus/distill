@@ -18,14 +18,26 @@ import {
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const SAVE_DEBOUNCE_MS = 500;
+const CLOSE_TIMEOUT_MS = 2000;
 
 let mainWindow: BrowserWindow | null = null;
 let server: { url: string; close(): Promise<void> } | null = null;
 let appUrl = '';
-let closing = false;
+let shutdown: Promise<void> | null = null;
+let shutdownDone = false;
 
 function openExternal(url: string): void {
   if (isAllowedExternal(url)) void shell.openExternal(url);
+}
+
+function stopServer(): Promise<void> {
+  shutdown ??= Promise.race([
+    (server?.close() ?? Promise.resolve()).catch((error: unknown) => console.warn('could not stop server', error)),
+    new Promise<void>((resolve) => setTimeout(resolve, CLOSE_TIMEOUT_MS)),
+  ]).finally(() => {
+    shutdownDone = true;
+  });
+  return shutdown;
 }
 
 function failStartup(error: unknown): void {
@@ -69,8 +81,8 @@ function rememberBounds(window: BrowserWindow, file: string): void {
     if (window.isDestroyed()) return;
     try {
       writeSavedState(file, snapshot(window));
-    } catch {
-      return;
+    } catch (error) {
+      console.warn('could not save window state', error);
     }
   };
   const schedule = (): void => {
@@ -87,7 +99,9 @@ function createWindow(url: string): BrowserWindow {
   const restored = restoreBounds(readSavedState(stateFile), workAreas(), WINDOW_DEFAULTS, WINDOW_MINIMUMS);
   const { maximized, fullScreen, ...bounds } = restored;
   const window = new BrowserWindow({ ...windowOptions(process.platform), ...bounds });
-  void window.webContents.setVisualZoomLevelLimits(1, 1);
+  window.webContents.on('did-finish-load', () => {
+    window.webContents.setVisualZoomLevelLimits(1, 1).catch((error) => console.warn('could not lock pinch zoom', error));
+  });
   window.once('ready-to-show', () => {
     if (maximized) window.maximize();
     if (fullScreen) window.setFullScreen(true);
@@ -124,14 +138,14 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
 
-  app.on('window-all-closed', async () => {
-    if (closing) return;
-    closing = true;
-    try {
-      await server?.close();
-    } finally {
-      app.quit();
-    }
+  app.on('window-all-closed', () => {
+    void stopServer().finally(() => app.quit());
+  });
+
+  app.on('before-quit', (event) => {
+    if (shutdownDone) return;
+    event.preventDefault();
+    void stopServer().finally(() => app.quit());
   });
 
   app.whenReady().then(boot).catch(failStartup);

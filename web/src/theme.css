@@ -932,9 +932,6 @@ button {
   display: contents;
 }
 
-[data-shell='desktop'] {
-  --gutter: max(16px, calc((100% - 720px) / 2));
-}
 
 html[data-shell='desktop'],
 [data-shell='desktop'] body,
@@ -1093,4 +1090,23 @@ html[data-shell='desktop'],
 
 [data-shell='desktop'] .copy-failed {
   margin-left: 44px;
+}
+
+[data-shell='desktop'] .connect {
+  top: 40px;
+  bottom: auto;
+  height: calc(100vh - 40px);
+}
+
+[data-shell='desktop'] .text-button,
+[data-shell='desktop'] .control select {
+  min-height: 24px;
+}
+
+[data-shell='desktop'] .control input[type='range'] {
+  min-height: 0;
+}
+
+[data-shell='desktop'] .preview-tools .segmented button {
+  min-height: 24px;
 }

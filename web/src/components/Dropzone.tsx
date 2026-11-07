@@ -22,7 +22,7 @@ export function Dropzone({ onFiles }: DropzoneProps) {
     };
     const handleDragOver = (event: globalThis.DragEvent) => {
       event.preventDefault();
-      setDragging(true);
+      if (event.dataTransfer?.types.includes('Files')) setDragging(true);
     };
     const handleDragLeave = (event: globalThis.DragEvent) => {
       if (event.relatedTarget === null) setDragging(false);

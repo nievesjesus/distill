@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -86,8 +86,8 @@ describe('saved state file', () => {
     const dir = mkdtempSync(join(tmpdir(), 'distill-state-'));
     try {
       expect(readSavedState(join(dir, 'absent.json'))).toBeUndefined();
-      writeSavedState(join(dir, 'ok.json'), { x: 0, y: 0, width: 1, height: 1, maximized: false, fullScreen: false });
-      expect(readSavedState(join(dir, 'ok.json'))).toBeDefined();
+      writeFileSync(join(dir, 'corrupt.json'), '{"x": 1, "y"');
+      expect(readSavedState(join(dir, 'corrupt.json'))).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

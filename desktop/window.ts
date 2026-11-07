@@ -4,11 +4,12 @@ import type { BrowserWindowConstructorOptions } from 'electron';
 export const WINDOW_DEFAULTS = { width: 640, height: 780 };
 export const WINDOW_MINIMUMS = { width: 440, height: 520 };
 export const TITLE_BAR_HEIGHT = 40;
+const TRAFFIC_LIGHT_HEIGHT = 12;
 const BACKGROUND = '#0B0B10';
 
 function titleBarOptions(platform: NodeJS.Platform): BrowserWindowConstructorOptions {
   if (platform === 'darwin') {
-    return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: (TITLE_BAR_HEIGHT - 12) / 2 } };
+    return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: (TITLE_BAR_HEIGHT - TRAFFIC_LIGHT_HEIGHT) / 2 } };
   }
   if (platform === 'win32') {
     return {

@@ -54,7 +54,9 @@ describe('Dropzone', () => {
 
   it('highlights the zone while a drag is over the window', () => {
     render(<Dropzone onFiles={() => {}} />);
-    fireEvent.dragOver(document.body);
+    fireEvent.dragOver(document.body, { dataTransfer: { types: ['text/plain'] } });
+    expect(zone()).toHaveAttribute('data-dragging', 'false');
+    fireEvent.dragOver(document.body, { dataTransfer: { types: ['Files'] } });
     expect(zone()).toHaveAttribute('data-dragging', 'true');
     const leaving = createEvent.dragLeave(document.body);
     Object.defineProperty(leaving, 'relatedTarget', { value: null });
