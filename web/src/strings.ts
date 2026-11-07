@@ -87,8 +87,8 @@ export const S = {
   tokenCountTitle: 'Counted with OpenAI o200k. Other models tokenize differently; the % saved is comparable.',
   tokenDetail: (raw: string, out: string) => `${raw} → ${out} tokens (o200k)`,
   connectCopy: (name: string) => `Copy ${name} snippet`,
-  comingSoon: 'coming in v0.2',
-  hooksNote: 'Hooks for Claude Code and OpenCode arrive in v0.3.',
+  connectMcp: 'MCP server',
+  connectHooks: 'Hooks',
   connectIntro: 'Let your agent call distill directly.',
 } as const;
 

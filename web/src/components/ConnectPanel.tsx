@@ -25,7 +25,6 @@ function Section({ client }: { client: ConnectClient }) {
   );
 
   const copy = async () => {
-    if (client.snippet === null) return;
     const ok = await copyText(client.snippet);
     if (!ok) {
       announce(S.copyFailed);
@@ -39,11 +38,10 @@ function Section({ client }: { client: ConnectClient }) {
   return (
     <section className="connect-section">
       <div className="connect-client">
-        <h3>{client.name}</h3>
-        <span className="connect-soon">{S.comingSoon}</span>
+        <h4>{client.name}</h4>
       </div>
       <p className="connect-copy">{client.copy}</p>
-      {client.snippet !== null ? (
+      {(
         <div className="connect-snippet">
           <code>{client.snippet}</code>
           <button type="button" className="icon-button" aria-label={copied ? S.copied : S.connectCopy(client.name)} onClick={copy}>
@@ -53,7 +51,7 @@ function Section({ client }: { client: ConnectClient }) {
             </svg>
           </button>
         </div>
-      ) : null}
+      )}
     </section>
   );
 }
@@ -102,10 +100,14 @@ export function ConnectPanel({ open, onClose }: ConnectPanelProps) {
             </button>
           </div>
           <p className="connect-copy">{S.connectIntro}</p>
-          {CONNECT_CLIENTS.map((client) => (
+          <h3 className="connect-group">{S.connectMcp}</h3>
+          {CONNECT_CLIENTS.filter((client) => client.group === 'mcp').map((client) => (
             <Section key={client.id} client={client} />
           ))}
-          <p className="connect-copy">{S.hooksNote}</p>
+          <h3 className="connect-group">{S.connectHooks}</h3>
+          {CONNECT_CLIENTS.filter((client) => client.group === 'hooks').map((client) => (
+            <Section key={client.id} client={client} />
+          ))}
         </div>
       ) : null}
     </dialog>

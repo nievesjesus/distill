@@ -38,16 +38,19 @@ describe('error messages', () => {
 });
 
 describe('Connect panel', () => {
-  it('lists Claude Code, Claude Desktop, OpenCode, Codex and ChatGPT with "coming in v0.2" for MCP', () => {
+  it('lists the MCP clients and the hooks as available, with no coming-soon text', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Connect your agent' }));
     const dialog = screen.getByRole('dialog', { name: 'Connect your agent' });
-    for (const name of ['Claude Code', 'Claude Desktop', 'OpenCode', 'Codex', 'ChatGPT']) {
+    for (const name of ['MCP server', 'Hooks', 'Claude Code', 'Claude Desktop', 'OpenCode', 'Codex', 'ChatGPT', 'Claude Code hook', 'OpenCode plugin']) {
       expect(screen.getByRole('heading', { name })).toBeInTheDocument();
     }
-    expect(screen.getAllByText('coming in v0.2').length).toBeGreaterThanOrEqual(5);
+    expect(dialog.textContent).not.toMatch(/coming in|arrive in/i);
     expect(dialog).toHaveTextContent('claude mcp add distill -- npx -y distill-llm mcp');
-    expect(dialog).toHaveTextContent('Hooks for Claude Code and OpenCode arrive in v0.3.');
+    expect(dialog).toHaveTextContent('"enabled": true');
+    expect(dialog).toHaveTextContent('npm i -g distill-llm && distillmd hooks install --claude');
+    expect(dialog).toHaveTextContent('npm i -g distill-llm && distillmd hooks install --opencode');
+    expect(dialog).toHaveTextContent('npx -y distill-llm mcp --http --root ~/shared-docs --allowed-hosts <your-tunnel-host>');
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
 

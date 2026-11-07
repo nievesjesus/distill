@@ -987,19 +987,18 @@ button {
   gap: 8px;
 }
 
-.connect-client h3 {
+.connect-client h4 {
   margin: 0;
   font-size: 13px;
 }
 
-.connect-soon {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--lossy);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 400;
+.connect-group {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .connect-copy {
