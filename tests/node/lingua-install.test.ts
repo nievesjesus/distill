@@ -48,7 +48,7 @@ describe('lingua installer', () => {
     children.length = 0;
   });
 
-  afterEach(() => rmSync(root, { recursive: true, force: true }));
+  afterEach(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
   function make(onRun: (child: FakeChild, call: Call) => void, extra: Record<string, unknown> = {}) {
     return createLinguaInstaller({

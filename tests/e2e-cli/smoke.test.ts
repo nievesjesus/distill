@@ -42,8 +42,8 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  rmSync(home, { recursive: true, force: true });
-  rmSync(work, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe('distillmd convert', () => {
@@ -138,7 +138,7 @@ describe('distillmd mcp', () => {
         expect(outside.isError).toBe(true);
         expect(JSON.stringify(outside.content)).toContain('forbidden');
       } finally {
-        rmSync(outsideDir, { recursive: true, force: true });
+        rmSync(outsideDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       }
     } finally {
       await client?.close().catch(() => undefined);

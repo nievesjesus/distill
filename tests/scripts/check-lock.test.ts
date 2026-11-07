@@ -18,7 +18,7 @@ describe('check-lock', () => {
     cpSync(join(repo, 'lingua-runtime', 'package-lock.json'), join(sandbox, 'lingua-runtime', 'package-lock.json'));
   });
 
-  afterEach(() => rmSync(sandbox, { recursive: true, force: true }));
+  afterEach(() => rmSync(sandbox, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
   function run() {
     return spawnSync(process.execPath, [join(repo, 'scripts', 'check-lock.mjs'), sandbox], { encoding: 'utf8' });

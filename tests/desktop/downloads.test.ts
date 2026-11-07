@@ -49,7 +49,7 @@ describe('saveDialogOptions', () => {
 
 describe('prefs', () => {
   const dir = mkdtempSync(join(tmpdir(), 'distill-prefs-'));
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
   it('round-trips the last folder atomically', () => {
     const file = join(dir, 'nested', 'desktop-prefs.json');
@@ -145,7 +145,7 @@ describe('createDownloadHandler', () => {
     expect(channel).toBe(SAVED_CHANNEL);
     expect(payload.filename).toBe('out.md');
     expect(ctx.registry.resolve(payload.id)).toBe('/work/notes/out.md');
-    rmSync(ctx.dir, { recursive: true, force: true });
+    rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it('uses the remembered folder as the next default', () => {
@@ -156,7 +156,7 @@ describe('createDownloadHandler', () => {
       ctx.window,
       expect.objectContaining({ defaultPath: join('/work/notes', 'again.zip'), filters: [{ name: 'ZIP archive', extensions: ['zip'] }] }),
     );
-    rmSync(ctx.dir, { recursive: true, force: true });
+    rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it('cancels and writes nothing when the dialog is dismissed', () => {
@@ -168,7 +168,7 @@ describe('createDownloadHandler', () => {
     expect(readPrefs(ctx.prefsFile)).toEqual({});
     item.emit('done', {}, 'cancelled');
     expect(ctx.send).not.toHaveBeenCalled();
-    rmSync(ctx.dir, { recursive: true, force: true });
+    rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it('does not announce an interrupted download', () => {
@@ -178,7 +178,7 @@ describe('createDownloadHandler', () => {
     item.emit('done', {}, 'interrupted');
     expect(ctx.send).not.toHaveBeenCalled();
     expect(ctx.downloadFinished).not.toHaveBeenCalled();
-    rmSync(ctx.dir, { recursive: true, force: true });
+    rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it('never blocks on an unreadable or unwritable prefs file', () => {
@@ -186,7 +186,7 @@ describe('createDownloadHandler', () => {
     const item = new FakeItem('out.md');
     expect(() => createDownloadHandler(ctx.deps)(item, ctx.window)).not.toThrow();
     expect(item.savePath).toBe('/work/out.md');
-    rmSync(ctx.dir, { recursive: true, force: true });
+    rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it('does not message a destroyed window', () => {
@@ -196,7 +196,7 @@ describe('createDownloadHandler', () => {
     createDownloadHandler(ctx.deps)(item, gone);
     item.emit('done', {}, 'completed');
     expect(ctx.send).not.toHaveBeenCalled();
-    rmSync(ctx.dir, { recursive: true, force: true });
+    rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 });
 

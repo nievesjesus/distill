@@ -61,7 +61,7 @@ describe('findOnPath', () => {
       expect(findOnPath('distillmd', [local, npx, real].join(delimiter))).toBe(join(real, 'distillmd'));
       expect(findOnPath('distillmd', [local, npx].join(delimiter))).toBeNull();
     } finally {
-      rmSync(base, { recursive: true, force: true });
+      rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 });
