@@ -26,6 +26,7 @@ function setup(
     libreoffice?: boolean;
     webRoot?: string;
     guardLoopback?: boolean;
+    allowedHosts?: string[];
   } = {},
 ): Harness {
   const paths: string[] = [];
@@ -64,6 +65,7 @@ function setup(
     liteparseVersion: '4.5.6',
     webRoot: opts.webRoot,
     guardLoopback: opts.guardLoopback ?? false,
+    allowedHosts: opts.allowedHosts ?? [],
   });
   return { app, paths, jsonPaths, store, lingua };
 }
@@ -561,10 +563,49 @@ describe('server app', () => {
       expect(res.status).toBe(200);
     });
 
-    it('allows any Host when guardLoopback is false', async () => {
+  });
+
+  describe('host guard when exposed', () => {
+    const blockedBody = {
+      code: 'forbidden',
+      message: 'Request blocked: unknown host. Allow it with --allowed-hosts or DISTILL_ALLOWED_HOSTS',
+    };
+
+    it.each(['/api/health', '/api/files/abc', '/'])('blocks a hostname that is not allowed on %s (DNS rebinding)', async (path) => {
       const { app } = setup({ guardLoopback: false });
-      const res = await app.request('/api/health', { headers: { host: 'evil.example' } });
-      expect(res.status).toBe(200);
+      const res = await app.request(path, { headers: { host: 'evil.example:4321', origin: 'http://evil.example:4321', 'sec-fetch-site': 'same-origin' } });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual(blockedBody);
+    });
+
+    it.each(['localhost:4321', '127.0.0.1:4321', '[::1]:4321', '192.168.1.5:4321', '[fd00::5]:4321', '10.0.0.2'])(
+      'allows loopback names and IP literals: %s',
+      async (host) => {
+        const { app } = setup({ guardLoopback: false });
+        const res = await app.request('/api/health', { headers: { host } });
+        expect(res.status).toBe(200);
+      },
+    );
+
+    it('allows hostnames from allowedHosts, exact or by leading-dot suffix, ignoring case', async () => {
+      const { app } = setup({ guardLoopback: false, allowedHosts: ['Distill.Home.Arpa', '.lan.example'] });
+      for (const host of ['distill.home.arpa:4321', 'box.lan.example', 'lan.example:80']) {
+        expect((await app.request('/api/health', { headers: { host } })).status).toBe(200);
+      }
+      for (const host of ['evil.home.arpa', 'notlan.example', 'lan.example.evil.com']) {
+        expect((await app.request('/api/health', { headers: { host } })).status).toBe(403);
+      }
+    });
+
+    it('treats an explicit default port in Host as the same origin', async () => {
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ guardLoopback: false, allowedHosts: ['box.example'], lingua: { install } });
+      const http = await app.request('/api/lingua/install', { method: 'POST', headers: { host: 'box.example:80', origin: 'http://box.example' } });
+      expect(http.status).toBe(202);
+      const https = await app.request('/api/lingua/install', { method: 'POST', headers: { host: 'box.example:443', origin: 'https://box.example' } });
+      expect(https.status).not.toBe(403);
+      const wrongDefault = await app.request('/api/lingua/install', { method: 'POST', headers: { host: 'box.example:443', origin: 'http://box.example' } });
+      expect(wrongDefault.status).toBe(403);
     });
   });
 

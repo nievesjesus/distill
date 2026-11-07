@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -25,11 +26,14 @@ export interface AppDeps {
   liteparseVersion: string;
   webRoot?: string;
   guardLoopback: boolean;
+  allowedHosts: readonly string[];
 }
 
 const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 const MAX_COMPRESS_CHARS = 5_000_000;
 const MAX_COMPRESS_BODY_BYTES = MAX_COMPRESS_CHARS * 4 + MULTIPART_OVERHEAD_BYTES;
+const UNKNOWN_HOST_MESSAGE = 'Request blocked: unknown host. Allow it with --allowed-hosts or DISTILL_ALLOWED_HOSTS';
+const DEFAULT_PORT_BY_PROTOCOL: Readonly<Record<string, string>> = { 'http:': ':80', 'https:': ':443' };
 const SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'OPTIONS']);
 const LINGUA_MODELS: ReadonlySet<string> = new Set<LinguaModel>(['tinybert', 'mobilebert', 'xlm-roberta']);
 
@@ -65,12 +69,37 @@ function originHostname(origin: string): string | null {
   }
 }
 
+function requestHost(c: Context): string {
+  return c.req.header('host') ?? new URL(c.req.url).host;
+}
+
+function isIpLiteral(hostname: string): boolean {
+  return isIP(hostname.replace(/^\[|\]$/g, '')) !== 0;
+}
+
+export function isAllowedHost(hostname: string, allowedHosts: readonly string[]): boolean {
+  if (hostname === '') return false;
+  if (isLoopbackHost(hostname) || isIpLiteral(hostname)) return true;
+  return allowedHosts.some((entry) => {
+    const allowed = entry.trim().toLowerCase();
+    if (allowed === '' || allowed === '.') return false;
+    return allowed.startsWith('.') ? hostname === allowed.slice(1) || hostname.endsWith(allowed) : hostname === allowed;
+  });
+}
+
+function withoutDefaultPort(hostHeader: string, protocol: string): string {
+  const host = hostHeader.toLowerCase();
+  const defaultPort = DEFAULT_PORT_BY_PROTOCOL[protocol];
+  return defaultPort !== undefined && host.endsWith(defaultPort) ? host.slice(0, -defaultPort.length) : host;
+}
+
 function isCrossSite(c: Context): boolean {
   if (c.req.header('sec-fetch-site')?.toLowerCase() === 'cross-site') return true;
   const origin = c.req.header('origin');
   if (origin === undefined) return false;
   try {
-    return new URL(origin).host.toLowerCase() !== (c.req.header('host') ?? '').toLowerCase();
+    const url = new URL(origin);
+    return url.host.toLowerCase() !== withoutDefaultPort(c.req.header('host') ?? '', url.protocol);
   } catch {
     return true;
   }
@@ -113,6 +142,11 @@ export function createApp(deps: AppDeps): Hono {
         const hostname = originHostname(origin);
         if (hostname === null || !isLoopbackHost(hostname)) return blocked(c);
       }
+      return next();
+    });
+  } else {
+    app.use('*', async (c, next) => {
+      if (!isAllowedHost(hostnameOf(requestHost(c)), deps.allowedHosts)) return fail(c, 'forbidden', UNKNOWN_HOST_MESSAGE);
       return next();
     });
   }

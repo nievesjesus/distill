@@ -20,7 +20,7 @@ Options:
 npx distillmd --port 4321 --host 127.0.0.1 --no-open --max-size 100
 ```
 
-The server only listens on loopback by default. Passing `--host 0.0.0.0` exposes it to your network and disables the loopback check, so only do that on a network you trust. On every host, state-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) to `/api` are rejected with 403 when the browser marks them `Sec-Fetch-Site: cross-site` or when their `Origin` differs from the `Host`, so another website cannot drive your instance through your browser. This does not stop DNS rebinding on an exposed host, so keep `--host 0.0.0.0` (and the Docker port) on trusted networks. Clients that send no `Origin` (curl, MCP clients) are unaffected. If you put distill behind a reverse proxy, keep the original `Host` header.
+The server only listens on loopback by default. Passing `--host 0.0.0.0` exposes it to your network and disables the loopback check, so only do that on a network you trust. On every host, state-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) to `/api` are rejected with 403 when the browser marks them `Sec-Fetch-Site: cross-site` or when their `Origin` differs from the `Host`, so another website cannot drive your instance through your browser. When the server is exposed, it also answers only to loopback names, IP addresses and the hostnames you list with `--allowed-hosts distill.home.arpa,.lan.example` or `DISTILL_ALLOWED_HOSTS` (a leading dot allows subdomains), which blocks DNS rebinding. Keep an exposed instance on networks you trust: it has no authentication. Clients that send no `Origin` (curl, MCP clients) are unaffected. If you put distill behind a reverse proxy, keep the original `Host` header.
 
 `npx distillmd` installs only the parser, the local boosters and the server. LLMLingua-2 is not part of that install: you turn it on from the app when you want it (see below).
 
@@ -32,7 +32,7 @@ docker run --rm -p 4321:4321 ghcr.io/nievesjesus/distill
 
 (once published; until then, build the image yourself as shown below)
 
-The image is based on `node:22-bookworm-slim` and bundles LibreOffice (Writer, Calc, Impress) and the Tesseract English language data, with `TESSDATA_PREFIX` and `DISTILL_TESSDATA` pointing at it, so every supported format works out of the box without any download. Inside the container the server listens on `0.0.0.0`, so the loopback check is off, but the cross-site check described above still applies.
+The image is based on `node:22-bookworm-slim` and bundles LibreOffice (Writer, Calc, Impress) and the Tesseract English language data, with `TESSDATA_PREFIX` and `DISTILL_TESSDATA` pointing at it, so every supported format works out of the box without any download. Inside the container the server listens on `0.0.0.0`, so the loopback check is off, but the cross-site and host checks described above still apply: open it as `http://localhost:4321` or by IP, or pass `-e DISTILL_ALLOWED_HOSTS=<name>` to reach it by hostname.
 
 To build it yourself:
 
@@ -65,7 +65,7 @@ Boosters run in a fixed order and each one is a pure, idempotent function over t
 
 | Booster | What it does | Loss |
 |---------|--------------|------|
-| Drop repeated boilerplate | Removes repeated running headers and footers: non-structural lines (not headings, table rows or list items) with at least 4 words and 25 characters that appear 3 or more times, and page indicators that fill the whole line or a leading or trailing segment set off by ` — `, ` | ` or ` · ` (lines are compared as written, so lines that differ in a link target or a page cross-reference are kept), such as `Page 3 of 12`, `p. 3/12`, `3 of 12 pages` or `- 3 -`, keeping the first. Short repeated lines (`Yes`, `N/A`, `Score: 3/4`) are never removed | No information lost |
+| Drop repeated boilerplate | Removes repeated running headers and footers: identical non-structural lines (not headings, table rows or list items) with at least 4 words and 25 characters that appear 3 or more times, and lines that are only a page indicator, such as `Page 3 of 12`, `p. 3/12`, `3 of 12 pages` or `- 3 -`, keeping the first. Lines are compared exactly as written, spacing included, so lines that differ in a link target, a page number or a cross-reference are kept. Short repeated lines (`Yes`, `N/A`, `Score: 3/4`) are never removed | No information lost |
 | Slim images and links | `![alt](path)` becomes `[alt]` and `[text](url)` becomes `text` | **Drops image paths and URLs** |
 | Compact tables | Removes alignment padding from GFM tables | None |
 | Collapse whitespace | Collapses blank-line runs, trailing spaces and double spaces outside code | None |

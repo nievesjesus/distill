@@ -24,6 +24,7 @@ export async function startServer(opts: {
   port: number;
   host: string;
   maxBytes: number;
+  allowedHosts?: readonly string[];
 }): Promise<{ url: string; close(): Promise<void> }> {
   const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url)));
   if (packageRoot === undefined) throw new Error('distillmd package.json not found');
@@ -49,6 +50,7 @@ export async function startServer(opts: {
       liteparseVersion,
       webRoot: existsSync(webRoot) ? webRoot : undefined,
       guardLoopback: isLoopbackHost(opts.host),
+      allowedHosts: opts.allowedHosts ?? [],
     });
 
     const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {

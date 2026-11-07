@@ -9,12 +9,13 @@ import { startServer as defaultStartServer } from '../server/start';
 type Server = { url: string; close(): Promise<void> };
 
 export interface CliDeps {
-  startServer?: (opts: { port: number; host: string; maxBytes: number }) => Promise<Server>;
+  startServer?: (opts: { port: number; host: string; maxBytes: number; allowedHosts: string[] }) => Promise<Server>;
   openUrl?: (url: string) => void;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
   exit?: (code: number) => never;
   handleSignals?: boolean;
+  env?: Record<string, string | undefined>;
 }
 
 const BYTES_PER_MB = 1024 * 1024;
@@ -29,6 +30,13 @@ function readVersion(): string {
     }
   }
   return '0.0.0';
+}
+
+function parseHostList(value: string): string[] {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
 }
 
 function parsePort(value: string): number {
@@ -76,6 +84,7 @@ interface WebOptions {
   host: string;
   maxSize: number;
   open: boolean;
+  allowedHosts?: string[];
 }
 
 export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
@@ -85,6 +94,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const stderr = deps.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   const handleSignals = deps.handleSignals ?? true;
+  const env = deps.env ?? process.env;
 
   const program = new Command();
   program
@@ -104,6 +114,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--host <h>', 'host to bind', '127.0.0.1')
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
     .option('--no-open', 'do not open the browser')
+    .option('--allowed-hosts <list>', 'comma-separated hostnames accepted when bound to a non-loopback host (".example.com" allows subdomains)', parseHostList)
     .action(async (options: WebOptions) => {
       let server: Server;
       try {
@@ -111,6 +122,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           port: options.port,
           host: options.host,
           maxBytes: Math.round(options.maxSize * BYTES_PER_MB),
+          allowedHosts: options.allowedHosts ?? parseHostList(env.DISTILL_ALLOWED_HOSTS ?? ''),
         });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') {

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { openCommand, run } from '../../src/cli/run';
 
-function harness(startImpl?: (opts: unknown) => Promise<{ url: string; close(): Promise<void> }>) {
+function harness(
+  startImpl?: (opts: unknown) => Promise<{ url: string; close(): Promise<void> }>,
+  env: Record<string, string | undefined> = {},
+) {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const exit = vi.fn();
@@ -16,6 +19,7 @@ function harness(startImpl?: (opts: unknown) => Promise<{ url: string; close(): 
     stdout: (line: string) => stdout.push(line),
     stderr: (line: string) => stderr.push(line),
     handleSignals: false,
+    env,
   };
   return { deps, stdout, stderr, exit, openUrl, startServer };
 }
@@ -24,7 +28,7 @@ describe('run', () => {
   it('starts with defaults and opens the browser', async () => {
     const h = harness();
     await run([], h.deps);
-    expect(h.startServer).toHaveBeenCalledWith({ port: 4321, host: '127.0.0.1', maxBytes: 104857600 });
+    expect(h.startServer).toHaveBeenCalledWith({ port: 4321, host: '127.0.0.1', maxBytes: 104857600, allowedHosts: [] });
     expect(h.stdout).toEqual(['distill running at http://127.0.0.1:4321']);
     expect(h.openUrl).toHaveBeenCalledWith('http://127.0.0.1:4321');
     expect(h.stderr).toEqual([]);
@@ -33,7 +37,7 @@ describe('run', () => {
   it('accepts the explicit web command', async () => {
     const h = harness();
     await run(['web', '--port', '5000'], h.deps);
-    expect(h.startServer).toHaveBeenCalledWith({ port: 5000, host: '127.0.0.1', maxBytes: 104857600 });
+    expect(h.startServer).toHaveBeenCalledWith({ port: 5000, host: '127.0.0.1', maxBytes: 104857600, allowedHosts: [] });
   });
 
   it('skips opening with --no-open', async () => {
@@ -92,6 +96,21 @@ describe('run', () => {
     const h = harness();
     await run(['--host', '0.0.0.0', '--no-open'], h.deps);
     expect(h.stderr).toEqual(['Warning: listening on 0.0.0.0 — anyone on your network can reach distill']);
+  });
+
+  it('passes --allowed-hosts as a trimmed list', async () => {
+    const h = harness();
+    await run(['--host', '0.0.0.0', '--allowed-hosts', 'distill.home.arpa, .lan.example,', '--no-open'], h.deps);
+    expect(h.startServer).toHaveBeenCalledWith(expect.objectContaining({ allowedHosts: ['distill.home.arpa', '.lan.example'] }));
+  });
+
+  it('reads allowed hosts from DISTILL_ALLOWED_HOSTS, and the flag wins over it', async () => {
+    const fromEnv = harness(undefined, { DISTILL_ALLOWED_HOSTS: 'a.example,b.example' });
+    await run(['--no-open'], fromEnv.deps);
+    expect(fromEnv.startServer).toHaveBeenCalledWith(expect.objectContaining({ allowedHosts: ['a.example', 'b.example'] }));
+    const flagWins = harness(undefined, { DISTILL_ALLOWED_HOSTS: 'a.example' });
+    await run(['--allowed-hosts', 'c.example', '--no-open'], flagWins.deps);
+    expect(flagWins.startServer).toHaveBeenCalledWith(expect.objectContaining({ allowedHosts: ['c.example'] }));
   });
 
   it('does not warn on loopback hosts', async () => {

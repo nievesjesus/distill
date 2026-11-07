@@ -7,7 +7,7 @@ describe('dropRepeatedBoilerplate', () => {
     expect(dropRepeatedBoilerplate(`X\n${footer}\nA\n${footer}\nB\n${footer}`)).toBe(`X\n${footer}\nA\nB`);
   });
 
-  it('treats running headers differing only in the page indicator as the same', () => {
+  it('keeps running headers that carry different page numbers byte for byte', () => {
     const doc = [
       'Example Co. Annual Report — Page 1 of 3',
       'Alpha',
@@ -16,7 +16,21 @@ describe('dropRepeatedBoilerplate', () => {
       'Example Co. Annual Report — Page 3 of 3',
       'Gamma',
     ].join('\n');
-    expect(dropRepeatedBoilerplate(doc)).toBe('Example Co. Annual Report — Page 1 of 3\nAlpha\nBeta\nGamma');
+    expect(dropRepeatedBoilerplate(doc)).toBe(doc);
+  });
+
+  it('still drops identical running headers', () => {
+    const header = 'Example Co. Annual Report — Page 1 of 3';
+    expect(dropRepeatedBoilerplate(`${header}\nA\n${header}\nB\n${header}`)).toBe(`${header}\nA\nB`);
+  });
+
+  it('keeps lines that differ only in inner whitespace byte for byte', () => {
+    const doc = [
+      'Set the flag with `x  =  1` before running the job',
+      'Set the flag with `x = 1` before running the job',
+      'Set the flag with `x   =   1` before running the job',
+    ].join('\n');
+    expect(dropRepeatedBoilerplate(doc)).toBe(doc);
   });
 
   it('keeps lines that appear fewer than three times', () => {
@@ -118,13 +132,15 @@ describe('dropRepeatedBoilerplate', () => {
     expect(dropRepeatedBoilerplate(doc)).toBe(doc);
   });
 
-  it('masks a trailing indicator only after a separator', () => {
-    for (const separator of ['—', '|', '·']) {
-      const lines = [3, 4, 5].map((n) => `Annual Report for Example Co. ${separator} Page ${n} of 12`);
-      expect(dropRepeatedBoilerplate(lines.join('\nA\n'))).toBe(`${lines[0]}\nA\nA`);
+  it('keeps lines with a page indicator segment byte for byte', () => {
+    for (const separator of ['—', '|', '·', '']) {
+      const doc = [3, 4, 5].map((n) => `Annual Report for Example Co. ${separator} Page ${n} of 12`).join('\nA\n');
+      expect(dropRepeatedBoilerplate(doc)).toBe(doc);
     }
-    const unseparated = [3, 4, 5].map((n) => `Annual Report for Example Co. Page ${n} of 12`).join('\n');
-    expect(dropRepeatedBoilerplate(unseparated)).toBe(unseparated);
+    const crossReferences = [12, 15, 20]
+      .map((n) => `See the appendix for the complete figures — page ${n} of 40`)
+      .join('\n');
+    expect(dropRepeatedBoilerplate(crossReferences)).toBe(crossReferences);
   });
 
   it('does not mask digits in dates or fractions', () => {
@@ -138,9 +154,9 @@ describe('dropRepeatedBoilerplate', () => {
     }
   });
 
-  it('masks a page indicator at the start of the line', () => {
-    const doc = 'Page 2 of 9 · Example Co.\nA\nPage 3 of 9 · Example Co.\nB\nPage 4 of 9 · Example Co.\nC';
-    expect(dropRepeatedBoilerplate(doc)).toBe('Page 2 of 9 · Example Co.\nA\nB\nC');
+  it('keeps lines that start with a page indicator byte for byte', () => {
+    const doc = 'Page 2 of 9 · Example Co. annual\nA\nPage 3 of 9 · Example Co. annual\nB\nPage 4 of 9 · Example Co. annual\nC';
+    expect(dropRepeatedBoilerplate(doc)).toBe(doc);
   });
 
   it('applies the length limit to the line itself', () => {
