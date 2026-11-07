@@ -33,6 +33,7 @@ export interface CliDeps {
   handleSignals?: boolean;
   env?: Record<string, string | undefined>;
   readStdin?: () => Promise<string>;
+  cacheDir?: string;
 }
 
 const BYTES_PER_MB = 1024 * 1024;
@@ -130,6 +131,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const handleSignals = deps.handleSignals ?? true;
   const env = deps.env ?? process.env;
   const readStdin = deps.readStdin ?? defaultReadStdin;
+  const cacheDir = deps.cacheDir ?? join(homedir(), '.cache', 'distillmd');
 
   const program = new Command();
   program
@@ -287,16 +289,31 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   const hook = program.command('hook').description('Runtimes for agent hooks');
 
+  const closeQuietly = (distiller: Distiller | null): void => {
+    try {
+      distiller?.close();
+    } catch {}
+  };
+
+  const describeError = (error: unknown): string =>
+    (error as { code?: unknown })?.code !== undefined && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : error instanceof Error
+        ? error.message
+        : String(error);
+
   const convertViaCache = async (distiller: Distiller, absPath: string): Promise<string> =>
     (await convertCached(absPath, {
       distiller,
-      cacheDir: join(homedir(), '.cache', 'distillmd'),
+      cacheDir,
       version: readVersion(),
     })).mdPath;
 
   hook
     .command('claude')
     .description('Claude Code PreToolUse hook: reads JSON on stdin')
+    .allowExcessArguments()
+    .allowUnknownOption()
     .action(async () => {
       let distiller: Distiller | null = null;
       try {
@@ -313,14 +330,19 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           return;
         }
         const result = await handleClaudePreToolUse(payload, async (absPath) => {
-          distiller ??= await openDistiller();
-          return convertViaCache(distiller, absPath);
+          try {
+            distiller ??= await openDistiller();
+            return await convertViaCache(distiller, absPath);
+          } catch (error) {
+            stderr(`distill hook: ${describeError(error)}`);
+            throw error;
+          }
         });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
-        (distiller as Distiller | null)?.close();
+        closeQuietly(distiller as Distiller | null);
       }
       exit(0);
     });
@@ -342,17 +364,21 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         stdout(JSON.stringify({ path }));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
-        distiller?.close();
+        closeQuietly(distiller);
         exit(1);
         return;
       }
-      distiller.close();
+      closeQuietly(distiller);
     });
 
   try {
     await program.parseAsync(argv, { from: 'user' });
   } catch (error) {
     if (error instanceof CommanderError) {
+      if (argv[0] === 'hook' && argv[1] === 'claude') {
+        exit(0);
+        return;
+      }
       exit(error.exitCode === 0 ? 0 : 2);
       return;
     }

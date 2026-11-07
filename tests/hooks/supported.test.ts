@@ -6,7 +6,7 @@ describe('isHookConvertible', () => {
     expect(isHookConvertible(path)).toBe(true);
   });
 
-  it.each(['/a/x.png', '/a/x.jpg', '/a/x.txt', '/a/x', '/a/x.md'])('rejects %s', (path) => {
+  it.each(['/a/x.png', '/a/x.jpg', '/a/x.txt', '/a/x', '/a/x.md', '/a/x.csv', '/a/x.CSV'])('rejects %s', (path) => {
     expect(isHookConvertible(path)).toBe(false);
   });
 });
