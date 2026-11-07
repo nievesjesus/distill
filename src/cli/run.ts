@@ -1,15 +1,15 @@
 import { spawn } from 'node:child_process';
-import { accessSync, constants, lstatSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
 import { handleClaudePreToolUse } from '../hooks/claude';
 import { convertCached } from '../hooks/cache';
 import { readIfExists, realTarget, writeAtomic } from '../hooks/atomic';
-import { hookCommand } from '../hooks/command';
+import { findOnPath, hookCommand } from '../hooks/command';
 import { lineDiff } from '../hooks/diff';
 import { normalizeSettings, planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
 import { isOwnOpencodePlugin, opencodePluginPath, planOpencodeInstall } from '../hooks/install-opencode';
@@ -53,21 +53,6 @@ async function defaultReadStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString('utf8');
-}
-
-function defaultWhich(bin: string, pathEnv: string | undefined = process.env.PATH): string | null {
-  const suffixes = process.platform === 'win32' ? ['', '.cmd', '.exe', '.bat'] : [''];
-  for (const dir of (pathEnv ?? '').split(delimiter)) {
-    if (dir === '') continue;
-    for (const suffix of suffixes) {
-      const candidate = join(dir, `${bin}${suffix}`);
-      try {
-        accessSync(candidate, constants.X_OK);
-        return candidate;
-      } catch {}
-    }
-  }
-  return null;
 }
 
 async function defaultPrompt(question: string): Promise<string> {
@@ -178,7 +163,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const cacheDir = deps.cacheDir ?? join(homedir(), '.cache', 'distillmd');
   const homeDir = deps.homeDir ?? homedir();
   const cwd = deps.cwd ?? process.cwd();
-  const which = deps.which ?? ((bin: string) => defaultWhich(bin, env.PATH));
+  const which = deps.which ?? ((bin: string) => findOnPath(bin, env.PATH));
   const isTTY = deps.isTTY ?? Boolean(process.stdin.isTTY);
   const prompt = deps.prompt ?? defaultPrompt;
 
@@ -543,7 +528,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       exit(1);
       return;
     }
-    const command = hookCommand({ which, version: readVersion() });
+    const command = hookCommand({ which, version: readVersion(), npmCommand: env.npm_command });
     if (action === 'install') {
       stdout(`Hook command: ${command}`);
       if (command !== 'distillmd') stdout('Tip: npm i -g distillmd makes the hook start faster.');

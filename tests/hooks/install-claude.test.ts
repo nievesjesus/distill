@@ -1,5 +1,8 @@
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { hookCommand } from '../../src/hooks/command';
+import { findOnPath, hookCommand, isEphemeralPath } from '../../src/hooks/command';
 import { planClaudeInstall, planClaudeUninstall } from '../../src/hooks/install-claude';
 
 const RULE = 'Read(~/.cache/distillmd/out/**)';
@@ -12,6 +15,54 @@ describe('hookCommand', () => {
 
   it('falls back to npx pinned to the version', () => {
     expect(hookCommand({ which: () => null, version: '1.2.3' })).toBe('npx -y distillmd@1.2.3');
+  });
+
+  it('always uses npx under npm exec even when a binary is on the PATH', () => {
+    expect(hookCommand({ which: () => '/usr/bin/distillmd', version: '1.2.3', npmCommand: 'exec' })).toBe('npx -y distillmd@1.2.3');
+  });
+
+  it('keeps using the binary for other npm commands', () => {
+    expect(hookCommand({ which: () => '/usr/bin/distillmd', version: '1.2.3', npmCommand: 'run-script' })).toBe('distillmd');
+  });
+});
+
+describe('isEphemeralPath', () => {
+  it.each([
+    '/p/node_modules/.bin/distillmd',
+    '/home/u/.npm/_npx/abc123/node_modules/.bin/distillmd',
+    'C:\\Users\\u\\AppData\\npm-cache\\_npx\\abc\\distillmd.cmd',
+    'C:\\p\\node_modules\\.bin\\distillmd.cmd',
+  ])('flags %s', (path) => {
+    expect(isEphemeralPath(path)).toBe(true);
+  });
+
+  it.each(['/usr/local/bin/distillmd', '/home/u/.nvm/versions/node/v22/bin/distillmd'])('accepts %s', (path) => {
+    expect(isEphemeralPath(path)).toBe(false);
+  });
+});
+
+describe('findOnPath', () => {
+  const makeBin = (dir: string): void => {
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, 'distillmd');
+    writeFileSync(file, '#!/bin/sh\n');
+    chmodSync(file, 0o755);
+  };
+
+  it.skipIf(process.platform === 'win32')('skips node_modules/.bin and _npx entries and finds the real binary', () => {
+    const base = mkdtempSync(join(tmpdir(), 'distill-which-'));
+    try {
+      const local = join(base, 'proj', 'node_modules', '.bin');
+      const npx = join(base, 'cache', '_npx', 'abc', 'node_modules', '.bin');
+      const real = join(base, 'bin');
+      makeBin(local);
+      makeBin(npx);
+      makeBin(real);
+      expect(findOnPath('distillmd', [local, npx, real].join(delimiter))).toBe(join(real, 'distillmd'));
+      expect(findOnPath('distillmd', [local, npx].join(delimiter))).toBeNull();
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });
 

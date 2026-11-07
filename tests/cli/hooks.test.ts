@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { run } from '../../src/cli/run';
 import { writeAtomic } from '../../src/hooks/atomic';
 
-function setup(options: { isTTY?: boolean; answer?: string; which?: string | null } = {}) {
+function setup(options: { isTTY?: boolean; answer?: string; which?: string | null; env?: Record<string, string> } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'distill-home-'));
   const cwd = mkdtempSync(join(tmpdir(), 'distill-cwd-'));
   const stdout: string[] = [];
@@ -22,7 +22,7 @@ function setup(options: { isTTY?: boolean; answer?: string; which?: string | nul
     stdout: (line: string) => stdout.push(line),
     stderr: (line: string) => stderr.push(line),
     handleSignals: false,
-    env: {},
+    env: options.env ?? {},
   };
   return { home, cwd, stdout, stderr, exit, prompt, deps };
 }
@@ -101,6 +101,15 @@ describe('hooks install --claude', () => {
     const s = setup();
     await run(['hooks', 'install', '--yes'], s.deps);
     expect(s.exit).toHaveBeenCalledWith(1);
+  });
+});
+
+describe('hooks install under npx', () => {
+  it('writes the pinned npx command when npm_command is exec', async () => {
+    const s = setup({ env: { npm_command: 'exec' } });
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    const text = readFileSync(join(s.home, '.claude', 'settings.json'), 'utf8');
+    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toMatch(/^npx -y distillmd@\S+ hook claude$/);
   });
 });
 
