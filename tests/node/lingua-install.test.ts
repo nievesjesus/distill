@@ -4,7 +4,7 @@ import { rename as realRename, rm as realRm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLinguaInstaller, findNpm, NPM_ARGS, REQUIRED_PACKAGES } from '../../src/node/lingua-install';
 
 interface Call { command: string; args: string[]; options: Record<string, any> }
@@ -444,6 +444,31 @@ describe('lingua installer', () => {
     await (installer.install as (extra?: unknown) => Promise<void>)('../escape');
     expect(existsSync(join(root, 'escape'))).toBe(false);
     expect(existsSync(join(cacheDir, 'lingua'))).toBe(true);
+  });
+
+  describe('Intel Mac support', () => {
+    const reason = 'LLMLingua-2 is not available on Intel Macs: its ONNX runtime only supports Apple Silicon.';
+
+    it('reports a reason, is not installable and never resolves npm on darwin x64', async () => {
+      const resolveNpm = vi.fn(async () => npm);
+      const installer = createLinguaInstaller({ cacheDir, runtimeDir, resolveNpm, platform: 'darwin', arch: 'x64' });
+      expect(installer.unsupportedReason?.()).toBe(reason);
+      await expect(installer.probe()).resolves.toBe(false);
+      expect(installer.installable()).toBe(false);
+      expect(resolveNpm).not.toHaveBeenCalled();
+    });
+
+    it('rejects install with unsupported_platform and does not spawn npm', async () => {
+      const installer = createLinguaInstaller({ cacheDir, runtimeDir, resolveNpm: async () => npm, platform: 'darwin', arch: 'x64' });
+      await expect(installer.install()).rejects.toMatchObject({ code: 'unsupported_platform', message: reason });
+      expect(calls).toHaveLength(0);
+    });
+
+    it.each([['darwin', 'arm64'], ['win32', 'x64'], ['linux', 'x64']] as const)('supports %s %s', async (platform, arch) => {
+      const installer = createLinguaInstaller({ cacheDir, runtimeDir, resolveNpm: async () => npm, platform, arch });
+      expect(installer.unsupportedReason?.()).toBeUndefined();
+      await expect(installer.probe()).resolves.toBe(true);
+    });
   });
 
   it('is installable only when npm resolves', async () => {

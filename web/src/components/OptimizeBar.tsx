@@ -112,6 +112,8 @@ export function OptimizeBar({
                   <span className="progress-bar" />
                 </span>
               </>
+            ) : linguaStatus.unsupportedReason !== undefined ? (
+              <p className="lingua-line">{linguaStatus.unsupportedReason}</p>
             ) : linguaStatus.installable === true ? (
               <>
                 {linguaStatus.state === 'install_failed' ? (

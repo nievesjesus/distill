@@ -25,21 +25,25 @@ jobs:
             resources: mac-arm64/distill.app/Contents/Resources
             platform: mac
             arch: arm64
+            full: true
           - os: macos-15-intel
             target: mac dmg
             resources: mac/distill.app/Contents/Resources
             platform: mac
             arch: x64
+            full: false
           - os: windows-latest
             target: win nsis
             resources: win-unpacked/resources
             platform: win
             arch: x64
+            full: true
           - os: ubuntu-latest
             target: linux AppImage
             resources: linux-unpacked/resources
             platform: linux
             arch: x64
+            full: true
     steps:
       - name: checkout v4.4.0
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -80,7 +84,7 @@ jobs:
         if: env.MAC_SIGNED != 'true'
         run: npm run dist:lite -- --${{ matrix.target }} --${{ matrix.arch }}
       - name: Build full installer
-        if: env.MAC_SIGNED != 'true'
+        if: matrix.full && env.MAC_SIGNED != 'true'
         run: npm run dist:full -- --${{ matrix.target }} --${{ matrix.arch }}
       - name: Build signed and notarized lite installer
         if: env.MAC_SIGNED == 'true'
@@ -90,7 +94,7 @@ jobs:
           node scripts/make-signed-config.mjs lite
           npx electron-builder --config electron-builder.lite.signed.yml --${{ matrix.target }} --${{ matrix.arch }}
       - name: Build signed and notarized full installer
-        if: env.MAC_SIGNED == 'true'
+        if: matrix.full && env.MAC_SIGNED == 'true'
         shell: bash
         run: |
           npm run fetch:tessdata
@@ -118,13 +122,16 @@ jobs:
         shell: bash
         run: node scripts/check-variant.mjs "release/lite/${{ matrix.resources }}" lite
       - name: Verify full variant
+        if: matrix.full
         shell: bash
         run: node scripts/check-variant.mjs "release/full/${{ matrix.resources }}" full
       - name: Verify macOS signature and notarization
         if: env.MAC_SIGNED == 'true'
         shell: bash
         run: |
-          for variant in lite full; do
+          variants=lite
+          if [ "${{ matrix.full }}" = "true" ]; then variants="lite full"; fi
+          for variant in $variants; do
             app="release/$variant/$(dirname "$(dirname "${{ matrix.resources }}")")"
             codesign --verify --deep --strict --verbose=2 "$app"
             codesign -dv "$app" 2>&1 | grep -q 'flags=.*runtime'

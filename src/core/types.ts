@@ -6,7 +6,7 @@ export type ErrorCode = 'unsupported_type' | 'needs_libreoffice' | 'too_large' |
 export interface ApiError { code: ErrorCode; message: string }
 export interface ParseResponse { id: string; name: string; kind: FileKind; pages: number; markdown: string; ms: number }
 export type LinguaModel = 'tinybert' | 'mobilebert' | 'xlm-roberta';
-export type LinguaInstallErrorCode = 'npm_missing' | 'npm_failed' | 'timeout' | 'verify_failed' | 'filesystem';
+export type LinguaInstallErrorCode = 'npm_missing' | 'npm_failed' | 'timeout' | 'verify_failed' | 'filesystem' | 'unsupported_platform';
 export interface LinguaInstallError { code: LinguaInstallErrorCode; message: string }
 export interface LinguaStatus {
   installed: boolean;
@@ -15,6 +15,7 @@ export interface LinguaStatus {
   state: 'idle' | 'downloading' | 'ready' | 'error' | 'installing' | 'install_failed';
   progress: number;
   installError?: LinguaInstallError;
+  unsupportedReason?: string;
   modelError?: string;
 }
 export interface Health { version: string; liteparseVersion: string; libreoffice: boolean; lingua: LinguaStatus; maxBytes: number }

@@ -110,6 +110,12 @@ describe('createDistiller with a fake parser', () => {
     await expect(promise).rejects.toThrow('LLMLingua-2 is not installed. Install it once from the web app (npx distillmd).');
   });
 
+  it('explains why lingua cannot be installed when the status carries a reason', async () => {
+    const lingua = { ...fakeLingua(false), status: () => ({ installed: false, installable: false, model: 'tinybert' as const, state: 'idle' as const, progress: 0, unsupportedReason: 'Intel Macs are out' }) };
+    const distiller = createDistiller({ parser: fakeParser(), lingua, libreoffice: true });
+    await expect(distiller.distillFile(pdfPath, { lingua: true })).rejects.toThrow('Intel Macs are out');
+  });
+
   it('fails with lingua_unavailable when lingua is requested without a runtime', async () => {
     const distiller = createDistiller({ parser: fakeParser(), libreoffice: true });
     await expectCode(distiller.distillFile(pdfPath, { lingua: true }), 'lingua_unavailable');

@@ -259,7 +259,7 @@ export function createLingua(opts: LinguaOptions): Lingua {
     });
   const resolvePackages = opts.resolvePackages ?? (async () => findLinguaRoot(roots()) !== undefined);
   const modelsDir = join(opts.cacheDir, 'models');
-  const state: Omit<LinguaStatus, 'installable' | 'installError'> = { installed: true, model: 'tinybert', state: 'idle', progress: 0 };
+  const state: Omit<LinguaStatus, 'installable' | 'installError' | 'unsupportedReason'> = { installed: true, model: 'tinybert', state: 'idle', progress: 0 };
   let module: LinguaModule | undefined;
   let current: { model: LinguaModel; promise: Promise<Compressor> } | undefined;
 
@@ -326,6 +326,8 @@ export function createLingua(opts: LinguaOptions): Lingua {
   return {
     status() {
       const status: LinguaStatus = { ...state, installable: installer?.installable() ?? false };
+      const reason = installer?.unsupportedReason?.();
+      if (!state.installed && reason) status.unsupportedReason = reason;
       const installing = installer?.status();
       if (!state.installed && installing?.state === 'installing') status.state = 'installing';
       if (!state.installed && installing?.state === 'failed') {

@@ -64,7 +64,7 @@ export function createDistiller(deps: {
         throw new DistillError('needs_libreoffice', 'LibreOffice is required to read this file type');
       }
       const lingua = opts.lingua ? deps.lingua : undefined;
-      if (opts.lingua && !lingua?.status().installed) throw new DistillError('lingua_unavailable', LINGUA_NOT_INSTALLED);
+      if (opts.lingua && !lingua?.status().installed) throw new DistillError('lingua_unavailable', lingua?.status().unsupportedReason ?? LINGUA_NOT_INSTALLED);
 
       const started = performance.now();
       const parsed = await deps.parser.toMarkdown(path);
