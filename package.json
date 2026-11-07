@@ -4,6 +4,26 @@
   "description": "Turn documents into token-lean Markdown using LiteParse",
   "author": "Jesus Nieves <yo@nievesjesus.com>",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nievesjesus/distill.git"
+  },
+  "homepage": "https://nievesjesus.github.io/distill/",
+  "bugs": {
+    "url": "https://github.com/nievesjesus/distill/issues"
+  },
+  "keywords": [
+    "pdf",
+    "markdown",
+    "llm",
+    "tokens",
+    "mcp",
+    "claude-code",
+    "opencode",
+    "liteparse",
+    "ocr",
+    "rag"
+  ],
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -13,7 +33,8 @@
     "distill": "dist/cli.js"
   },
   "files": [
-    "dist",
+    "dist/*.js",
+    "dist/web",
     "lingua-runtime/package.json",
     "lingua-runtime/package-lock.json"
   ],
