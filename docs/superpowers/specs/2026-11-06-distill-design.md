@@ -2,7 +2,7 @@
 
 - **Fecha:** 2026-11-06
 - **Estado:** borrador, en revisión
-- **Paquete npm:** `distillmd` (la marca visible es "distill")
+- **Paquete npm:** `distill-llm` (la marca visible es "distill")
 - **Diseño visual aprobado:** https://claude.ai/artifact/5ZWVqWk1YpbiWn7rnwwtne (artboard "A · Midnight Lime" y "Detailed view")
 
 ## 1. Qué es y para qué
@@ -16,7 +16,7 @@ Tiene tres caras sobre el mismo núcleo:
 3. **Hooks**: integraciones que hacen que Claude Code y OpenCode lean el Markdown destilado en vez del binario.
 
 **Éxito significa:**
-- `npx distillmd` abre la web en un solo comando, sin configurar nada, y un PDF se convierte en segundos.
+- `npx distill-llm` abre la web en un solo comando, sin configurar nada, y un PDF se convierte en segundos.
 - El ahorro de tokens se ve claro y es real: se mide con un tokenizer real, no se estima.
 - Todo corre en la máquina del usuario: ningún archivo sale de ella y no hay telemetría. Las únicas descargas son de datos, nunca de documentos: el runtime de LLMLingua-2 desde npm y su modelo, solo si el usuario lo activa, y los datos de Tesseract en inglés (~15 MB, desde GitHub) la primera vez que se hace OCR, salvo que ya existan en local (§4.1). El README lo dice tal cual.
 - La UI es compacta por defecto, con los detalles a un clic, y se ve bien en una captura para X.
@@ -25,7 +25,7 @@ Tiene tres caras sobre el mismo núcleo:
 
 | Fase | Entrega | Publicable |
 |------|---------|------------|
-| 1 | Núcleo (parse + boosters + tokens), web y app de escritorio | Sí: `npx distillmd`, imagen Docker, instaladores Electron *lite* y *full* |
+| 1 | Núcleo (parse + boosters + tokens), web y app de escritorio | Sí: `npx distill-llm`, imagen Docker, instaladores Electron *lite* y *full* |
 | 2 | `distillmd mcp` (stdio y HTTP) y `distillmd convert` (CLI) | Sí |
 | 3 | `distillmd hooks install --claude \| --opencode` | Sí |
 
@@ -104,7 +104,7 @@ Valores por defecto: 1 a 4 activos, `lingua` apagado. El switch maestro "Optimiz
 - El modelo por defecto es TinyBERT (`atjsh/llmlingua-2-js-tinybert-meetingbank`, unos 57 MB). En Detailed se puede elegir MobileBERT (99 MB) o XLM-RoBERTa (2.2 GB).
 - El modelo se descarga la primera vez que se activa, a la caché de transformers.js en `~/.cache/distillmd/models`. La UI muestra el progreso de la descarga. Después corre sin red.
 - `rate` (fracción de tokens que se conserva) vale 0.6 por defecto, se ajusta en Detailed entre 0.3 y 0.9 y se aplica por fragmentos de unos 512 tokens.
-- **Instalación bajo demanda (decisión del usuario, 2026-11-06).** `@atjsh/llmlingua-2`, `@huggingface/transformers` y `js-tiktoken` ya no son dependencias de `distillmd`: `npx distillmd` no baja los ~520 MB (en disco) de onnxruntime y compañía ni el postinstall que en Linux x64 trae CUDA desde NuGet. Las tres viven en `lingua-runtime/` (`package.json` con versiones exactas y `package-lock.json` con integridad, ambos dentro del tarball de npm) y se instalan cuando el usuario lo pide.
+- **Instalación bajo demanda (decisión del usuario, 2026-11-06).** `@atjsh/llmlingua-2`, `@huggingface/transformers` y `js-tiktoken` ya no son dependencias de `distill-llm`: `npx distill-llm` no baja los ~520 MB (en disco) de onnxruntime y compañía ni el postinstall que en Linux x64 trae CUDA desde NuGet. Las tres viven en `lingua-runtime/` (`package.json` con versiones exactas y `package-lock.json` con integridad, ambos dentro del tarball de npm) y se instalan cuando el usuario lo pide.
 - **Raíces de carga**, en este orden; se usa la primera donde las tres resuelven y su ruta real queda dentro de la raíz, sin buscar nunca en directorios ancestros:
   1. el `node_modules` propio de distill (desarrollo);
   2. `process.resourcesPath/lingua/node_modules` (app de escritorio full);
@@ -197,7 +197,8 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 
 ## 9. Distribución
 
-- npm: `distillmd`, con los bins `distillmd` y `distill`. `npx distillmd` equivale a `distillmd web --open`.
+- npm: `distill-llm`, con los bins `distill-llm`, `distillmd` y `distill`. `npx distill-llm` equivale a `distillmd web --open`.
+- El paquete npm se renombró a `distill-llm` el 2026-11-07 porque npm bloqueó `distillmd` por ser demasiado parecido a `distill-md`.
 - Repositorio: `github.com/nievesjesus/distill`.
 - Docker: `ghcr.io/nievesjesus/distill`, basada en `node:22-bookworm-slim` con LibreOffice (writer, calc, impress) y los datos de tesseract en inglés (`tesseract-ocr-eng`; otros idiomas se piden con `DISTILL_OCR_LANG` y datos propios en `DISTILL_TESSDATA`). Se ejecuta con `docker run -p 4321:4321`, y dentro del contenedor escucha en `0.0.0.0`.
 - Licencia: Apache-2.0, compatible con LiteParse.
@@ -206,7 +207,7 @@ Los textos de la UI van en inglés y centralizados en un módulo, para poder tra
 
 El usuario pidió un binario que se descarga y se ejecuta. Un ejecutable de un solo archivo (Node SEA, `bun --compile`, `pkg`) no sirve: LiteParse carga un addon nativo (`liteparse.<plataforma>.node` + `libpdfium`) que tiene que existir como archivo en disco, y su pool hace `fork()` de `pool-worker.js`, así que necesita un runtime de Node. Por eso la app de escritorio usa Electron, que trae Node integrado.
 
-- **Proceso principal:** importa `startServer` del mismo paquete, levanta el servidor en `127.0.0.1` con puerto 0 (libre) y abre una `BrowserWindow` que carga esa URL. Usa el mismo servidor y la misma UI que `npx distillmd`; no hay un segundo código de UI.
+- **Proceso principal:** importa `startServer` del mismo paquete, levanta el servidor en `127.0.0.1` con puerto 0 (libre) y abre una `BrowserWindow` que carga esa URL. Usa el mismo servidor y la misma UI que `npx distill-llm`; no hay un segundo código de UI.
 - **Ventana:** 640×780 por defecto, mínimo 440×520, título "distill" y fondo `#0B0B10` desde el primer frame (sin destello blanco). La barra de título está integrada: en macOS `hiddenInset` con los semáforos a 16 px del borde y centrados en una barra de 40 px; en Windows `hidden` con `titleBarOverlay` de 40 px; en Linux la barra del sistema. Tamaño y posición se recuerdan en `window-state.json`. Instancia única: abrir la app de nuevo enfoca la ventana existente. Al cerrar la ventana, o con Cmd+Q, se detiene el servidor (con un tope de 2 s) y la app sale, también en macOS.
 - **Seguridad:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, `spellcheck: false` y un preload mínimo en sandbox que expone solo `window.distillDesktop` con `onSaved(callback)` y `reveal(id)`. Los canales IPC (`distill:saved`, `distill:reveal`) validan el remitente y `reveal` recibe un id que el proceso principal traduce a una ruta guardada, nunca una ruta del renderer. Guardar usa el diálogo nativo y recuerda la última carpeta en `desktop-prefs.json`. La ventana no puede navegar fuera de su origen: los links externos (GitHub, LibreOffice) se abren en el navegador del sistema con `shell.openExternal`, y solo si son `https:`. `setWindowOpenHandler` deniega las ventanas nuevas.
 - **LiteParse dentro de Electron:** el `fork()` del pool debe arrancar el binario de Electron en modo Node (`ELECTRON_RUN_AS_NODE`). Los archivos nativos y `pool-worker.js` van fuera del asar (`asarUnpack`). Una prueba de humo en la app empaquetada lo valida.
@@ -238,4 +239,4 @@ Subir a la nube o tener cuentas; editar el Markdown; procesar URLs remotas; cont
 - **LibreOffice** pesa (~500 MB). Por eso no se pide para PDF e imágenes y va incluido en Docker.
 - **Calidad de LiteParse** en tablas densas y escaneos complejos: la limita el motor. El README lo dice con honestidad.
 - **LLMLingua-2 JS** está marcado como "experimental" por su autor. Por eso es opcional, va apagado por defecto y está marcado como con pérdida.
-- **Nombre:** "distill" es genérico. El paquete `distillmd` y el repo `distill` evitan el choque en npm; se revisará si hay conflicto de marca antes del lanzamiento.
+- **Nombre:** "distill" es genérico. El paquete `distill-llm` y el repo `distill` evitan el choque en npm; se revisará si hay conflicto de marca antes del lanzamiento.

@@ -163,7 +163,7 @@ describe('opencode paths and plans', () => {
     expect(first.changed).toBe(true);
     expect(first.next).toBe(opencodePluginSource('distillmd'));
     expect(planOpencodeInstall(first.next, 'distillmd').changed).toBe(false);
-    expect(planOpencodeInstall(first.next, 'npx -y distillmd@1').changed).toBe(true);
+    expect(planOpencodeInstall(first.next, 'npx -y distill-llm@1').changed).toBe(true);
   });
 });
 
@@ -175,9 +175,9 @@ describe('invocation builder', () => {
   ) => { file: string; args: string[]; shell: boolean };
 
   it('runs directly on posix', () => {
-    expect(build(['npx', '-y', 'distillmd@1'], '/a b/x.pdf', 'darwin')).toEqual({
+    expect(build(['npx', '-y', 'distill-llm@1'], '/a b/x.pdf', 'darwin')).toEqual({
       file: 'npx',
-      args: ['-y', 'distillmd@1', 'hook', 'convert', '/a b/x.pdf'],
+      args: ['-y', 'distill-llm@1', 'hook', 'convert', '/a b/x.pdf'],
       shell: false,
     });
   });
@@ -196,6 +196,8 @@ describe('invocation builder', () => {
 
   it('recognizes its own plugin file', () => {
     expect(isOwnOpencodePlugin(opencodePluginSource('distillmd'))).toBe(true);
+    expect(isOwnOpencodePlugin(opencodePluginSource('distill-llm'))).toBe(true);
+    expect(isOwnOpencodePlugin(opencodePluginSource('npx -y distill-llm@1'))).toBe(true);
     expect(isOwnOpencodePlugin('export const Other = 1;')).toBe(false);
     expect(isOwnOpencodePlugin('export const DistillPlugin = 1; hook convert')).toBe(false);
   });

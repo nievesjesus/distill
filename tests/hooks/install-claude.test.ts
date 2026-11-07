@@ -14,11 +14,11 @@ describe('hookCommand', () => {
   });
 
   it('falls back to npx pinned to the version', () => {
-    expect(hookCommand({ which: () => null, version: '1.2.3' })).toBe('npx -y distillmd@1.2.3');
+    expect(hookCommand({ which: () => null, version: '1.2.3' })).toBe('npx -y distill-llm@1.2.3');
   });
 
   it('always uses npx under npm exec even when a binary is on the PATH', () => {
-    expect(hookCommand({ which: () => '/usr/bin/distillmd', version: '1.2.3', npmCommand: 'exec' })).toBe('npx -y distillmd@1.2.3');
+    expect(hookCommand({ which: () => '/usr/bin/distillmd', version: '1.2.3', npmCommand: 'exec' })).toBe('npx -y distill-llm@1.2.3');
   });
 
   it('keeps using the binary for other npm commands', () => {
@@ -89,8 +89,8 @@ describe('planClaudeInstall', () => {
   });
 
   it('writes the npx command when given', () => {
-    const next = JSON.parse(planClaudeInstall(null, 'npx -y distillmd@1.0.0').next);
-    expect(next.hooks.PreToolUse[0].hooks[0].command).toBe('npx -y distillmd@1.0.0 hook claude');
+    const next = JSON.parse(planClaudeInstall(null, 'npx -y distill-llm@1.0.0').next);
+    expect(next.hooks.PreToolUse[0].hooks[0].command).toBe('npx -y distill-llm@1.0.0 hook claude');
   });
 
   it('is idempotent', () => {
@@ -101,13 +101,21 @@ describe('planClaudeInstall', () => {
   });
 
   it('updates an own entry installed with a different command in place', () => {
-    const first = planClaudeInstall(null, 'npx -y distillmd@1.0.0');
+    const first = planClaudeInstall(null, 'npx -y distill-llm@1.0.0');
     const plan = planClaudeInstall(first.next, 'distillmd');
     expect(plan.changed).toBe(true);
     const next = JSON.parse(plan.next);
     expect(next.hooks.PreToolUse).toHaveLength(1);
     expect(next.hooks.PreToolUse[0].hooks[0].command).toBe('distillmd hook claude');
     expect(planClaudeInstall(plan.next, 'distillmd').changed).toBe(false);
+  });
+
+  it.each(['distill-llm', 'npx -y distill-llm@1.0.0', 'npx -y distillmd@1.0.0'])('replaces an own entry installed as %s', (old) => {
+    const first = planClaudeInstall(null, old);
+    const plan = planClaudeInstall(first.next, 'distill-llm');
+    const next = JSON.parse(plan.next);
+    expect(next.hooks.PreToolUse).toHaveLength(1);
+    expect(next.hooks.PreToolUse[0].hooks[0].command).toBe('distill-llm hook claude');
   });
 
   it('adds only the permission when the hook already exists', () => {
@@ -134,6 +142,11 @@ describe('planClaudeUninstall', () => {
     const plan = planClaudeUninstall(installed);
     expect(plan.changed).toBe(true);
     expect(JSON.parse(plan.next)).toEqual({});
+  });
+
+  it.each(['distill-llm hook claude', 'npx -y distill-llm@1.0.0 hook claude'])('removes an entry installed as %s', (command) => {
+    const current = JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command, timeout: 120 }] }] } });
+    expect(JSON.parse(planClaudeUninstall(current).next)).toEqual({});
   });
 
   it('keeps other entries and keys', () => {

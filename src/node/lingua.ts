@@ -75,7 +75,7 @@ export function findPackageRoot(startDir: string): string | undefined {
     const manifest = join(dir, 'package.json');
     if (existsSync(manifest)) {
       try {
-        if ((JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string }).name === 'distillmd') return dir;
+        if ((JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string }).name === 'distill-llm') return dir;
       } catch {
         return undefined;
       }

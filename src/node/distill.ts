@@ -19,7 +19,7 @@ import type { Parser } from './parse';
 
 const DEFAULT_RATE = 0.5;
 const NO_LINGUA: LinguaStatus = { installed: false, installable: false, model: 'tinybert', state: 'idle', progress: 0 };
-const LINGUA_NOT_INSTALLED = 'LLMLingua-2 is not installed. Install it once from the web app (npx distillmd).';
+const LINGUA_NOT_INSTALLED = 'LLMLingua-2 is not installed. Install it once from the web app (npx distill-llm).';
 
 export interface DistillOptions {
   boosters?: ReadonlySet<LocalBoosterId>;

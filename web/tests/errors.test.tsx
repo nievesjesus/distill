@@ -46,7 +46,7 @@ describe('Connect panel', () => {
       expect(screen.getByRole('heading', { name })).toBeInTheDocument();
     }
     expect(screen.getAllByText('coming in v0.2').length).toBeGreaterThanOrEqual(5);
-    expect(dialog).toHaveTextContent('claude mcp add distill -- npx -y distillmd mcp');
+    expect(dialog).toHaveTextContent('claude mcp add distill -- npx -y distill-llm mcp');
     expect(dialog).toHaveTextContent('Hooks for Claude Code and OpenCode arrive in v0.3.');
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });

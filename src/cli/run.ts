@@ -551,7 +551,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     const command = hookCommand({ which, version: readVersion(), npmCommand: env.npm_command });
     if (action === 'install') {
       stdout(`Hook command: ${command}`);
-      if (command !== 'distillmd') stdout('Tip: npm i -g distillmd makes the hook start faster.');
+      if (command !== 'distillmd') stdout('Tip: npm i -g distill-llm makes the hook start faster.');
     }
     for (const target of targets) {
       if (!(await processTarget(target, action, options, command))) return;

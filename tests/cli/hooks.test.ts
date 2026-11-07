@@ -106,8 +106,8 @@ describe('hooks install --claude', () => {
     const s = setup({ which: null });
     await run(['hooks', 'install', '--claude', '--yes'], s.deps);
     const text = readFileSync(join(s.home, '.claude', 'settings.json'), 'utf8');
-    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toMatch(/^npx -y distillmd@\S+ hook claude$/);
-    expect(s.stdout).toContain('Tip: npm i -g distillmd makes the hook start faster.');
+    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toMatch(/^npx -y distill-llm@\S+ hook claude$/);
+    expect(s.stdout).toContain('Tip: npm i -g distill-llm makes the hook start faster.');
   });
 
   it('aborts on invalid JSON without touching the file', async () => {
@@ -147,7 +147,7 @@ describe('hooks install under npx', () => {
     const s = setup({ env: { npm_command: 'exec' } });
     await run(['hooks', 'install', '--claude', '--yes'], s.deps);
     const text = readFileSync(join(s.home, '.claude', 'settings.json'), 'utf8');
-    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toMatch(/^npx -y distillmd@\S+ hook claude$/);
+    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toMatch(/^npx -y distill-llm@\S+ hook claude$/);
   });
 });
 

@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://github.com/nievesjesus/distill/actions/workflows/ci.yml"><img src="https://github.com/nievesjesus/distill/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://www.npmjs.com/package/distillmd"><img src="https://img.shields.io/npm/v/distillmd?color=C8F53C&labelColor=0B0B10" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/distill-llm"><img src="https://img.shields.io/npm/v/distill-llm?color=C8F53C&labelColor=0B0B10" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-C8F53C?labelColor=0B0B10" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522.12-C8F53C?labelColor=0B0B10" alt="Node 22.12+">
   <img src="https://img.shields.io/badge/runs-100%25%20local-C8F53C?labelColor=0B0B10" alt="Runs 100% local">
@@ -56,7 +56,7 @@ On top of that, distill's lossless boosters trim another 10% from LiteParse's Ma
 ## Quick start
 
 ```bash
-npx distillmd
+npx distill-llm
 ```
 
 This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop files in, read the Markdown, copy it or download it (one `.md` or a ZIP of all of them).
@@ -74,7 +74,7 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`.
 
 ```bash
-claude mcp add distill -- npx -y distillmd mcp
+claude mcp add distill -- npx -y distill-llm mcp
 ```
 
 Any other client:
@@ -82,7 +82,7 @@ Any other client:
 ```json
 {
   "mcpServers": {
-    "distill": { "command": "npx", "args": ["-y", "distillmd", "mcp"] }
+    "distill": { "command": "npx", "args": ["-y", "distill-llm", "mcp"] }
   }
 }
 ```
@@ -110,7 +110,7 @@ distillmd mcp --http --root ~/shared-docs --allowed-hosts distill.example.com
 ### Hooks: make your agent read Markdown instead of the binary
 
 ```bash
-npm i -g distillmd
+npm i -g distill-llm
 distillmd hooks install --claude     # Claude Code
 distillmd hooks install --opencode   # OpenCode
 ```
@@ -132,7 +132,7 @@ Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session.
 ### CLI
 
 ```bash
-npx distillmd convert report.pdf deck.pptx --out md/
+npx distill-llm convert report.pdf deck.pptx --out md/
 ```
 
 | Option | Does |

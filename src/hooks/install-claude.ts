@@ -24,7 +24,7 @@ function serialize(settings: Json): string {
 }
 
 function isOwnCommand(command: unknown): boolean {
-  return typeof command === 'string' && command.includes('distillmd') && /hook claude\s*$/.test(command);
+  return typeof command === 'string' && /distill(md|-llm)/.test(command) && /hook claude\s*$/.test(command);
 }
 
 function isOwnHook(hook: unknown): boolean {
