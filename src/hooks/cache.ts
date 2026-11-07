@@ -1,16 +1,17 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BOOSTER_ORDER, DEFAULT_ACTIVE } from '../core/boosters/pipeline';
-import { DEFAULT_MAX_BYTES } from '../node/distill';
 import type { Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
+import { DEFAULT_MAX_BYTES } from '../node/limits';
 
 export interface CacheDeps {
-  distiller: Distiller;
+  getDistiller: () => Promise<Distiller>;
   cacheDir: string;
   version: string;
+  liteparseVersion: string;
   maxBytes?: number;
 }
 
@@ -23,8 +24,8 @@ export interface CachedConversion {
 const KEY_LENGTH = 32;
 const ACTIVE_BOOSTERS = BOOSTER_ORDER.filter((id) => DEFAULT_ACTIVE.has(id)).join(',');
 
-async function cacheKey(version: string, path: string): Promise<string> {
-  const hash = createHash('sha256').update(version).update('\0').update(ACTIVE_BOOSTERS).update('\0');
+async function cacheKey(version: string, liteparseVersion: string, path: string): Promise<string> {
+  const hash = createHash('sha256').update(version).update('\0').update(liteparseVersion).update('\0').update(ACTIVE_BOOSTERS).update('\0');
   for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
   return hash.digest('hex').slice(0, KEY_LENGTH);
 }
@@ -43,17 +44,20 @@ export async function convertCached(path: string, deps: CacheDeps): Promise<Cach
   if (info.size > maxBytes) throw new DistillError('too_large', `File exceeds the ${maxBytes} byte limit`);
 
   const outDir = join(deps.cacheDir, 'out');
-  const mdPath = join(outDir, `${await cacheKey(deps.version, path)}.md`);
+  const mdPath = join(outDir, `${await cacheKey(deps.version, deps.liteparseVersion, path)}.md`);
 
   if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true };
 
-  const result = await deps.distiller.distillFile(path);
+  const distiller = await deps.getDistiller();
+  const result = await distiller.distillFile(path);
+  if (result.markdown.trim() === '') throw new DistillError('parse_failed', 'Conversion produced no text');
   const header = `<!-- distill: ${result.name} · ${result.tokens.raw} → ${result.tokens.out} tokens -->`;
-  await mkdir(outDir, { recursive: true });
+  await mkdir(outDir, { recursive: true, mode: 0o700 });
+  await chmod(outDir, 0o700).catch(() => {});
 
   const tmpPath = `${mdPath}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`;
   try {
-    await writeFile(tmpPath, `${header}\n\n${result.markdown}`);
+    await writeFile(tmpPath, `${header}\n\n${result.markdown}`, { mode: 0o600 });
     await rename(tmpPath, mdPath);
   } catch (error) {
     await rm(tmpPath, { force: true });

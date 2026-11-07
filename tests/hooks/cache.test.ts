@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Distiller } from '../../src/node/distill';
-import { convertCached } from '../../src/hooks/cache';
+import { convertCached as convertWith } from '../../src/hooks/cache';
+import type { CacheDeps } from '../../src/hooks/cache';
 import { DistillError } from '../../src/node/errors';
 
 function fakeDistiller(impl?: () => Promise<never>) {
@@ -19,6 +20,11 @@ function fakeDistiller(impl?: () => Promise<never>) {
     distillFile: ReturnType<typeof vi.fn>;
   };
 }
+
+type TestDeps = Omit<CacheDeps, 'getDistiller' | 'liteparseVersion'> & { distiller: Distiller; liteparseVersion?: string };
+
+const convertCached = (path: string, { distiller, liteparseVersion = '1.0.0', ...rest }: TestDeps) =>
+  convertWith(path, { ...rest, liteparseVersion, getDistiller: async () => distiller });
 
 describe('convertCached', () => {
   let dir: string;
@@ -119,5 +125,61 @@ describe('convertCached', () => {
     expect(a.mdPath).toBe(b.mdPath);
     const entries = await readdir(join(cacheDir, 'out'));
     expect(entries).toEqual([`${a.mdPath.split('/').pop()}`]);
+  });
+
+  it('does not call getDistiller on a cache hit', async () => {
+    const distiller = fakeDistiller();
+    await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    const getDistiller = vi.fn(async () => distiller);
+    const hit = await convertWith(file, { getDistiller, cacheDir, version: '1.0.0', liteparseVersion: '1.0.0' });
+
+    expect(hit.cached).toBe(true);
+    expect(getDistiller).not.toHaveBeenCalled();
+  });
+
+  it('calls getDistiller once on a miss', async () => {
+    const distiller = fakeDistiller();
+    const getDistiller = vi.fn(async () => distiller);
+    await convertWith(file, { getDistiller, cacheDir, version: '1.0.0', liteparseVersion: '1.0.0' });
+
+    expect(getDistiller).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses another key when the liteparse version changes', async () => {
+    const distiller = fakeDistiller();
+    const a = await convertCached(file, { distiller, cacheDir, version: '1.0.0', liteparseVersion: '2.18.0' });
+    const b = await convertCached(file, { distiller, cacheDir, version: '1.0.0', liteparseVersion: '2.19.0' });
+
+    expect(b.mdPath).not.toBe(a.mdPath);
+    expect(b.cached).toBe(false);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace only', ' \n\t\n'],
+  ])('rejects %s output without writing the cache', async (_label, markdown) => {
+    const distiller = fakeDistiller(async () => ({ name: 'report.pdf', markdown, tokens: { raw: 5, out: 0 } }) as never);
+    const error = await convertCached(file, { distiller, cacheDir, version: '1.0.0' }).catch((e) => e);
+
+    expect(error).toBeInstanceOf(DistillError);
+    expect(error.code).toBe('parse_failed');
+    expect(error.message).toBe('Conversion produced no text');
+    expect(await readdir(join(cacheDir, 'out')).catch(() => [])).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32')('creates the out directory 0700 and the markdown 0600', async () => {
+    const distiller = fakeDistiller();
+    const { mdPath } = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+
+    expect((await stat(join(cacheDir, 'out'))).mode & 0o777).toBe(0o700);
+    expect((await stat(mdPath)).mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === 'win32')('tightens an existing out directory', async () => {
+    await mkdir(join(cacheDir, 'out'), { recursive: true });
+    await chmod(join(cacheDir, 'out'), 0o755);
+    await convertCached(file, { distiller: fakeDistiller(), cacheDir, version: '1.0.0' });
+
+    expect((await stat(join(cacheDir, 'out'))).mode & 0o777).toBe(0o700);
   });
 });

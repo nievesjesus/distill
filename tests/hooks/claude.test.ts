@@ -247,6 +247,19 @@ describe('run hook claude', () => {
     expect(h.exit.mock.calls.every(([code]) => code === 0)).toBe(true);
   });
 
+  it('does not open the distiller when the conversion is already cached', async () => {
+    const file = pdf();
+    const first = harness(JSON.stringify(payload({ file_path: file })));
+    await run(['hook', 'claude'], first.deps);
+    expect(first.openDistiller).toHaveBeenCalledTimes(1);
+
+    const second = harness(JSON.stringify(payload({ file_path: file })));
+    await run(['hook', 'claude'], second.deps);
+    expect(second.stdout).toHaveLength(1);
+    expect(second.openDistiller).not.toHaveBeenCalled();
+    expect(second.close).not.toHaveBeenCalled();
+  });
+
   it('exits 0 on extra arguments and unknown options', async () => {
     for (const extra of [['extra'], ['--bogus']]) {
       const h = harness(JSON.stringify(payload({ file_path: join(proj, 'b.png') })));
@@ -276,6 +289,14 @@ describe('run hook convert', () => {
     await run(['hook', 'convert', pdf()], h.deps);
     expect(h.stdout).toEqual([]);
     expect(h.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('resolves relative files against the injected cwd', async () => {
+    pdf('rel.pdf');
+    const h = harness('');
+    await run(['hook', 'convert', 'rel.pdf'], { ...h.deps, cwd: proj });
+    expect(h.exit).not.toHaveBeenCalled();
+    expect(JSON.parse(h.stdout[0]).path).toMatch(/\.md$/);
   });
 
   it('exits 1 for unsupported kinds without opening the distiller', async () => {

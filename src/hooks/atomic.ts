@@ -20,7 +20,7 @@ export function writeAtomic(path: string, content: string): void {
   mkdirSync(dirname(target), { recursive: true });
   const tmp = `${target}.${process.pid}.tmp`;
   try {
-    writeFileSync(tmp, content);
+    writeFileSync(tmp, content, mode === undefined ? undefined : { mode });
     if (mode !== undefined) chmodSync(tmp, mode);
     renameSync(tmp, target);
   } catch (error) {

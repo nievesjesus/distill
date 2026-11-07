@@ -14,14 +14,10 @@ import { lineDiff } from '../hooks/diff';
 import { normalizeSettings, planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
 import { isOwnOpencodePlugin, opencodePluginPath, planOpencodeInstall } from '../hooks/install-opencode';
 import { isHookConvertible } from '../hooks/supported';
-import { openDistiller as defaultOpenDistiller } from '../node/distill';
 import type { Distiller } from '../node/distill';
-import { serveMcpHttp as defaultServeMcpHttp } from '../mcp/http';
 import { cwdResolver, resolveRoots, rootResolver } from '../mcp/roots';
-import { createMcpServer } from '../mcp/server';
-import { connectStdio as defaultConnectStdio } from '../mcp/stdio';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { startServer as defaultStartServer } from '../server/start';
+import { readLiteparseVersion } from '../node/versions';
 import { parseBoosters, parseRate, runConvert } from './convert';
 import type { ConvertOptions } from './convert';
 
@@ -149,11 +145,11 @@ interface WebOptions {
 }
 
 export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
-  const startServer = deps.startServer ?? defaultStartServer;
+  const startServer = deps.startServer ?? (async (opts) => (await import('../server/start')).startServer(opts));
   const openUrl = deps.openUrl ?? openInBrowser;
-  const openDistiller = deps.openDistiller ?? defaultOpenDistiller;
-  const connectStdio = deps.connectStdio ?? defaultConnectStdio;
-  const serveMcpHttp = deps.serveMcpHttp ?? defaultServeMcpHttp;
+  const openDistiller = deps.openDistiller ?? (async (maxBytes) => (await import('../node/distill')).openDistiller(maxBytes));
+  const connectStdio = deps.connectStdio ?? (async (server, onClose) => (await import('../mcp/stdio')).connectStdio(server, onClose));
+  const serveMcpHttp = deps.serveMcpHttp ?? (async (opts) => (await import('../mcp/http')).serveMcpHttp(opts));
   const stdout = deps.stdout ?? ((line: string) => process.stdout.write(`${line}\n`));
   const stderr = deps.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
   const exit = deps.exit ?? ((code: number) => process.exit(code));
@@ -255,7 +251,6 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--root <dir>', 'directory the HTTP server may read from (repeatable, default: cwd)', (value: string, previous: string[] = []) => [...previous, value])
     .option('--allowed-hosts <list>', 'comma-separated hostnames accepted when bound to a non-loopback host', parseHostList)
     .action(async (options: McpOptions) => {
-      const cwd = process.cwd();
       let distiller: Distiller;
       try {
         distiller = await openDistiller();
@@ -264,6 +259,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         exit(1);
         return;
       }
+      const { createMcpServer } = await import('../mcp/server');
       const build = (resolvePath: (path: string) => Promise<string>) => () =>
         createMcpServer({ distiller, health: () => distiller.health(), resolvePath });
 
@@ -336,11 +332,12 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         ? error.message
         : String(error);
 
-  const convertViaCache = async (distiller: Distiller, absPath: string): Promise<string> =>
+  const convertViaCache = async (getDistiller: () => Promise<Distiller>, absPath: string): Promise<string> =>
     (await convertCached(absPath, {
-      distiller,
+      getDistiller,
       cacheDir,
       version: readVersion(),
+      liteparseVersion: readLiteparseVersion(),
     })).mdPath;
 
   hook
@@ -350,6 +347,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .allowUnknownOption()
     .action(async () => {
       let distiller: Distiller | null = null;
+      const getDistiller = async (): Promise<Distiller> => (distiller ??= await openDistiller());
       try {
         let payload: unknown;
         try {
@@ -365,8 +363,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         }
         const result = await handleClaudePreToolUse(payload, async (absPath) => {
           try {
-            distiller ??= await openDistiller();
-            return await convertViaCache(distiller, absPath);
+            return await convertViaCache(getDistiller, absPath);
           } catch (error) {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
@@ -391,10 +388,10 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         return;
       }
       let distiller: Distiller | null = null;
+      const getDistiller = async (): Promise<Distiller> => (distiller ??= await openDistiller());
       try {
-        distiller = await openDistiller();
-        const absPath = isAbsolute(file) ? file : resolve(process.cwd(), file);
-        const path = await convertViaCache(distiller, absPath);
+        const absPath = isAbsolute(file) ? file : resolve(cwd, file);
+        const path = await convertViaCache(getDistiller, absPath);
         stdout(JSON.stringify({ path }));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
