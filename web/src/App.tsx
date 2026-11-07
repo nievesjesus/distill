@@ -17,7 +17,7 @@ const [taglineStart, taglineAccent, taglineEnd] = S.tagline;
 
 function AppBody() {
   const { settings, update, toggleBooster, toggleLingua } = useSettings();
-  const { files, add, remove, clear, markExported, healthError, health, linguaFailed, retryLingua } = useFiles(settings);
+  const { files, add, remove, clear, markExported, healthError, health, linguaFailed, retryLingua, installLingua } = useFiles(settings);
   const announce = useAnnounce();
   const pickerRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -68,6 +68,8 @@ function AppBody() {
     const previous = previousLinguaState.current;
     previousLinguaState.current = linguaState;
     if (linguaState === 'ready' && previous !== undefined && previous !== 'ready') announce(S.linguaReady);
+    if (previous === 'installing' && linguaState === 'install_failed') announce(S.linguaInstallFailedAnnounce);
+    if (previous === 'installing' && (linguaState === 'idle' || linguaState === 'downloading') && health?.lingua?.installed) announce(S.linguaInstalled);
   }, [linguaState, announce]);
 
   const mode: ViewMode = settings.detailed ? 'detailed' : 'compact';
@@ -98,6 +100,10 @@ function AppBody() {
             linguaFailed={linguaFailed}
             onLinguaChange={(patch) => update({ lingua: { ...settings.lingua, ...patch } })}
             onRetryLingua={retryLingua}
+            onInstallLingua={() => {
+              update({ lingua: { ...settings.lingua, on: true } });
+              installLingua();
+            }}
           />
           {files.length === 0 ? (
             <EmptyState dragging={dragging} onBrowse={() => pickerRef.current?.click()} />

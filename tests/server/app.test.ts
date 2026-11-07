@@ -43,10 +43,11 @@ function setup(
     ...opts.parser,
   };
   const lingua: Lingua = {
-    status: () => ({ installed: opts.installed ?? false, model: 'tinybert', state: 'idle', progress: 0 }),
+    status: () => ({ installed: opts.installed ?? false, installable: true, model: 'tinybert', state: 'idle', progress: 0 }),
     async probe() {
       return opts.installed ?? false;
     },
+    async install() {},
     async compress(text) {
       return text.toUpperCase();
     },
@@ -91,7 +92,7 @@ describe('server app', () => {
       version: '1.2.3',
       liteparseVersion: '4.5.6',
       libreoffice: false,
-      lingua: { installed: false, model: 'tinybert', state: 'idle', progress: 0 },
+      lingua: { installed: false, installable: true, model: 'tinybert', state: 'idle', progress: 0 },
       maxBytes: 777,
     });
   });
@@ -564,6 +565,103 @@ describe('server app', () => {
       const { app } = setup({ guardLoopback: false });
       const res = await app.request('/api/health', { headers: { host: 'evil.example' } });
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe('POST /api/lingua/install', () => {
+    const statusWith = (state: 'idle' | 'installing', installed = false) => () => ({
+      installed,
+      installable: true,
+      model: 'tinybert' as const,
+      state,
+      progress: 0,
+    });
+
+    it('starts the installation and answers 202 with the status', async () => {
+      const install = vi.fn(async () => undefined);
+      let installing = false;
+      const { app } = setup({
+        lingua: {
+          install: async () => {
+            installing = true;
+            await install();
+          },
+          status: () => statusWith(installing ? 'installing' : 'idle')(),
+        },
+      });
+      const res = await app.request('/api/lingua/install', { method: 'POST' });
+      expect(res.status).toBe(202);
+      expect(((await res.json()) as Health['lingua']).state).toBe('installing');
+      expect(install).toHaveBeenCalledTimes(1);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+    });
+
+    it('is idempotent while an installation is running', async () => {
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ lingua: { install, status: statusWith('installing') } });
+      const res = await app.request('/api/lingua/install', { method: 'POST' });
+      expect(res.status).toBe(202);
+      expect(install).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent once LLMLingua-2 is installed', async () => {
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ lingua: { install, status: statusWith('idle', true) } });
+      const res = await app.request('/api/lingua/install', { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as Health['lingua']).installed).toBe(true);
+      expect(install).not.toHaveBeenCalled();
+    });
+
+    it('answers 503 lingua_unavailable when installing is not possible here', async () => {
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ lingua: { install, status: () => ({ installed: false, installable: false, model: 'tinybert', state: 'idle', progress: 0 }) } });
+      const res = await app.request('/api/lingua/install', { method: 'POST' });
+      expect(res.status).toBe(503);
+      expect(((await res.json()) as ApiError).code).toBe('lingua_unavailable');
+      expect(install).not.toHaveBeenCalled();
+    });
+
+    it('does not leak an installer failure and keeps the server alive', async () => {
+      const install = vi.fn(async () => {
+        throw new Error('npm exploded in /home/someone');
+      });
+      const { app } = setup({ lingua: { install } });
+      const res = await app.request('/api/lingua/install', { method: 'POST' });
+      expect(res.status).toBe(202);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect((await app.request('/api/health')).status).toBe(200);
+    });
+
+    it('rejects a foreign Origin with 403 and does not install', async () => {
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ guardLoopback: true, lingua: { install } });
+      const res = await app.request('/api/lingua/install', { method: 'POST', headers: { host: 'localhost:4321', origin: 'https://evil.example' } });
+      expect(res.status).toBe(403);
+      expect(install).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-loopback Host with 403', async () => {
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ guardLoopback: true, lingua: { install } });
+      const res = await app.request('/api/lingua/install', { method: 'POST', headers: { host: 'evil.example' } });
+      expect(res.status).toBe(403);
+      expect(install).not.toHaveBeenCalled();
+    });
+
+    it('accepts a loopback Origin', async () => {
+      const install = vi.fn(async () => undefined);
+      const { app } = setup({ guardLoopback: true, lingua: { install } });
+      const res = await app.request('/api/lingua/install', { method: 'POST', headers: { host: '127.0.0.1:4321', origin: 'http://127.0.0.1:4321' } });
+      expect(res.status).toBe(202);
+      expect(install).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not take an install location from the request', async () => {
+      const install = vi.fn(async (...args: unknown[]) => void args);
+      const { app } = setup({ lingua: { install } });
+      await app.request('/api/lingua/install?dir=/tmp/evil', { method: 'POST', body: JSON.stringify({ dir: '/tmp/evil' }), headers: { 'content-type': 'application/json' } });
+      expect(install).toHaveBeenCalledWith();
     });
   });
 });

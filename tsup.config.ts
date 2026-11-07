@@ -10,7 +10,7 @@ export default defineConfig({
   clean: false,
   sourcemap: false,
   dts: false,
-  external: ['@llamaindex/liteparse', '@atjsh/llmlingua-2', '@huggingface/transformers', 'js-tiktoken'],
+  external: ['@llamaindex/liteparse'],
   onSuccess: async () => {
     chmodSync('dist/cli.js', 0o755);
   },

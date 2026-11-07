@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiError, ErrorCode, FileKind, Health } from '@core/types';
 import { detectKind } from '@core/kind';
-import { compress, deleteFile, getHealth, parseFile } from '../api';
+import { compress, deleteFile, getHealth, installLingua as requestInstall, parseFile } from '../api';
 import { clearJsonCache, forgetJson } from '../lib/json-cache';
 import { ERROR_MESSAGES } from '../strings';
 import { distill, forgetRaw } from '../worker/client';
@@ -42,6 +42,7 @@ export interface FilesApi {
   health: Health | null;
   linguaFailed: boolean;
   retryLingua: () => void;
+  installLingua: () => void;
 }
 
 const KNOWN_CODES = Object.keys(ERROR_MESSAGES) as ErrorCode[];
@@ -385,7 +386,7 @@ export function useFiles(settings: Settings): FilesApi {
     if (!linguaActive) setLinguaFailed(false);
   }, [files, linguaActive, rate, model, retryNonce, health, patch]);
 
-  const polling = health?.lingua?.state === 'downloading' || pollRequested;
+  const polling = health?.lingua?.state === 'downloading' || health?.lingua?.state === 'installing' || pollRequested;
 
   useEffect(() => {
     if (!polling) return;
@@ -415,5 +416,22 @@ export function useFiles(settings: Settings): FilesApi {
     setRetryNonce((current) => current + 1);
   }, []);
 
-  return { files, add, remove, clear, markExported, healthError, health, linguaFailed, retryLingua };
+  const installLingua = useCallback(() => {
+    requestInstall().then(
+      (lingua) => {
+        if (mounted.current) setHealth((current) => (current ? { ...current, lingua } : current));
+      },
+      () => {
+        if (!mounted.current) return;
+        getHealth().then(
+          (next) => {
+            if (mounted.current) setHealth(next);
+          },
+          () => undefined,
+        );
+      },
+    );
+  }, []);
+
+  return { files, add, remove, clear, markExported, healthError, health, linguaFailed, retryLingua, installLingua };
 }

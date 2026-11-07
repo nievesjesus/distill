@@ -210,6 +210,15 @@ export function createApp(deps: AppDeps): Hono {
     }
   });
 
+  app.post('/api/lingua/install', (c) => {
+    const before = deps.lingua.status();
+    if (before.installed) return c.json(before);
+    if (before.state === 'installing') return c.json(before, 202);
+    if (!before.installable) return fail(c, 'lingua_unavailable', 'LLMLingua-2 cannot be installed here');
+    deps.lingua.install().catch(() => undefined);
+    return c.json(deps.lingua.status(), 202);
+  });
+
   app.all('/api/*', (c) => fail(c, 'not_found', 'Not found'));
 
   if (deps.webRoot) {

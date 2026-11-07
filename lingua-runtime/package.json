@@ -1,0 +1,13 @@
+{
+  "name": "distillmd-lingua-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LLMLingua-2 stack that distill installs on demand",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "@atjsh/llmlingua-2": "3.0.0",
+    "@huggingface/transformers": "4.3.2",
+    "js-tiktoken": "1.0.21"
+  }
+}

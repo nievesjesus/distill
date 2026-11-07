@@ -18,7 +18,7 @@ Tiene tres caras sobre el mismo núcleo:
 **Éxito significa:**
 - `npx distillmd` abre la web en un solo comando, sin configurar nada, y un PDF se convierte en segundos.
 - El ahorro de tokens se ve claro y es real: se mide con un tokenizer real, no se estima.
-- Todo corre en la máquina del usuario: ningún archivo sale de ella y no hay telemetría. Las únicas descargas son de datos, nunca de documentos: el modelo de LLMLingua-2, si el usuario lo activa, y los datos de Tesseract en inglés (~15 MB, desde GitHub) la primera vez que se hace OCR, salvo que ya existan en local (§4.1). El README lo dice tal cual.
+- Todo corre en la máquina del usuario: ningún archivo sale de ella y no hay telemetría. Las únicas descargas son de datos, nunca de documentos: el runtime de LLMLingua-2 desde npm y su modelo, solo si el usuario lo activa, y los datos de Tesseract en inglés (~15 MB, desde GitHub) la primera vez que se hace OCR, salvo que ya existan en local (§4.1). El README lo dice tal cual.
 - La UI es compacta por defecto, con los detalles a un clic, y se ve bien en una captura para X.
 
 ## 2. Fases
@@ -44,7 +44,8 @@ distillmd/
 │   │   └── types.ts          contratos compartidos
 │   ├── node/                 solo en Node
 │   │   ├── parse.ts          wrapper de LiteParse (pool, timeout, detección de LibreOffice)
-│   │   ├── lingua.ts         LLMLingua-2 con @atjsh/llmlingua-2 (carga perezosa)
+│   │   ├── lingua.ts         LLMLingua-2 con @atjsh/llmlingua-2 (carga perezosa desde raíces)
+│   │   ├── lingua-install.ts instalación bajo demanda del runtime (npm ci en la caché)
 │   │   └── capabilities.ts   qué está disponible (LibreOffice, modelo descargado)
 │   ├── server/               Hono + @hono/node-server: API y archivos estáticos
 │   ├── cli/                  entrada `distillmd` (commander): web | convert | mcp | hooks
@@ -101,7 +102,15 @@ Valores por defecto: 1 a 4 activos, `lingua` apagado. El switch maestro "Optimiz
 - El modelo por defecto es TinyBERT (`atjsh/llmlingua-2-js-tinybert-meetingbank`, unos 57 MB). En Detailed se puede elegir MobileBERT (99 MB) o XLM-RoBERTa (2.2 GB).
 - El modelo se descarga la primera vez que se activa, a la caché de transformers.js en `~/.cache/distillmd/models`. La UI muestra el progreso de la descarga. Después corre sin red.
 - `rate` (fracción de tokens que se conserva) vale 0.6 por defecto, se ajusta en Detailed entre 0.3 y 0.9 y se aplica por fragmentos de unos 512 tokens.
-- Las dependencias de LLMLingua van como `optionalDependencies` y se importan de forma dinámica. Si no están instaladas, el switch aparece deshabilitado con el texto "not installed".
+- **Instalación bajo demanda (decisión del usuario, 2026-11-06).** `@atjsh/llmlingua-2`, `@huggingface/transformers` y `js-tiktoken` ya no son dependencias de `distillmd`: `npx distillmd` no baja los ~400 MB de onnxruntime ni el postinstall que en Linux x64 trae CUDA desde NuGet. Las tres viven en `lingua-runtime/` (`package.json` con versiones exactas y `package-lock.json` con integridad, ambos dentro del tarball de npm) y se instalan cuando el usuario lo pide.
+- **Raíces de carga**, en este orden; se usa la primera donde las tres resuelven y su ruta real queda dentro de la raíz, sin buscar nunca en directorios ancestros:
+  1. el `node_modules` propio de distill (desarrollo);
+  2. `process.resourcesPath/lingua/node_modules` (app de escritorio full);
+  3. `~/.cache/distillmd/lingua/node_modules` (instalación bajo demanda).
+  El `import()` usa la ruta ESM resuelta con el mapa `exports` (condiciones `node`, `import`, `default`), de modo que `@atjsh/llmlingua-2` y la configuración de `env.cacheDir` comparten la misma instancia de transformers.
+- **Instalación.** `POST /api/lingua/install` (con el guard de loopback/Origin) es idempotente y de una sola ejecución a la vez: copia `lingua-runtime/package.json` y `package-lock.json` a un directorio temporal junto a `~/.cache/distillmd/lingua`, corre `npm ci --omit=dev --ignore-scripts --no-audit --no-fund` ahí (sin shell, con timeout de 10 min), verifica que los tres paquetes existan y recién entonces renombra el temporal. Un fallo borra el temporal y deja `install_failed` con un código (`npm_missing`, `npm_failed`, `timeout`, `verify_failed`, `filesystem`) y el mensaje de npm recortado y sin rutas del usuario. `--ignore-scripts` omite el postinstall de onnxruntime-node (que solo agrega CUDA en Linux x64; los binarios CPU vienen en el tarball) y sharp usa sus paquetes `@img/sharp-*` precompilados.
+- **`installable`.** Es `true` cuando se encuentra `npm` (el `npm-cli.js` de `npm_execpath`, el que trae Node junto al ejecutable, o `npm` en el PATH fuera de Windows) y responde a `--version`; es siempre `false` dentro de Electron. Por eso en la app lite la fila dice "Available in distill full" con un link al release, y en npx, la CLI y Docker dice "Install (~400 MB)".
+- La app de escritorio *full* empaqueta el mismo `lingua-runtime` (`npm ci --ignore-scripts` en `build/lingua`) como `extraResources` (`lingua/`); en Docker se instala bajo demanda en el volumen de caché.
 
 ### 4.4 Conteo de tokens
 
@@ -114,10 +123,11 @@ Por defecto escucha solo en `127.0.0.1:4321` (`--port`, `--host`). No tiene aute
 
 | Método y ruta | Entrada | Salida |
 |---------------|---------|--------|
-| `GET /api/health` | — | `{ version, liteparseVersion, maxBytes, libreoffice: bool, lingua: { installed, model, state: idle\|downloading\|ready\|error, progress: 0–1 } }` |
+| `GET /api/health` | — | `{ version, liteparseVersion, maxBytes, libreoffice: bool, lingua: { installed, installable, model, state: idle\|downloading\|ready\|error\|installing\|install_failed, progress: 0–1, installError?: { code, message } } }` |
 | `POST /api/parse` | multipart: `file` | `{ id, name, kind, pages, markdown, ms }`, o un error `{ code, message }` |
 | `GET /api/files/:id/json` | — | JSON de LiteParse con bboxes |
 | `DELETE /api/files/:id` | — | `204`, también si el id no existe. Es la única ruta de borrado: «Clear» borra id por id los que el cliente conoce, no hay borrado comodín |
+| `POST /api/lingua/install` | — | `202` con el estado de `lingua` mientras instala (`200` si ya está instalado, `503 lingua_unavailable` si no se puede instalar aquí) |
 | `POST /api/compress` | `{ text, rate, model? }` | `{ text }` (puede tardar; responde 503 si el modelo no está listo) |
 | `GET /*` | — | SPA |
 
@@ -187,8 +197,8 @@ El usuario pidió un binario que se descarga y se ejecuta. Un ejecutable de un s
 - **Seguridad:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, `spellcheck: false` y un preload mínimo en sandbox que expone solo `window.distillDesktop` con `onSaved(callback)` y `reveal(id)`. Los canales IPC (`distill:saved`, `distill:reveal`) validan el remitente y `reveal` recibe un id que el proceso principal traduce a una ruta guardada, nunca una ruta del renderer. Guardar usa el diálogo nativo y recuerda la última carpeta en `desktop-prefs.json`. La ventana no puede navegar fuera de su origen: los links externos (GitHub, LibreOffice) se abren en el navegador del sistema con `shell.openExternal`, y solo si son `https:`. `setWindowOpenHandler` deniega las ventanas nuevas.
 - **LiteParse dentro de Electron:** el `fork()` del pool debe arrancar el binario de Electron en modo Node (`ELECTRON_RUN_AS_NODE`). Los archivos nativos y `pool-worker.js` van fuera del asar (`asarUnpack`). Una prueba de humo en la app empaquetada lo valida.
 - **Variantes:**
-  - *lite* excluye `@atjsh/llmlingua-2`, `@huggingface/transformers`, `js-tiktoken`, `onnxruntime-*` y `sharp`; la UI muestra LLMLingua-2 como "not installed".
-  - *full* los incluye.
+  - *lite* no trae `lingua/` en `resources`; la UI muestra "Available in distill full".
+  - *full* trae `resources/lingua/node_modules` con el runtime de `lingua-runtime/` (fuera del asar, para que cargue el binario de onnxruntime); `scripts/check-variant.mjs` lo verifica.
   - Artefactos: `Distill-<lite|full>-<versión>-<os>-<arch>.<dmg|exe|AppImage>`.
 - **Plataformas:** macOS arm64 y x64 (`.dmg`), Windows x64 (instalador NSIS `.exe`), Linux x64 (`.AppImage`).
 - **Firma:** la v0.1 sale sin Developer ID ni notarización. En macOS lleva firma *ad hoc* (`identity: "-"`), porque sin ninguna firma Apple Silicon la reporta como "dañada". El README explica cómo abrirla la primera vez: en macOS 15+, Configuración del Sistema → Privacidad y seguridad → "Abrir de todas formas"; en macOS 14 o anterior, clic derecho → Abrir; si macOS dice "dañada", `xattr -dr com.apple.quarantine`. En Windows, "Más información → Ejecutar de todas formas". La firma con Developer ID y la notarización quedan para cuando existan las cuentas.

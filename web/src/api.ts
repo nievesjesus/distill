@@ -60,3 +60,7 @@ export async function compress(text: string, rate: number, model: LinguaModel, s
 export async function deleteFile(id: string): Promise<void> {
   await request(`/api/files/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
+
+export async function installLingua(): Promise<Health['lingua']> {
+  return (await request('/api/lingua/install', { method: 'POST' })).json();
+}

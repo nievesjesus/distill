@@ -8,9 +8,7 @@ files:
   - node_modules/**
 asarUnpack:
   - node_modules/@llamaindex/**
-  - node_modules/onnxruntime-node/**
-  - node_modules/sharp/**
-  - node_modules/@img/**
+afterPack: scripts/after-pack-lingua.cjs
 extraResources:
   - from: .cache/tessdata
     to: tessdata

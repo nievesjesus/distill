@@ -75,6 +75,8 @@ jobs:
           done
           cat health.json
           grep -q '"libreoffice":true' health.json
+          grep -q '"installable":true' health.json
+          grep -q '"installed":false' health.json
       - name: Parse a sample PDF
         run: |
           npx tsx scripts/make-sample-pdf.ts "$RUNNER_TEMP/sample.pdf"

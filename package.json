@@ -13,7 +13,9 @@
     "distill": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "lingua-runtime/package.json",
+    "lingua-runtime/package-lock.json"
   ],
   "scripts": {
     "test": "vitest run",
@@ -28,15 +30,18 @@
     "test:desktop": "npm run build:desktop && playwright test --config playwright.desktop.config.ts",
     "fetch:tessdata": "node scripts/fetch-tessdata.mjs",
     "dist:lite": "npm run fetch:tessdata && electron-builder --config electron-builder.lite.yml",
-    "dist:full": "npm run fetch:tessdata && electron-builder --config electron-builder.full.yml",
+    "dist:full": "npm run fetch:tessdata && npm run prepare:lingua && electron-builder --config electron-builder.full.yml",
+    "prepare:lingua": "node scripts/prepare-lingua.mjs",
     "check:variant": "node scripts/check-variant.mjs",
     "make:icon": "node scripts/make-icon.mjs"
   },
   "devDependencies": {
+    "@atjsh/llmlingua-2": "3.0.0",
     "@electron/asar": "^3.4.1",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/space-grotesk": "^5.3.0",
+    "@huggingface/transformers": "4.3.2",
     "@playwright/test": "^1.65.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -47,6 +52,7 @@
     "electron": "^45.2.3",
     "electron-builder": "^26.18.0",
     "fflate": "^0.8.3",
+    "js-tiktoken": "1.0.21",
     "jsdom": "^29.1.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -58,15 +64,10 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
-    "@huggingface/transformers": "^4.3.2",
     "@llamaindex/liteparse": "^2.18.0",
     "commander": "^14.0.0",
     "gpt-tokenizer": "^4.1.0",
-    "hono": "^4.13.16",
-    "js-tiktoken": "^1.0.21"
-  },
-  "optionalDependencies": {
-    "@atjsh/llmlingua-2": "^3.0.0"
+    "hono": "^4.13.16"
   },
   "main": "dist/desktop/main.js",
   "exports": {

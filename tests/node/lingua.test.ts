@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { createLingua, findPackageRoot, packagesInstalled, resolveScoped } from '../../src/node/lingua';
+import { dirname, join } from 'node:path';
+import { createLingua, findLinguaRoot, findPackageRoot, linguaRoots, resolveInRoot } from '../../src/node/lingua';
 import { countTokens } from '../../src/core/tokens';
 
 interface FakeCall { text: string; rate: number }
@@ -97,6 +97,7 @@ describe('createLingua', () => {
     const f = makeFake();
     expect(createLingua({ cacheDir: '/tmp/x', load: f.load }).status()).toEqual({
       installed: true,
+      installable: false,
       model: 'tinybert',
       state: 'idle',
       progress: 0,
@@ -281,7 +282,7 @@ describe('createLingua', () => {
     mobileCb({ status: 'progress_total', progress: 30 });
     tiny.resolve({ promptCompressor: { compress: async (t) => t } });
     await first;
-    expect(l.status()).toEqual({ installed: true, model: 'mobilebert', state: 'downloading', progress: 0.3 });
+    expect(l.status()).toEqual({ installed: true, installable: false, model: 'mobilebert', state: 'downloading', progress: 0.3 });
     mobile.resolve({ promptCompressor: { compress: async (t) => t } });
     await second;
     expect(l.status()).toMatchObject({ model: 'mobilebert', state: 'ready', progress: 1 });
@@ -336,7 +337,7 @@ describe('createLingua', () => {
     expect(l.status()).toMatchObject({ installed: true, state: 'idle' });
   });
 
-  it('default probe resolves the installed optional packages', async () => {
+  it('default probe resolves the development node_modules', async () => {
     const l = createLingua({ cacheDir: '/tmp/x', load: makeFake().load });
     await expect(l.probe()).resolves.toBe(true);
   });
@@ -390,59 +391,235 @@ describe('createLingua', () => {
   });
 });
 
-describe('scoped package resolution', () => {
-  const makePkg = (dir: string, name: string) => {
+describe('lingua roots', () => {
+  const names = ['@atjsh/llmlingua-2', '@huggingface/transformers', 'js-tiktoken'];
+  const makePkg = (dir: string, name: string, manifest: Record<string, unknown> = { main: 'index.js' }) => {
     const pkgDir = join(dir, 'node_modules', name);
     mkdirSync(pkgDir, { recursive: true });
-    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name, version: '1.0.0', main: 'index.js' }));
-    writeFileSync(join(pkgDir, 'index.js'), 'module.exports = {};');
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name, version: '1.0.0', ...manifest }));
+    writeFileSync(join(pkgDir, 'index.js'), 'export default {};');
+    return pkgDir;
   };
-  const makeApp = (tmp: string) => {
-    const app = join(tmp, 'app');
-    mkdirSync(join(app, 'dist'), { recursive: true });
-    writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'distillmd' }));
-    return app;
+  const makeRoot = (tmp: string, label: string) => {
+    const dir = join(tmp, label);
+    mkdirSync(dir, { recursive: true });
+    names.forEach((name) => makePkg(dir, name));
+    return dir;
   };
-  const names = ['@atjsh/llmlingua-2', 'js-tiktoken'];
-
-  it('ignores packages planted in an ancestor node_modules', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'distill-scope-'));
+  const withTmp = (run: (tmp: string) => void) => {
+    const tmp = mkdtempSync(join(tmpdir(), 'distill-roots-'));
     try {
-      names.forEach((name) => makePkg(tmp, name));
-      const app = makeApp(tmp);
+      run(tmp);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  };
+
+  it('finds a package root that has an own distillmd manifest', () => {
+    withTmp((tmp) => {
+      const app = join(tmp, 'app');
+      mkdirSync(join(app, 'dist'), { recursive: true });
+      writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'distillmd' }));
       expect(findPackageRoot(join(app, 'dist'))).toBe(app);
-      expect(packagesInstalled(names, app)).toBe(false);
-      expect(resolveScoped('js-tiktoken', app)).toBeUndefined();
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
+    });
   });
 
-  it('finds packages inside the app node_modules', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'distill-scope-'));
-    try {
-      const app = makeApp(tmp);
-      names.forEach((name) => makePkg(app, name));
-      expect(packagesInstalled(names, app)).toBe(true);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
+  it('builds the root order: distill, desktop resources, then the cache install', () => {
+    expect(linguaRoots({ packageRoot: '/p', resourcesPath: '/r', cacheDir: '/c' })).toEqual(['/p', join('/r', 'lingua'), join('/c', 'lingua')]);
+    expect(linguaRoots({ packageRoot: undefined, resourcesPath: undefined, cacheDir: '/c' })).toEqual([join('/c', 'lingua')]);
   });
 
-  it('accepts hoisted siblings when installed under node_modules', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'distill-scope-'));
-    try {
+  it('picks the first root where all three packages resolve', () => {
+    withTmp((tmp) => {
+      const dev = makeRoot(tmp, 'dev');
+      const cache = makeRoot(tmp, 'cache');
+      expect(findLinguaRoot([dev, cache])).toBe(dev);
+      expect(findLinguaRoot([join(tmp, 'missing'), cache])).toBe(cache);
+    });
+  });
+
+  it('skips a root that is missing one of the three packages', () => {
+    withTmp((tmp) => {
+      const partial = join(tmp, 'partial');
+      mkdirSync(partial);
+      makePkg(partial, '@atjsh/llmlingua-2');
+      makePkg(partial, 'js-tiktoken');
+      const cache = makeRoot(tmp, 'cache');
+      expect(findLinguaRoot([partial, cache])).toBe(cache);
+      expect(findLinguaRoot([partial])).toBeUndefined();
+    });
+  });
+
+  it('never looks in ancestor directories', () => {
+    withTmp((tmp) => {
       names.forEach((name) => makePkg(tmp, name));
-      const installed = join(tmp, 'node_modules', 'distillmd');
-      mkdirSync(installed, { recursive: true });
-      writeFileSync(join(installed, 'package.json'), JSON.stringify({ name: 'distillmd' }));
-      expect(packagesInstalled(names, installed)).toBe(true);
+      const nested = join(tmp, 'a', 'b');
+      mkdirSync(nested, { recursive: true });
+      expect(findLinguaRoot([nested])).toBeUndefined();
+      expect(resolveInRoot('js-tiktoken', nested)).toBeUndefined();
+    });
+  });
+
+  it('rejects a package whose real path leaves the root', () => {
+    withTmp((tmp) => {
+      const outside = join(tmp, 'outside');
+      mkdirSync(outside);
+      const elsewhere = makePkg(outside, 'js-tiktoken');
+      const root = join(tmp, 'root');
+      mkdirSync(join(root, 'node_modules'), { recursive: true });
+      symlinkSync(elsewhere, join(root, 'node_modules', 'js-tiktoken'), 'dir');
+      expect(resolveInRoot('js-tiktoken', root)).toBeUndefined();
+    });
+  });
+
+  it('accepts a symlink that stays inside the root', () => {
+    withTmp((tmp) => {
+      const root = join(tmp, 'root');
+      const store = makePkg(join(root, 'store'), 'js-tiktoken');
+      mkdirSync(join(root, 'node_modules'), { recursive: true });
+      symlinkSync(store, join(root, 'node_modules', 'js-tiktoken'), 'dir');
+      expect(resolveInRoot('js-tiktoken', root)).toBe(join(realpathSync(root), 'store', 'node_modules', 'js-tiktoken', 'index.js'));
+    });
+  });
+
+  it('rejects a package whose manifest names another package', () => {
+    withTmp((tmp) => {
+      const root = join(tmp, 'root');
+      makePkg(root, 'js-tiktoken', { name: 'something-else' });
+      expect(resolveInRoot('js-tiktoken', root)).toBeUndefined();
+    });
+  });
+
+  it('resolves the ESM entry through the exports map, not the CommonJS one', () => {
+    withTmp((tmp) => {
+      const root = join(tmp, 'root');
+      const dir = makePkg(root, '@huggingface/transformers', {
+        main: './dist/t.cjs',
+        exports: { node: { import: { types: './t.d.ts', default: './dist/t.mjs' }, require: { default: './dist/t.cjs' } }, default: './web.js' },
+      });
+      mkdirSync(join(dir, 'dist'));
+      writeFileSync(join(dir, 'dist', 't.mjs'), '');
+      expect(resolveInRoot('@huggingface/transformers', root)).toBe(join(realpathSync(dir), 'dist', 't.mjs'));
+    });
+  });
+
+  it('resolves subpath exports and falls back to main without an exports map', () => {
+    withTmp((tmp) => {
+      const root = join(tmp, 'root');
+      const tik = makePkg(root, 'js-tiktoken', {
+        exports: { './lite': { require: './dist/lite.cjs', default: './dist/lite.js' }, './ranks/o200k_base': { default: './dist/ranks/o200k_base.js' } },
+      });
+      for (const file of ['dist/lite.js', 'dist/ranks/o200k_base.js']) {
+        mkdirSync(dirname(join(tik, file)), { recursive: true });
+        writeFileSync(join(tik, file), '');
+      }
+      expect(resolveInRoot('js-tiktoken', root, './lite')).toBe(join(realpathSync(tik), 'dist', 'lite.js'));
+      expect(resolveInRoot('js-tiktoken', root, './ranks/o200k_base')).toBe(join(realpathSync(tik), 'dist', 'ranks', 'o200k_base.js'));
+      expect(resolveInRoot('js-tiktoken', root, './missing')).toBeUndefined();
+      const plain = makePkg(root, '@atjsh/llmlingua-2', { main: 'dist/index.js' });
+      mkdirSync(join(plain, 'dist'));
+      writeFileSync(join(plain, 'dist', 'index.js'), '');
+      expect(resolveInRoot('@atjsh/llmlingua-2', root)).toBe(join(realpathSync(plain), 'dist', 'index.js'));
+    });
+  });
+
+  it('does not resolve an exports target that escapes the package', () => {
+    withTmp((tmp) => {
+      const root = join(tmp, 'root');
+      makePkg(root, 'js-tiktoken', { exports: { '.': { default: '../../../outside.js' } } });
+      expect(resolveInRoot('js-tiktoken', root)).toBeUndefined();
+    });
+  });
+
+  it('createLingua probes the injected roots and reports installable from the installer', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'distill-roots-'));
+    try {
+      const cache = join(tmp, 'cache');
+      const lingua = join(cache, 'lingua');
+      mkdirSync(lingua, { recursive: true });
+      names.forEach((name) => makePkg(lingua, name));
+      const installer = { probe: async () => true, installable: () => true, status: () => ({ state: 'idle' as const }), install: async () => undefined };
+      const l = createLingua({ cacheDir: cache, roots: () => [lingua], installer });
+      await expect(l.probe()).resolves.toBe(true);
+      expect(l.status()).toMatchObject({ installed: true, installable: true, state: 'idle' });
+      const none = createLingua({ cacheDir: cache, roots: () => [join(tmp, 'nothing')], installer });
+      await expect(none.probe()).resolves.toBe(false);
+      expect(none.status()).toMatchObject({ installed: false, installable: true });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+});
 
-  it('reports not installed without a package root', () => {
-    expect(packagesInstalled(names, undefined)).toBe(false);
+describe('createLingua install', () => {
+  const makeInstaller = () => {
+    let status: { state: 'idle' | 'installing' | 'failed'; error?: { code: any; message: string } } = { state: 'idle' };
+    const gate = deferred<void>();
+    const installer = {
+      probe: async () => true,
+      installable: () => true,
+      status: () => ({ ...status }),
+      install: async () => {
+        status = { state: 'installing' };
+        try {
+          await gate.promise;
+          status = { state: 'idle' };
+        } catch (error) {
+          status = { state: 'failed', error: { code: 'npm_failed', message: 'boom' } };
+          throw error;
+        }
+      },
+    };
+    return { installer, gate };
+  };
+
+  it('reports installing, then installed after the installer finishes', async () => {
+    const f = makeFake();
+    const { installer, gate } = makeInstaller();
+    let installed = false;
+    const l = createLingua({ cacheDir: '/tmp/x', load: f.load, installer, resolvePackages: async () => installed });
+    await l.probe();
+    expect(l.status()).toMatchObject({ installed: false, installable: true, state: 'idle' });
+    const running = l.install();
+    expect(l.status().state).toBe('installing');
+    installed = true;
+    gate.resolve();
+    await running;
+    expect(l.status()).toMatchObject({ installed: true, state: 'idle' });
+  });
+
+  it('reports install_failed with the error code and clears it on retry', async () => {
+    const f = makeFake();
+    const { installer, gate } = makeInstaller();
+    const l = createLingua({ cacheDir: '/tmp/x', load: f.load, installer, resolvePackages: async () => false });
+    await l.probe();
+    const running = l.install();
+    gate.reject(new Error('boom'));
+    await expect(running).rejects.toThrow('boom');
+    expect(l.status()).toMatchObject({ installed: false, state: 'install_failed', installError: { code: 'npm_failed', message: 'boom' } });
+  });
+
+  it('rejects install without an installer', async () => {
+    const l = createLingua({ cacheDir: '/tmp/x', load: makeFake().load });
+    expect(l.status().installable).toBe(false);
+    await expect(l.install()).rejects.toThrow();
+  });
+
+  it('forgets a failed load after a successful install so the module is loaded again', async () => {
+    const f = makeFake();
+    let present = false;
+    let calls = 0;
+    const load = () => {
+      calls += 1;
+      return present ? f.load() : Promise.reject(new Error('missing'));
+    };
+    const installer = { probe: async () => true, installable: () => true, status: () => ({ state: 'idle' as const }), install: async () => { present = true; } };
+    const l = createLingua({ cacheDir: '/tmp/x', load, installer, resolvePackages: async () => present });
+    await expect(l.compress('hello', { rate: 0.5 })).rejects.toThrow('missing');
+    expect(l.status().state).toBe('error');
+    await l.install();
+    expect(l.status()).toMatchObject({ installed: true, state: 'idle' });
+    await expect(l.compress('hello', { rate: 0.5 })).resolves.toBe('hello'.slice(0, 3));
+    expect(calls).toBe(2);
   });
 });

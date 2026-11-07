@@ -11,7 +11,8 @@ if (!resourcesDir || !['lite', 'full'].includes(variant)) {
   process.exit(1);
 }
 
-const variantPackages = ['@atjsh/llmlingua-2', '@huggingface/transformers', 'onnxruntime-node'];
+const linguaPackages = ['@atjsh/llmlingua-2', '@huggingface/transformers', 'js-tiktoken', 'onnxruntime-node'];
+const linguaDir = join(resourcesDir, 'lingua');
 const asarPath = join(resourcesDir, 'app.asar');
 const unpackedRoot = join(resourcesDir, 'app.asar.unpacked');
 const problems = [];
@@ -29,10 +30,16 @@ function hasPackage(name) {
   return inAsar || existsSync(join(unpackedRoot, 'node_modules', name));
 }
 
-for (const name of variantPackages) {
-  const present = hasPackage(name);
-  if (variant === 'lite' && present) problems.push(`lite must not contain ${name}`);
-  if (variant === 'full' && !present) problems.push(`full must contain ${name}`);
+for (const name of linguaPackages) {
+  if (hasPackage(name)) problems.push(`${variant} must not bundle ${name} inside app.asar`);
+  const inResources = existsSync(join(linguaDir, 'node_modules', name));
+  if (variant === 'lite' && inResources) problems.push(`lite must not contain resources/lingua/node_modules/${name}`);
+  if (variant === 'full' && !inResources) problems.push(`full must contain resources/lingua/node_modules/${name}`);
+}
+if (variant === 'lite' && existsSync(linguaDir)) problems.push('lite must not contain resources/lingua');
+if (variant === 'full') {
+  const binding = join(linguaDir, 'node_modules', 'onnxruntime-node', 'bin', 'napi-v6', process.platform, process.arch);
+  if (!existsSync(binding)) problems.push(`full is missing the onnxruntime CPU binding for ${process.platform}-${process.arch}`);
 }
 
 const liteparseDir = join(unpackedRoot, 'node_modules', '@llamaindex');

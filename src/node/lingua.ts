@@ -1,20 +1,23 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { basename, dirname, join, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { countTokens } from '../core/tokens';
 import type { LinguaModel, LinguaStatus } from '../core/types';
+import type { LinguaInstaller } from './lingua-install';
 
 export interface Lingua {
   status(): LinguaStatus;
   compress(text: string, opts: { rate: number; model?: LinguaModel; signal?: AbortSignal }): Promise<string>;
   probe(): Promise<boolean>;
+  install(): Promise<void>;
 }
 
 export interface LinguaOptions {
   cacheDir: string;
   load?: () => Promise<unknown>;
   resolvePackages?: () => Promise<boolean>;
+  roots?: () => string[];
+  installer?: LinguaInstaller;
 }
 
 interface Compressor {
@@ -61,55 +64,100 @@ export function findPackageRoot(startDir: string): string | undefined {
   }
 }
 
-function allowedModuleRoots(packageRoot: string): string[] {
-  const realRoot = realpathSync(packageRoot);
-  const roots = [join(realRoot, 'node_modules')];
-  const parent = dirname(realRoot);
-  const container = basename(parent).startsWith('@') ? dirname(parent) : parent;
-  if (basename(container) === 'node_modules') roots.push(container);
-  return roots;
+const CONDITIONS: ReadonlySet<string> = new Set(['node', 'import', 'default']);
+
+function pickCondition(target: unknown): string | undefined {
+  if (typeof target === 'string') return target;
+  if (Array.isArray(target)) {
+    for (const entry of target) {
+      const picked = pickCondition(entry);
+      if (picked !== undefined) return picked;
+    }
+    return undefined;
+  }
+  if (typeof target === 'object' && target !== null) {
+    for (const [key, value] of Object.entries(target)) {
+      if (!CONDITIONS.has(key)) continue;
+      const picked = pickCondition(value);
+      if (picked !== undefined) return picked;
+    }
+  }
+  return undefined;
 }
 
-export function resolveScoped(name: string, packageRoot: string): string | undefined {
+function exportTarget(exportsField: unknown, subpath: string): string | undefined {
+  const isSubpathMap = typeof exportsField === 'object' && exportsField !== null && !Array.isArray(exportsField) && Object.keys(exportsField).every((key) => key.startsWith('.'));
+  if (isSubpathMap) return pickCondition((exportsField as Record<string, unknown>)[subpath]);
+  return subpath === '.' ? pickCondition(exportsField) : undefined;
+}
+
+function isInside(child: string, parent: string): boolean {
+  return child.startsWith(parent + sep);
+}
+
+export function resolveInRoot(name: string, root: string, subpath = '.'): string | undefined {
   try {
-    const resolved = createRequire(join(packageRoot, 'package.json')).resolve(name);
-    const inside = allowedModuleRoots(packageRoot).some((root) => resolved.startsWith(root + sep));
-    return inside ? resolved : undefined;
+    const realRoot = realpathSync(root);
+    const realPackage = realpathSync(join(realRoot, 'node_modules', ...name.split('/')));
+    if (!isInside(realPackage, realRoot)) return undefined;
+    const manifest = JSON.parse(readFileSync(join(realPackage, 'package.json'), 'utf8')) as { name?: string; main?: string; exports?: unknown };
+    if (manifest.name !== name) return undefined;
+    let relative: string | undefined;
+    if (manifest.exports !== undefined) relative = exportTarget(manifest.exports, subpath);
+    else relative = subpath === '.' ? (manifest.main ?? 'index.js') : subpath;
+    if (relative === undefined) return undefined;
+    const entry = resolve(realPackage, relative);
+    return isInside(entry, realPackage) && existsSync(entry) ? entry : undefined;
   } catch {
     return undefined;
   }
 }
 
-export function packagesInstalled(names: string[], packageRoot: string | undefined): boolean {
-  if (!packageRoot) return false;
-  return names.every((name) => resolveScoped(name, packageRoot) !== undefined);
+const REQUIRED_PACKAGES = ['@atjsh/llmlingua-2', '@huggingface/transformers', 'js-tiktoken'];
+
+export function findLinguaRoot(roots: string[]): string | undefined {
+  return roots.find((root) => REQUIRED_PACKAGES.every((name) => resolveInRoot(name, root) !== undefined));
 }
 
-const REQUIRED_PACKAGES = ['@atjsh/llmlingua-2', '@huggingface/transformers', 'js-tiktoken'];
+export function linguaRoots(where: { packageRoot: string | undefined; resourcesPath: string | undefined; cacheDir: string }): string[] {
+  const roots: string[] = [];
+  if (where.packageRoot) roots.push(where.packageRoot);
+  if (where.resourcesPath) roots.push(join(where.resourcesPath, 'lingua'));
+  roots.push(join(where.cacheDir, 'lingua'));
+  return roots;
+}
 
 function distillRoot(): string | undefined {
   return findPackageRoot(dirname(fileURLToPath(import.meta.url)));
 }
 
-async function defaultLoad(): Promise<LinguaModule> {
-  if (!packagesInstalled(REQUIRED_PACKAGES, distillRoot())) throw new Error('LLMLingua-2 packages are not installed');
+function defaultRoots(cacheDir: string): string[] {
+  return linguaRoots({
+    packageRoot: distillRoot(),
+    resourcesPath: (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath,
+    cacheDir,
+  });
+}
+
+async function loadFromRoot(root: string): Promise<LinguaModule> {
+  const entry = (name: string, subpath = '.'): Promise<any> => {
+    const resolved = resolveInRoot(name, root, subpath);
+    if (resolved === undefined) throw new Error('LLMLingua-2 packages are not installed');
+    return import(pathToFileURL(resolved).href);
+  };
   const [lingua, transformers, tiktoken, ranks] = await Promise.all([
-    import('@atjsh/llmlingua-2'),
-    import('@huggingface/transformers'),
-    import('js-tiktoken/lite'),
-    import('js-tiktoken/ranks/o200k_base'),
+    entry('@atjsh/llmlingua-2'),
+    entry('@huggingface/transformers'),
+    entry('js-tiktoken', './lite'),
+    entry('js-tiktoken', './ranks/o200k_base'),
   ]);
   return {
-    LLMLingua2: lingua.LLMLingua2 as unknown as LinguaModule['LLMLingua2'],
+    LLMLingua2: lingua.LLMLingua2 as LinguaModule['LLMLingua2'],
     configure: (modelsDir) => {
       transformers.env.cacheDir = modelsDir;
     },
     createTokenizer: () => new tiktoken.Tiktoken(ranks.default),
   };
-}
-
-async function defaultResolvePackages(): Promise<boolean> {
-  return packagesInstalled(REQUIRED_PACKAGES, distillRoot());
 }
 
 function hardSplit(piece: string): string[] {
@@ -156,10 +204,18 @@ export function chunkText(text: string): string[] {
 }
 
 export function createLingua(opts: LinguaOptions): Lingua {
-  const load = opts.load ?? defaultLoad;
-  const resolvePackages = opts.resolvePackages ?? defaultResolvePackages;
+  const roots = opts.roots ?? (() => defaultRoots(opts.cacheDir));
+  const installer = opts.installer;
+  const load =
+    opts.load ??
+    (async () => {
+      const root = findLinguaRoot(roots());
+      if (root === undefined) throw new Error('LLMLingua-2 packages are not installed');
+      return loadFromRoot(root);
+    });
+  const resolvePackages = opts.resolvePackages ?? (async () => findLinguaRoot(roots()) !== undefined);
   const modelsDir = join(opts.cacheDir, 'models');
-  const state: LinguaStatus = { installed: true, model: 'tinybert', state: 'idle', progress: 0 };
+  const state: Omit<LinguaStatus, 'installable' | 'installError'> = { installed: true, model: 'tinybert', state: 'idle', progress: 0 };
   let module: LinguaModule | undefined;
   let current: { model: LinguaModel; promise: Promise<Compressor> } | undefined;
 
@@ -221,10 +277,31 @@ export function createLingua(opts: LinguaOptions): Lingua {
   }
 
   return {
-    status: () => ({ ...state }),
+    status() {
+      const status: LinguaStatus = { ...state, installable: installer?.installable() ?? false };
+      const installing = installer?.status();
+      if (!state.installed && installing?.state === 'installing') status.state = 'installing';
+      if (!state.installed && installing?.state === 'failed') {
+        status.state = 'install_failed';
+        status.installError = installing.error;
+      }
+      return status;
+    },
     async probe() {
+      const [found] = await Promise.all([resolvePackages(), installer?.probe()]);
+      state.installed = found;
+      return found;
+    },
+    async install() {
+      if (!installer) throw new Error('LLMLingua-2 cannot be installed here');
+      await installer.install();
+      module = undefined;
       state.installed = await resolvePackages();
-      return state.installed;
+      if (state.installed) {
+        state.state = 'idle';
+        state.progress = 0;
+        current = undefined;
+      }
     },
     async compress(text, { rate, model = 'tinybert', signal }) {
       if (!(rate >= MIN_RATE && rate <= MAX_RATE)) {

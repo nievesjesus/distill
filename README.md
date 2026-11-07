@@ -22,15 +22,7 @@ npx distillmd --port 4321 --host 127.0.0.1 --no-open --max-size 100
 
 The server only listens on loopback by default. Passing `--host 0.0.0.0` exposes it to your network and disables the loopback check, so only do that on a network you trust.
 
-`npx distillmd` currently installs the LLMLingua runtime (several hundred MB, mostly `onnxruntime-node`, about 400 MB) as part of the package. A slimmer install is planned.
-
-On Linux x64, the `onnxruntime-node` postinstall script also downloads the CUDA execution provider binaries from NuGet. That download can fail behind a proxy or without network access to NuGet, and it is not needed for CPU inference. To skip it, set the flag when you run:
-
-```bash
-ONNXRUNTIME_NODE_INSTALL=skip npx distillmd
-```
-
-With the flag set, the postinstall script exits before fetching anything. The CPU runtime that ships inside the npm package is untouched, so LLMLingua-2 keeps working on CPU; only the optional GPU binaries are not downloaded. Parsing and the four local boosters do not use onnxruntime at all.
+`npx distillmd` installs only the parser, the local boosters and the server. LLMLingua-2 is not part of that install: you turn it on from the app when you want it (see below).
 
 ## Docker
 
@@ -47,6 +39,12 @@ To build it yourself:
 ```bash
 docker build -t distill .
 docker run --rm -p 4321:4321 distill
+```
+
+The image does not include LLMLingua-2. If you enable it from the app, the runtime is installed into `~/.cache/distillmd/lingua` inside the container, and the model goes to `~/.cache/distillmd/models`. Mount a volume on `/home/node/.cache` to keep both across runs:
+
+```bash
+docker run --rm -p 4321:4321 -v distill-cache:/home/node/.cache ghcr.io/nievesjesus/distill
 ```
 
 ## Supported formats
@@ -75,7 +73,7 @@ Boosters run in a fixed order and each one is a pure, idempotent function over t
 
 The first four are on by default. They drop only formatting, repeats and link targets, not content words. If you need link targets, turn off "Slim images and links".
 
-LLMLingua-2 is optional and experimental. It is marked as lossy in the UI, the model (TinyBERT by default, about 57 MB) is downloaded the first time you enable it into `~/.cache/distillmd/models`, and after that it runs offline. If its runtime is not installed, the switch is disabled and says "not installed".
+LLMLingua-2 is optional and experimental. It is marked as lossy in the UI, it is not installed by default. When `npm` is available (`npx`, the CLI and the Docker image), the LLMLingua-2 row shows **Install (~400 MB)**. That one click runs `npm ci --omit=dev --ignore-scripts` against a lockfile with pinned versions and integrity hashes, installs the runtime (`@atjsh/llmlingua-2`, `@huggingface/transformers` and `js-tiktoken`, mostly onnxruntime) into `~/.cache/distillmd/lingua`, and then downloads the model (TinyBERT by default, about 57 MB) into `~/.cache/distillmd/models`. After that it runs offline. The install skips onnxruntime's postinstall script, which on Linux x64 would fetch CUDA binaries from NuGet and is not needed for CPU inference; the CPU runtime ships inside the npm package. If the install fails, the row shows the reason and a Retry button. The desktop lite app has no npm, so there the row says "Available in distill full" and links to the release.
 
 ## How tokens are counted
 
@@ -83,7 +81,7 @@ Counts use the `o200k_base` encoding (via `gpt-tokenizer`), computed in your bro
 
 ## Privacy
 
-Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. Distill can make two one-time downloads. First, the first OCR of an image or scan downloads about 15 MB of Tesseract English data (`eng.traineddata`) from GitHub, unless tessdata is already present. To avoid it, point `DISTILL_TESSDATA` or `TESSDATA_PREFIX` at a local tessdata directory (`DISTILL_OCR_LANG` sets the OCR language, default `eng`), or use the Docker image, which ships the data. Second, the LLMLingua model download, only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later. Removing a row or choosing Clear drops its copy from memory too (a file removed at the exact moment its parse finishes can stay in the local server's memory until LRU eviction, 50 files or 200 MB, or a restart). Nothing is written to disk except: the files you save yourself; the LLMLingua model cache in `~/.cache/distillmd/models`, if you enable it; the desktop app's window size and position and last save folder (`window-state.json` and `desktop-prefs.json` in its user data folder); and the browser's or Electron profile's own data (your settings live there). The list of documents is not remembered between launches. API responses are sent with `Cache-Control: no-store`, so they are not cached by the browser.
+Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. Distill can make up to three one-time downloads. First, the first OCR of an image or scan downloads about 15 MB of Tesseract English data (`eng.traineddata`) from GitHub, unless tessdata is already present. To avoid it, point `DISTILL_TESSDATA` or `TESSDATA_PREFIX` at a local tessdata directory (`DISTILL_OCR_LANG` sets the OCR language, default `eng`), or use the Docker image, which ships the data. Second, the LLMLingua-2 runtime, installed from the npm registry only when you click Install. Third, the LLMLingua model download from Hugging Face, only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later. Removing a row or choosing Clear drops its copy from memory too (a file removed at the exact moment its parse finishes can stay in the local server's memory until LRU eviction, 50 files or 200 MB, or a restart). Nothing is written to disk except: the files you save yourself; the LLMLingua-2 runtime in `~/.cache/distillmd/lingua` and its model cache in `~/.cache/distillmd/models`, if you enable it; the desktop app's window size and position and last save folder (`window-state.json` and `desktop-prefs.json` in its user data folder); and the browser's or Electron profile's own data (your settings live there). The list of documents is not remembered between launches. API responses are sent with `Cache-Control: no-store`, so they are not cached by the browser.
 
 ## Desktop app
 
@@ -91,8 +89,8 @@ Distill also ships as a desktop app for macOS (arm64 and x64, `.dmg`), Windows (
 
 | Variant | What it includes | Size |
 |---------|------------------|------|
-| `Distill-lite-*` | Everything except the LLMLingua-2 runtime. The switch shows "not installed". | Smaller |
-| `Distill-full-*` | Adds the LLMLingua-2 runtime (onnxruntime and the model tooling). | Much larger |
+| `Distill-lite-*` | Everything except the LLMLingua-2 runtime. The row shows "Available in distill full". | Smaller |
+| `Distill-full-*` | Bundles the LLMLingua-2 runtime (onnxruntime and the model tooling); only the model is downloaded when you turn it on. | Much larger |
 
 The installers are not signed yet, so the operating system warns the first time:
 
@@ -108,7 +106,6 @@ Office files (DOCX, PPTX, XLSX) still need LibreOffice installed on your machine
 - MCP server so any agent can convert documents
 - CLI for converting files from the terminal
 - Hooks so Claude Code and OpenCode read the distilled Markdown instead of the binary
-- A slimmer npm install without the LLMLingua runtime
 
 ## Development
 

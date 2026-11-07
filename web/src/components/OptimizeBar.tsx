@@ -14,6 +14,7 @@ interface OptimizeBarProps {
   linguaFailed?: boolean;
   onLinguaChange?: (patch: Partial<Settings['lingua']>) => void;
   onRetryLingua?: () => void;
+  onInstallLingua?: () => void;
 }
 
 const MODEL_IDS: readonly LinguaModel[] = ['tinybert', 'mobilebert', 'xlm-roberta'];
@@ -30,6 +31,7 @@ export function OptimizeBar({
   linguaFailed = false,
   onLinguaChange = () => undefined,
   onRetryLingua = () => undefined,
+  onInstallLingua = () => undefined,
 }: OptimizeBarProps) {
   const listId = useId();
   const hintId = useId();
@@ -101,9 +103,36 @@ export function OptimizeBar({
           );
         })}
         {!installed && linguaStatus !== undefined ? (
-          <p id={hintId} className="lingua-line">
-            {S.linguaInstallHint}
-          </p>
+          <div id={hintId} className="lingua-install">
+            {linguaStatus.state === 'installing' ? (
+              <>
+                <p className="lingua-line">{S.linguaInstalling}</p>
+                <span className="lingua-bar" role="progressbar" aria-label={S.linguaInstalling}>
+                  <span className="progress-bar" />
+                </span>
+              </>
+            ) : linguaStatus.installable === true ? (
+              <>
+                {linguaStatus.state === 'install_failed' ? (
+                  <p className="lingua-line" role="alert">
+                    {S.linguaInstallFailed(linguaStatus.installError?.message ?? '')}
+                  </p>
+                ) : null}
+                <p className="lingua-line">{S.linguaInstallNote}</p>
+                <p className="lingua-line">
+                  <button type="button" className="text-button" onClick={onInstallLingua}>
+                    {linguaStatus.state === 'install_failed' ? S.retry : S.linguaInstall}
+                  </button>
+                </p>
+              </>
+            ) : (
+              <p className="lingua-line">
+                <a href={S.linguaFullUrl} target="_blank" rel="noopener noreferrer">
+                  {S.linguaFullOnly}
+                </a>
+              </p>
+            )}
+          </div>
         ) : null}
         {linguaEffective && optimize ? <p className="lossy-note">{S.lossyNote}</p> : null}
         {linguaEffective && optimize && linguaStatus?.state === 'downloading' ? (

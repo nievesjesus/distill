@@ -16,13 +16,13 @@ RUN apt-get update \
         fonts-dejavu-core fonts-liberation2 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-ENV ONNXRUNTIME_NODE_INSTALL=skip \
-    NODE_ENV=production \
+ENV NODE_ENV=production \
     TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata \
     DISTILL_TESSDATA=/usr/share/tesseract-ocr/5/tessdata
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
+COPY lingua-runtime/package.json lingua-runtime/package-lock.json ./lingua-runtime/
 RUN mkdir -p /home/node/.cache && chown node:node /home/node/.cache
 USER node
 EXPOSE 4321

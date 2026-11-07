@@ -8,6 +8,7 @@ import { serve } from '@hono/node-server';
 import { isLoopbackHost } from '../core/loopback';
 import { exposeLibreOffice } from '../node/capabilities';
 import { createLingua, findPackageRoot } from '../node/lingua';
+import { createLinguaInstaller } from '../node/lingua-install';
 import { createParser } from '../node/parse';
 import { createApp } from './app';
 import { createStore } from './store';
@@ -34,7 +35,9 @@ export async function startServer(opts: {
   const libreoffice = await exposeLibreOffice();
   const parser = createParser();
   try {
-    const lingua = createLingua({ cacheDir: join(homedir(), '.cache', 'distillmd') });
+    const cacheDir = join(homedir(), '.cache', 'distillmd');
+    const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
+    const lingua = createLingua({ cacheDir, installer });
     await lingua.probe();
     const app = createApp({
       parser,

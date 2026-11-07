@@ -146,6 +146,7 @@ test('desktop shell loads the UI, converts a PDF through the LiteParse fork and 
     if (expectedLingua) {
       const health = await page.evaluate(() => fetch('/api/health').then((response) => response.json()));
       expect(health.lingua.installed).toBe(expectedLingua === 'installed');
+      if (expectedLingua !== 'installed') expect(health.lingua.installable).toBe(false);
     }
 
     await page.locator('input[type="file"]').setInputFiles(pdfPath);

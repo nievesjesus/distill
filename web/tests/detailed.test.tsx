@@ -16,6 +16,7 @@ interface Server {
   compress: (body: { text: string; rate: number; model: string }) => Promise<Response> | Response;
   json: (id: string) => Promise<Response> | Response;
   healthCalls: number;
+  installCalls: number;
   compressCalls: { text: string; rate: number; model: string }[];
   jsonCalls: string[];
   signals: (AbortSignal | null | undefined)[];
@@ -25,6 +26,7 @@ let server: Server;
 
 const installed = (patch: Partial<LinguaStatus> = {}): LinguaStatus => ({
   installed: true,
+  installable: true,
   model: 'tinybert',
   state: 'ready',
   progress: 1,
@@ -38,6 +40,11 @@ function stubServer() {
       if (url === '/api/health') {
         server.healthCalls += 1;
         return Response.json({ version: '1', liteparseVersion: '1', libreoffice: true, maxBytes: 100000, lingua: server.lingua });
+      }
+      if (url === '/api/lingua/install') {
+        server.installCalls += 1;
+        server.lingua = installed({ installed: false, state: 'installing', progress: 0 });
+        return Response.json(server.lingua, { status: 202 });
       }
       if (url === '/api/compress') {
         const body = JSON.parse(String(init?.body));
@@ -104,6 +111,7 @@ beforeEach(() => {
     compress: ({ text }) => Response.json({ text: text.slice(0, 5) }),
     json: () => Response.json({ page: 1 }),
     healthCalls: 0,
+    installCalls: 0,
     compressCalls: [],
     jsonCalls: [],
     signals: [],
@@ -223,7 +231,6 @@ describe('LLMLingua-2', () => {
     await waitFor(() => expect(lingua).toBeDisabled());
     expect(lingua).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByText(/not installed/)).toBeInTheDocument();
-    expect(screen.getByText('Run with the full package or Docker image to enable')).toBeInTheDocument();
     fireEvent.click(lingua);
     expect(lingua).toHaveAttribute('aria-checked', 'false');
     expect(JSON.parse(localStorage.getItem('distill:settings') ?? '{}').lingua.on).toBe(false);
@@ -360,6 +367,87 @@ describe('LLMLingua-2', () => {
     expect(screen.getByRole('region', { name: 'Markdown preview of a.pdf' }).textContent).toBe(LOSSLESS);
     expect(inline()).toHaveLength(1);
     expect(document.querySelectorAll('[role=status]')).toHaveLength(1);
+  });
+});
+
+describe('LLMLingua-2 on-demand install', () => {
+  const notInstalled = (patch: Partial<LinguaStatus> = {}) => installed({ installed: false, state: 'idle', progress: 0, ...patch });
+
+  it('offers an install button with the size and a privacy note when installable', async () => {
+    preset({ optionsOpen: true });
+    server.lingua = notInstalled();
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Install (~400 MB)' })).toBeInTheDocument();
+    expect(screen.getByText(/downloaded from npm once.*then runs offline/i)).toBeInTheDocument();
+    expect(screen.queryByText('Available in distill full')).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  it('installs on click, shows an indeterminate progress, then moves on to the model download', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    preset({ optionsOpen: true });
+    server.lingua = notInstalled();
+    render(<App />);
+    await flush();
+    drop(['a.pdf']);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Install (~400 MB)' }));
+    await flush();
+    expect(server.installCalls).toBe(1);
+    expect(JSON.parse(localStorage.getItem('distill:settings') ?? '{}').lingua.on).toBe(true);
+    const bar = screen.getByRole('progressbar', { name: 'Installing…' });
+    expect(bar).not.toHaveAttribute('aria-valuenow');
+    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+    expect(screen.getByRole('switch', { name: /LLMLingua-2/ })).toBeDisabled();
+    await advance(1000);
+    expect(screen.getByRole('progressbar', { name: 'Installing…' })).toBeInTheDocument();
+    server.lingua = installed({ state: 'idle', progress: 0 });
+    await advance(1000);
+    await flush();
+    expect(screen.queryByRole('progressbar', { name: 'Installing…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+    expect(server.compressCalls.length).toBeGreaterThan(0);
+    await advance(100);
+    const announcer = document.querySelector('[role=status]') as HTMLElement;
+    expect(announcer).toHaveTextContent('LLMLingua-2 installed');
+  });
+
+  it('shows the install progress without a button when an installation is already running', async () => {
+    preset({ optionsOpen: true });
+    server.lingua = notInstalled({ state: 'installing' });
+    render(<App />);
+    expect(await screen.findByRole('progressbar', { name: 'Installing…' })).toBeInTheDocument();
+    expect(screen.getByText('Installing…')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+  });
+
+  it('shows the failure with its message and lets the user retry', async () => {
+    preset({ optionsOpen: true });
+    server.lingua = notInstalled({ state: 'install_failed', installError: { code: 'npm_failed', message: 'network request failed' } });
+    render(<App />);
+    expect(await screen.findByText(/Install failed/)).toHaveTextContent('network request failed');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(server.installCalls).toBe(1));
+  });
+
+  it('points to distill full when the app cannot install (desktop lite)', async () => {
+    preset({ optionsOpen: true });
+    server.lingua = notInstalled({ installable: false });
+    render(<App />);
+    const link = await screen.findByRole('link', { name: 'Available in distill full' });
+    expect(link).toHaveAttribute('href', 'https://github.com/nievesjesus/distill/releases/latest');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+    expect(screen.getByRole('switch', { name: /LLMLingua-2/ })).toBeDisabled();
+  });
+
+  it('hides every install control once installed', async () => {
+    preset({ optionsOpen: true });
+    server.lingua = installed();
+    render(<App />);
+    await screen.findByRole('switch', { name: /LLMLingua-2/ });
+    expect(screen.queryByRole('button', { name: 'Install (~400 MB)' })).toBeNull();
+    expect(screen.queryByText('Available in distill full')).toBeNull();
   });
 });
 
