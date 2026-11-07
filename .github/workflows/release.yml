@@ -92,7 +92,14 @@ jobs:
         run: |
           npm run fetch:tessdata
           node scripts/make-signed-config.mjs lite
-          npx electron-builder --config electron-builder.lite.signed.yml --${{ matrix.target }} --${{ matrix.arch }}
+          attempt=1
+          until npx electron-builder --config electron-builder.lite.signed.yml --${{ matrix.target }} --${{ matrix.arch }}; do
+            echo "electron-builder lite attempt $attempt failed"
+            if [ "$attempt" -ge 3 ]; then exit 1; fi
+            rm -rf release/lite
+            sleep 30
+            attempt=$((attempt + 1))
+          done
       - name: Build signed and notarized full installer
         if: matrix.full && env.MAC_SIGNED == 'true'
         shell: bash
@@ -100,7 +107,14 @@ jobs:
           npm run fetch:tessdata
           npm run prepare:lingua
           node scripts/make-signed-config.mjs full
-          npx electron-builder --config electron-builder.full.signed.yml --${{ matrix.target }} --${{ matrix.arch }}
+          attempt=1
+          until npx electron-builder --config electron-builder.full.signed.yml --${{ matrix.target }} --${{ matrix.arch }}; do
+            echo "electron-builder full attempt $attempt failed"
+            if [ "$attempt" -ge 3 ]; then exit 1; fi
+            rm -rf release/full
+            sleep 30
+            attempt=$((attempt + 1))
+          done
       - name: Fail on artifacts for another arch
         shell: bash
         run: |
@@ -136,7 +150,13 @@ jobs:
             codesign --verify --deep --strict --verbose=2 "$app"
             codesign -dv "$app" 2>&1 | grep -q 'flags=.*runtime'
             spctl -a -t exec -vv "$app"
-            xcrun stapler validate "$app"
+            attempt=1
+            until xcrun stapler validate "$app"; do
+              echo "stapler validate attempt $attempt failed, retrying"
+              if [ "$attempt" -ge 5 ]; then exit 1; fi
+              sleep $((attempt * 15))
+              attempt=$((attempt + 1))
+            done
             find "$app" -type f \( -name '*.node' -o -name '*.dylib' \) -print0 | while IFS= read -r -d '' binary; do
               codesign --verify --strict "$binary"
             done
