@@ -123,7 +123,7 @@ The installer shows the exact change and asks before writing (`--yes` skips the 
 The hooks respect your permissions and never block a read:
 
 - Files outside the project the agent works in are not converted, so Claude Code asks you about them as usual.
-- If you have any `deny` rule for `Read`, the Claude Code hook stays out of the way entirely.
+- If any `deny` or `ask` rule for `Read` exists in your user, project (any parent folder or `CLAUDE_PROJECT_DIR`), local or managed settings, or one of those files can't be read, the Claude Code hook stays out of the way entirely. Rules passed on the command line (`--settings`, `--disallowedTools`) are invisible to hooks.
 - Images and CSV files are left alone.
 - If anything fails (a missing file, a timeout, a password-protected PDF, a scan with no text), the agent reads the original file.
 
