@@ -65,9 +65,11 @@
   "dependencies": {
     "@hono/node-server": "^2.1.6",
     "@llamaindex/liteparse": "^2.18.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "commander": "^14.0.0",
     "gpt-tokenizer": "^4.1.0",
-    "hono": "^4.13.16"
+    "hono": "^4.13.16",
+    "zod": "^4.6.7"
   },
   "main": "dist/desktop/main.js",
   "exports": {

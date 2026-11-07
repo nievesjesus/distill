@@ -136,3 +136,44 @@ describe('openCommand', () => {
     expect(openCommand('http://x', 'linux')).toMatchObject({ file: 'xdg-open', args: ['http://x'] });
   });
 });
+
+describe('run mcp', () => {
+  function mcpHarness() {
+    const h = harness();
+    const connectStdio = vi.fn(async () => {});
+    const serveMcpHttp = vi.fn(async (opts: { port: number; host: string }) => ({
+      url: `http://${opts.host}:${opts.port}/mcp`,
+      close: async () => {},
+    }));
+    const openDistiller = vi.fn(async () => ({
+      distillFile: vi.fn(),
+      health: vi.fn(() => ({ version: '0.0.0' })),
+      close: vi.fn(),
+    }));
+    return { ...h, connectStdio, serveMcpHttp, deps: { ...h.deps, connectStdio, serveMcpHttp, openDistiller } as never };
+  }
+
+  it('writes nothing to stdout over stdio', async () => {
+    const h = mcpHarness();
+    await run(['mcp'], h.deps);
+    expect(h.connectStdio).toHaveBeenCalledTimes(1);
+    expect(h.stdout).toEqual([]);
+    expect(h.serveMcpHttp).not.toHaveBeenCalled();
+  });
+
+  it('serves over http with defaults and logs the url to stderr', async () => {
+    const h = mcpHarness();
+    await run(['mcp', '--http'], h.deps);
+    expect(h.serveMcpHttp).toHaveBeenCalledWith(expect.objectContaining({ port: 4322, host: '127.0.0.1', allowedHosts: [] }));
+    expect(h.stderr).toContain('distill MCP at http://127.0.0.1:4322/mcp');
+    expect(h.stdout).toEqual([]);
+  });
+
+  it('forwards port, host and allowed hosts', async () => {
+    const h = mcpHarness();
+    await run(['mcp', '--http', '--port', '5000', '--host', '0.0.0.0', '--allowed-hosts', 'a.example,b.example', '--root', '/tmp'], h.deps);
+    expect(h.serveMcpHttp).toHaveBeenCalledWith(
+      expect.objectContaining({ port: 5000, host: '0.0.0.0', allowedHosts: ['a.example', 'b.example'] }),
+    );
+  });
+});

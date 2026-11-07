@@ -6,6 +6,11 @@ import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
 import { openDistiller as defaultOpenDistiller } from '../node/distill';
 import type { Distiller } from '../node/distill';
+import { serveMcpHttp as defaultServeMcpHttp } from '../mcp/http';
+import { rootResolver, cwdResolver } from '../mcp/roots';
+import { createMcpServer } from '../mcp/server';
+import { connectStdio as defaultConnectStdio } from '../mcp/stdio';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { startServer as defaultStartServer } from '../server/start';
 import { parseBoosters, parseRate, runConvert } from './convert';
 import type { ConvertOptions } from './convert';
@@ -16,6 +21,8 @@ export interface CliDeps {
   startServer?: (opts: { port: number; host: string; maxBytes: number; allowedHosts: string[] }) => Promise<Server>;
   openUrl?: (url: string) => void;
   openDistiller?: (maxBytes?: number) => Promise<Distiller>;
+  connectStdio?: (server: McpServer, onClose: () => void) => Promise<void>;
+  serveMcpHttp?: (opts: { port: number; host: string; allowedHosts: string[]; createServer: () => McpServer }) => Promise<Server>;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
   exit?: (code: number) => never;
@@ -84,6 +91,14 @@ export function openInBrowser(url: string): void {
   child.unref();
 }
 
+interface McpOptions {
+  http?: boolean;
+  port: number;
+  host: string;
+  root?: string[];
+  allowedHosts?: string[];
+}
+
 interface WebOptions {
   port: number;
   host: string;
@@ -96,6 +111,8 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const startServer = deps.startServer ?? defaultStartServer;
   const openUrl = deps.openUrl ?? openInBrowser;
   const openDistiller = deps.openDistiller ?? defaultOpenDistiller;
+  const connectStdio = deps.connectStdio ?? defaultConnectStdio;
+  const serveMcpHttp = deps.serveMcpHttp ?? defaultServeMcpHttp;
   const stdout = deps.stdout ?? ((line: string) => process.stdout.write(`${line}\n`));
   const stderr = deps.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
   const exit = deps.exit ?? ((code: number) => process.exit(code));
@@ -179,6 +196,72 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .action(async (files: string[], options: ConvertOptions) => {
       const code = await runConvert(files, options, { stdout, stderr, openDistiller });
       if (code !== 0) exit(code);
+    });
+
+  program
+    .command('mcp')
+    .description('Start the MCP server (stdio by default)')
+    .option('--http', 'serve Streamable HTTP instead of stdio')
+    .option('--port <n>', 'port to listen on (with --http)', parsePort, 4322)
+    .option('--host <h>', 'host to bind (with --http)', '127.0.0.1')
+    .option('--root <dir>', 'directory the HTTP server may read from (repeatable, default: cwd)', (value: string, previous: string[] = []) => [...previous, value])
+    .option('--allowed-hosts <list>', 'comma-separated hostnames accepted when bound to a non-loopback host', parseHostList)
+    .action(async (options: McpOptions) => {
+      const cwd = process.cwd();
+      let distiller: Distiller;
+      try {
+        distiller = await openDistiller();
+      } catch (error) {
+        stderr(`Failed to start distill: ${error instanceof Error ? error.message : String(error)}`);
+        exit(1);
+        return;
+      }
+      const build = (resolvePath: (path: string) => Promise<string>) => () =>
+        createMcpServer({ distiller, health: () => distiller.health(), resolvePath });
+
+      if (!options.http) {
+        await connectStdio(build(cwdResolver(cwd))(), () => {
+          distiller.close();
+          exit(0);
+        });
+        return;
+      }
+
+      let server: Server;
+      try {
+        server = await serveMcpHttp({
+          port: options.port,
+          host: options.host,
+          allowedHosts: options.allowedHosts ?? parseHostList(env.DISTILL_ALLOWED_HOSTS ?? ''),
+          createServer: build(rootResolver(options.root ?? [cwd], cwd)),
+        });
+      } catch (error) {
+        distiller.close();
+        if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+          stderr(`Port ${options.port} is in use. Try --port ${options.port + 1}`);
+        } else {
+          stderr(`Failed to start distill: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        exit(1);
+        return;
+      }
+      stderr(`distill MCP at ${server.url}`);
+      if (!isLoopbackHost(options.host)) {
+        stderr(`Warning: listening on ${options.host} — anyone on your network can reach distill`);
+      }
+      if (handleSignals) {
+        const shutdown = () => {
+          server.close().then(
+            () => {
+              distiller.close();
+              exit(0);
+            },
+            () => exit(1),
+          );
+        };
+        process.on('SIGINT', shutdown);
+        process.on('SIGTERM', shutdown);
+      }
     });
 
   try {

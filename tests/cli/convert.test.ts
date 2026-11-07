@@ -26,6 +26,7 @@ function fakeDistiller(fail: Set<string> = new Set()) {
       if (fail.has(name)) throw new DistillError('parse_failed', 'broken file');
       return { path, name, kind: 'PDF', pages: 3, markdown: `# ${name}\n`, tokens: { raw: 38900, out: 27100 }, ms: 12 };
     },
+    health: () => ({ version: '0.0.0', liteparseVersion: '0.0.0', libreoffice: false, lingua: { installed: false, installable: false, model: 'tinybert', state: 'idle', progress: 0 }, maxBytes: 1 }),
     close,
   };
   return { distiller, calls, close };
