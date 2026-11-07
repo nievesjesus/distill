@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
@@ -17,6 +17,7 @@ import { isHookConvertible } from '../hooks/supported';
 import type { Distiller } from '../node/distill';
 import { cwdResolver, resolveRoots, rootResolver } from '../mcp/roots';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { isInside } from '../node/inside';
 import { readLiteparseVersion } from '../node/versions';
 import { parseBoosters, parseRate, runConvert } from './convert';
 import type { ConvertOptions } from './convert';
@@ -465,7 +466,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     }
     if (location.project) {
       const root = realpathSync(cwd);
-      if (resolved !== root && !resolved.startsWith(`${root}${sep}`)) {
+      if (!isInside(resolved, root)) {
         stderr(`Refusing to write ${path}: it links outside the project (${resolved}).`);
         exit(1);
         return false;

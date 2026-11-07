@@ -177,7 +177,7 @@ describe('run mcp', () => {
 
   it('forwards port, host and allowed hosts', async () => {
     const h = mcpHarness();
-    await run(['mcp', '--http', '--port', '5000', '--host', '0.0.0.0', '--allowed-hosts', 'a.example,b.example', '--root', '/tmp'], h.deps);
+    await run(['mcp', '--http', '--port', '5000', '--host', '0.0.0.0', '--allowed-hosts', 'a.example,b.example', '--root', tmpdir()], h.deps);
     expect(h.serveMcpHttp).toHaveBeenCalledWith(
       expect.objectContaining({ port: 5000, host: '0.0.0.0', allowedHosts: ['a.example', 'b.example'] }),
     );
@@ -186,7 +186,7 @@ describe('run mcp', () => {
 
 describe('run mcp path confinement', () => {
   function setup() {
-    const base = realpathSync(mkdtempSync(join(tmpdir(), 'distill-mcp-cli-')));
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'distill-mcp-cli-')));
     const root = join(base, 'root');
     const outside = join(base, 'outside');
     mkdirSync(root);

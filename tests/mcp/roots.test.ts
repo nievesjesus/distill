@@ -9,7 +9,7 @@ let root: string;
 let outside: string;
 
 beforeEach(() => {
-  base = realpathSync(mkdtempSync(join(tmpdir(), 'distill-roots-')));
+  base = realpathSync.native(mkdtempSync(join(tmpdir(), 'distill-roots-')));
   root = join(base, 'root');
   outside = join(base, 'outside');
   mkdirSync(root);
@@ -63,6 +63,21 @@ describe('rootResolver', () => {
   it('reports a missing file as not_found', async () => {
     const resolve = rootResolver([root], root);
     await expect(resolve('missing.pdf')).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('reports a missing file reached through an alias of the root as not_found', async () => {
+    const alias = join(base, 'alias');
+    symlinkSync(root, alias, 'junction');
+    const resolve = rootResolver([root], root);
+    await expect(resolve(join(alias, 'missing.pdf'))).rejects.toMatchObject({ code: 'not_found' });
+    await expect(resolve(join(alias, 'deep', 'missing.pdf'))).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('still rejects a missing file under an alias of a directory outside the roots', async () => {
+    const alias = join(base, 'alias');
+    symlinkSync(outside, alias, 'junction');
+    const resolve = rootResolver([root], root);
+    await expect(resolve(join(alias, 'missing.pdf'))).rejects.toMatchObject({ code: 'forbidden' });
   });
 });
 

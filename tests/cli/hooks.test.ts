@@ -212,7 +212,7 @@ describe('hooks install robustness', () => {
     expect(JSON.parse(readFileSync(real, 'utf8')).hooks.PreToolUse).toHaveLength(1);
   });
 
-  it('keeps the file mode', async () => {
+  it.skipIf(process.platform === 'win32')('keeps the file mode', async () => {
     const s = setup();
     const file = join(s.home, '.claude', 'settings.json');
     mkdirSync(join(s.home, '.claude'), { recursive: true });
@@ -268,7 +268,7 @@ describe('hooks install robustness', () => {
     expect(s.stderr[0]).toMatch(/^Could not read .*settings\.json: /);
   });
 
-  it('reports write errors on one line', async () => {
+  it.skipIf(process.platform === 'win32')('reports write errors on one line', async () => {
     const s = setup();
     const dir = join(s.home, '.claude');
     mkdirSync(dir, { recursive: true });

@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { desktopUrl, isAllowedExternal, isPermissionAllowed, isSameOrigin, tessdataDir, windowOptions } from '../../desktop/window';
 
@@ -84,11 +85,11 @@ describe('isSameOrigin', () => {
 });
 
 describe('tessdataDir', () => {
-  const resources = '/app/Resources';
-  const trained = '/app/Resources/tessdata/eng.traineddata';
+  const resources = join('/app', 'Resources');
+  const trained = join(resources, 'tessdata', 'eng.traineddata');
 
   it('returns the bundled directory when packaged and the data exists', () => {
-    expect(tessdataDir(true, resources, (path) => path === trained)).toBe('/app/Resources/tessdata');
+    expect(tessdataDir(true, resources, (path) => path === trained)).toBe(join(resources, 'tessdata'));
   });
 
   it('is undefined in development', () => {
