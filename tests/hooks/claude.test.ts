@@ -1,13 +1,29 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../../src/cli/run';
 import { handleClaudePreToolUse } from '../../src/hooks/claude';
 
+let base: string;
+let proj: string;
+let home: string;
+
+beforeEach(() => {
+  base = realpathSync(mkdtempSync(join(tmpdir(), 'distill-claude-')));
+  proj = join(base, 'proj');
+  home = join(base, 'home');
+  mkdirSync(proj);
+  mkdirSync(home);
+});
+
+afterEach(() => {
+  rmSync(base, { recursive: true, force: true });
+});
+
 const payload = (toolInput: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
   session_id: 's',
-  cwd: '/w',
+  cwd: proj,
   hook_event_name: 'PreToolUse',
   tool_name: 'Read',
   tool_input: toolInput,
@@ -15,22 +31,31 @@ const payload = (toolInput: Record<string, unknown>, extra: Record<string, unkno
   ...extra,
 });
 
+const pdf = (name = 'b.pdf', dir = proj): string => {
+  const file = join(dir, name);
+  writeFileSync(file, 'x');
+  return file;
+};
+
+const deps = () => ({ homeDir: home });
+
 describe('handleClaudePreToolUse', () => {
   it('rewrites a pdf read and keeps offset and limit', async () => {
+    const file = pdf();
     const convert = vi.fn(async () => '/cache/out.md');
-    const result = await handleClaudePreToolUse(payload({ file_path: '/a/b.pdf', offset: 3, limit: 10 }), convert);
-    expect(convert).toHaveBeenCalledWith('/a/b.pdf');
+    const result = await handleClaudePreToolUse(payload({ file_path: file, offset: 3, limit: 10 }), convert, deps());
+    expect(convert).toHaveBeenCalledWith(file);
     expect(result).toEqual({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         updatedInput: { file_path: '/cache/out.md', offset: 3, limit: 10 },
-        additionalContext: 'distill converted b.pdf to Markdown to save tokens. Original file: /a/b.pdf.',
+        additionalContext: `distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`,
       },
     });
   });
 
   it('never sets a permission decision', async () => {
-    const result = (await handleClaudePreToolUse(payload({ file_path: '/a/b.pdf' }), async () => '/c.md')) as {
+    const result = (await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => '/c.md', deps())) as {
       hookSpecificOutput: Record<string, unknown>;
     };
     expect(result.hookSpecificOutput).not.toHaveProperty('permissionDecision');
@@ -38,36 +63,106 @@ describe('handleClaudePreToolUse', () => {
 
   it('passes through reads with pages', async () => {
     const convert = vi.fn(async () => '/c.md');
-    expect(await handleClaudePreToolUse(payload({ file_path: '/a/b.pdf', pages: '1-3' }), convert)).toBeNull();
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf(), pages: '1-3' }), convert, deps())).toBeNull();
     expect(convert).not.toHaveBeenCalled();
   });
 
   it('passes through images and other tools', async () => {
     const convert = vi.fn(async () => '/c.md');
-    expect(await handleClaudePreToolUse(payload({ file_path: '/a/b.png' }), convert)).toBeNull();
-    expect(await handleClaudePreToolUse(payload({ file_path: '/a/b.pdf' }, { tool_name: 'Bash' }), convert)).toBeNull();
+    expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'b.png') }), convert, deps())).toBeNull();
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }, { tool_name: 'Bash' }), convert, deps())).toBeNull();
     expect(convert).not.toHaveBeenCalled();
   });
 
   it('resolves relative paths against cwd', async () => {
+    const file = pdf('x.pdf');
     const convert = vi.fn(async () => '/c.md');
-    await handleClaudePreToolUse(payload({ file_path: 'x.pdf' }), convert);
-    expect(convert).toHaveBeenCalledWith('/w/x.pdf');
+    await handleClaudePreToolUse(payload({ file_path: 'x.pdf' }), convert, deps());
+    expect(convert).toHaveBeenCalledWith(file);
   });
 
   it('passes through when convert throws', async () => {
     const convert = vi.fn(async () => {
       throw new Error('boom');
     });
-    expect(await handleClaudePreToolUse(payload({ file_path: '/a/b.pdf' }), convert)).toBeNull();
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
   });
 
   it('passes through garbage payloads', async () => {
     const convert = vi.fn(async () => '/c.md');
     for (const bad of [null, 'x', 42, {}, { tool_name: 'Read' }, { tool_name: 'Read', tool_input: { file_path: 3 } }]) {
-      expect(await handleClaudePreToolUse(bad, convert)).toBeNull();
+      expect(await handleClaudePreToolUse(bad, convert, deps())).toBeNull();
     }
     expect(convert).not.toHaveBeenCalled();
+  });
+
+  it('passes through a path outside the cwd', async () => {
+    const outside = join(base, 'outside');
+    mkdirSync(outside);
+    const convert = vi.fn(async () => '/c.md');
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf('o.pdf', outside) }), convert, deps())).toBeNull();
+    expect(await handleClaudePreToolUse(payload({ file_path: `${proj}/../outside/o.pdf` }), convert, deps())).toBeNull();
+    expect(convert).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a sibling with the cwd as a prefix as inside', async () => {
+    const sibling = `${proj}-evil`;
+    mkdirSync(sibling);
+    const convert = vi.fn(async () => '/c.md');
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf('s.pdf', sibling) }), convert, deps())).toBeNull();
+    expect(convert).not.toHaveBeenCalled();
+  });
+
+  it('passes through a symlink inside the cwd that points outside', async () => {
+    const outside = join(base, 'outside');
+    mkdirSync(outside);
+    const target = pdf('o.pdf', outside);
+    symlinkSync(target, join(proj, 'link.pdf'));
+    symlinkSync(outside, join(proj, 'dir'));
+    const convert = vi.fn(async () => '/c.md');
+    expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'link.pdf') }), convert, deps())).toBeNull();
+    expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'dir', 'o.pdf') }), convert, deps())).toBeNull();
+    expect(convert).not.toHaveBeenCalled();
+  });
+
+  it('passes through a missing file', async () => {
+    const convert = vi.fn(async () => '/c.md');
+    expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'nope.pdf') }), convert, deps())).toBeNull();
+    expect(convert).not.toHaveBeenCalled();
+  });
+
+  describe('Read deny rules', () => {
+    const settingsFiles = (): string[] => [
+      join(home, '.claude', 'settings.json'),
+      join(proj, '.claude', 'settings.json'),
+      join(proj, '.claude', 'settings.local.json'),
+    ];
+
+    it.each([0, 1, 2])('passes through when settings file %i has a Read deny rule', async (index) => {
+      const file = settingsFiles()[index];
+      mkdirSync(join(file, '..'), { recursive: true });
+      writeFileSync(file, JSON.stringify({ permissions: { deny: ['Bash(rm:*)', 'Read(./secrets/**)'] } }));
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
+      expect(convert).not.toHaveBeenCalled();
+    });
+
+    it('passes through when a settings file cannot be parsed', async () => {
+      const file = settingsFiles()[1];
+      mkdirSync(join(file, '..'), { recursive: true });
+      writeFileSync(file, '{ nope');
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
+    });
+
+    it('converts when deny rules do not concern Read', async () => {
+      const file = settingsFiles()[0];
+      mkdirSync(join(file, '..'), { recursive: true });
+      writeFileSync(file, JSON.stringify({ permissions: { deny: ['Bash(rm:*)'] } }));
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
+      expect(convert).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -88,14 +183,15 @@ function harness(stdin: string, env: Record<string, string | undefined> = {}, ca
     env,
     openDistiller,
     readStdin: async () => stdin,
-    cacheDir,
+    cacheDir: cacheDir ?? join(base, 'cache'),
+    homeDir: home,
   };
   return { deps, stdout, stderr, exit, openDistiller, close };
 }
 
 describe('run hook claude', () => {
   it('prints nothing and exits 0 without opening the distiller for non-matching reads', async () => {
-    const h = harness(JSON.stringify(payload({ file_path: '/a/b.png' })));
+    const h = harness(JSON.stringify(payload({ file_path: join(proj, 'b.png') })));
     await run(['hook', 'claude'], h.deps);
     expect(h.stdout).toEqual([]);
     expect(h.openDistiller).not.toHaveBeenCalled();
@@ -104,7 +200,7 @@ describe('run hook claude', () => {
   });
 
   it('passes through for DISTILL_HOOK=off without opening the distiller', async () => {
-    const h = harness(JSON.stringify(payload({ file_path: '/a/b.pdf' })), { DISTILL_HOOK: 'off' });
+    const h = harness(JSON.stringify(payload({ file_path: pdf() })), { DISTILL_HOOK: 'off' });
     await run(['hook', 'claude'], h.deps);
     expect(h.stdout).toEqual([]);
     expect(h.openDistiller).not.toHaveBeenCalled();
@@ -119,7 +215,9 @@ describe('run hook claude', () => {
   });
 
   it('logs one stderr line, prints nothing, exits 0 and closes the distiller when conversion fails', async () => {
-    const h = harness(JSON.stringify(payload({ file_path: '/nonexistent/b.pdf' })));
+    const h = harness(JSON.stringify(payload({ file_path: pdf() })), {}, undefined, async () => {
+      throw new Error('parse boom');
+    });
     await run(['hook', 'claude'], h.deps);
     expect(h.stdout).toEqual([]);
     expect(h.stderr).toHaveLength(1);
@@ -130,7 +228,7 @@ describe('run hook claude', () => {
   });
 
   it('logs one stderr line when the distiller cannot open', async () => {
-    const h = harness(JSON.stringify(payload({ file_path: '/a/b.pdf' })));
+    const h = harness(JSON.stringify(payload({ file_path: pdf() })));
     h.openDistiller.mockRejectedValueOnce(new Error('no parser'));
     await run(['hook', 'claude'], h.deps);
     expect(h.stdout).toEqual([]);
@@ -139,26 +237,19 @@ describe('run hook claude', () => {
   });
 
   it('prints exactly one JSON object on success and closes the distiller', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'distill-hook-'));
-    try {
-      const file = join(dir, 'b.pdf');
-      writeFileSync(file, 'pdf-bytes');
-      const h = harness(JSON.stringify(payload({ file_path: file })), {}, join(dir, 'cache'));
-      await run(['hook', 'claude'], h.deps);
-      expect(h.stdout).toHaveLength(1);
-      const out = JSON.parse(h.stdout[0]);
-      expect(out.hookSpecificOutput.updatedInput.file_path).toMatch(/\.md$/);
-      expect(h.stderr).toEqual([]);
-      expect(h.close).toHaveBeenCalledTimes(1);
-      expect(h.exit.mock.calls.every(([code]) => code === 0)).toBe(true);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    const h = harness(JSON.stringify(payload({ file_path: pdf() })));
+    await run(['hook', 'claude'], h.deps);
+    expect(h.stdout).toHaveLength(1);
+    const out = JSON.parse(h.stdout[0]);
+    expect(out.hookSpecificOutput.updatedInput.file_path).toMatch(/\.md$/);
+    expect(h.stderr).toEqual([]);
+    expect(h.close).toHaveBeenCalledTimes(1);
+    expect(h.exit.mock.calls.every(([code]) => code === 0)).toBe(true);
   });
 
   it('exits 0 on extra arguments and unknown options', async () => {
     for (const extra of [['extra'], ['--bogus']]) {
-      const h = harness(JSON.stringify(payload({ file_path: '/a/b.png' })));
+      const h = harness(JSON.stringify(payload({ file_path: join(proj, 'b.png') })));
       await run(['hook', 'claude', ...extra], h.deps);
       expect(h.stdout).toEqual([]);
       expect(h.exit.mock.calls.every(([code]) => code === 0)).toBe(true);
@@ -166,7 +257,9 @@ describe('run hook claude', () => {
   });
 
   it('does not throw when close throws', async () => {
-    const h = harness(JSON.stringify(payload({ file_path: '/nonexistent/b.pdf' })));
+    const h = harness(JSON.stringify(payload({ file_path: pdf() })), {}, undefined, async () => {
+      throw new Error('parse boom');
+    });
     h.close.mockImplementation(() => {
       throw new Error('close boom');
     });
@@ -177,8 +270,10 @@ describe('run hook claude', () => {
 
 describe('run hook convert', () => {
   it('exits 1 with empty stdout when conversion fails', async () => {
-    const h = harness('');
-    await run(['hook', 'convert', '/nonexistent/b.pdf'], h.deps);
+    const h = harness('', {}, undefined, async () => {
+      throw new Error('parse boom');
+    });
+    await run(['hook', 'convert', pdf()], h.deps);
     expect(h.stdout).toEqual([]);
     expect(h.exit).toHaveBeenCalledWith(1);
   });
