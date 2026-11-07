@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { accessSync, constants, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, chmodSync, constants, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
@@ -10,8 +10,8 @@ import { handleClaudePreToolUse } from '../hooks/claude';
 import { convertCached } from '../hooks/cache';
 import { hookCommand } from '../hooks/command';
 import { lineDiff } from '../hooks/diff';
-import { planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
-import { opencodePluginPath, planOpencodeInstall } from '../hooks/install-opencode';
+import { normalizeSettings, planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
+import { isOwnOpencodePlugin, opencodePluginPath, planOpencodeInstall } from '../hooks/install-opencode';
 import { isHookConvertible } from '../hooks/supported';
 import { openDistiller as defaultOpenDistiller } from '../node/distill';
 import type { Distiller } from '../node/distill';
@@ -88,11 +88,25 @@ function readIfExists(path: string): string | null {
 }
 
 function writeAtomic(path: string, content: string): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, content);
-  renameSync(tmp, path);
+  let target = path;
+  let mode: number | undefined;
+  try {
+    target = realpathSync(path);
+    mode = statSync(target).mode & 0o777;
+  } catch {}
+  mkdirSync(dirname(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, content);
+    if (mode !== undefined) chmodSync(tmp, mode);
+    renameSync(tmp, target);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
 }
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 interface HooksOptions {
   claude?: boolean;
@@ -437,8 +451,9 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   type Target = 'claude' | 'opencode';
 
-  const applyChange = async (path: string, before: string | null, next: string | null, options: HooksOptions): Promise<boolean> => {
+  const applyChange = async (path: string, before: string | null, next: string | null, options: HooksOptions, note?: string): Promise<boolean> => {
     stdout(`File: ${path}`);
+    if (note !== undefined) stdout(note);
     for (const line of lineDiff(before ?? '', next ?? '')) stdout(line);
     if (options.yes !== true) {
       if (!isTTY) {
@@ -452,8 +467,14 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         return true;
       }
     }
-    if (next === null) rmSync(path, { force: true });
-    else writeAtomic(path, next);
+    try {
+      if (next === null) rmSync(path, { force: true });
+      else writeAtomic(path, next);
+    } catch (error) {
+      stderr(`Could not write ${path}: ${errorMessage(error)}`);
+      exit(1);
+      return false;
+    }
     stdout(next === null ? `Removed ${path}` : `Wrote ${path}`);
     return true;
   };
@@ -461,7 +482,14 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const processTarget = async (target: Target, action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
     const location = { home: homeDir, cwd, project: options.project === true };
     const path = target === 'claude' ? join(location.project ? cwd : homeDir, '.claude', 'settings.json') : opencodePluginPath(location);
-    const current = readIfExists(path);
+    let current: string | null;
+    try {
+      current = readIfExists(path);
+    } catch (error) {
+      stderr(`Could not read ${path}: ${errorMessage(error)}`);
+      exit(1);
+      return false;
+    }
 
     if (action === 'uninstall' && current === null) {
       stdout('Nothing to remove.');
@@ -469,6 +497,15 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     }
 
     if (target === 'opencode') {
+      if (current !== null && !isOwnOpencodePlugin(current)) {
+        if (action === 'uninstall') {
+          stdout(`${path} was not created by distill; leaving it.`);
+          return true;
+        }
+        stderr(`${path} exists and was not created by distill; refusing to overwrite it.`);
+        exit(1);
+        return false;
+      }
       if (action === 'install') {
         const plan = planOpencodeInstall(current, command);
         if (!plan.changed) {
@@ -481,8 +518,14 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     }
 
     let plan: { next: string; changed: boolean };
+    let baseline: string | null = current;
+    let note: string | undefined;
     try {
       plan = action === 'install' ? planClaudeInstall(current, command) : planClaudeUninstall(current as string);
+      if (current !== null) {
+        baseline = normalizeSettings(current);
+        if (current.trim() !== '' && baseline !== current) note = `Note: ${path} will be re-indented with 2 spaces.`;
+      }
     } catch (error) {
       stderr(`Could not parse ${path}: ${error instanceof Error ? error.message : String(error)}. Nothing was changed.`);
       exit(1);
@@ -492,7 +535,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       stdout(action === 'install' ? `Already installed: ${path}` : 'Nothing to remove.');
       return true;
     }
-    return applyChange(path, current, plan.next, options);
+    return applyChange(path, baseline, plan.next, options, note);
   };
 
   const runHooksAction = async (action: 'install' | 'uninstall', options: HooksOptions): Promise<void> => {

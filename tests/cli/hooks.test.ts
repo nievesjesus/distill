@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -147,5 +147,91 @@ describe('hooks --opencode', () => {
     const s = setup();
     await run(['hooks', 'uninstall', '--opencode', '--yes'], s.deps);
     expect(s.stdout).toContain('Nothing to remove.');
+  });
+});
+
+describe('hooks install robustness', () => {
+  it('writes through a symlinked settings.json and keeps the link', async () => {
+    const s = setup();
+    const real = join(s.home, 'dotfiles', 'settings.json');
+    mkdirSync(join(s.home, 'dotfiles'), { recursive: true });
+    mkdirSync(join(s.home, '.claude'), { recursive: true });
+    writeFileSync(real, '{}\n');
+    const link = join(s.home, '.claude', 'settings.json');
+    symlinkSync(real, link);
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(readFileSync(real, 'utf8')).hooks.PreToolUse).toHaveLength(1);
+  });
+
+  it('keeps the file mode', async () => {
+    const s = setup();
+    const file = join(s.home, '.claude', 'settings.json');
+    mkdirSync(join(s.home, '.claude'), { recursive: true });
+    writeFileSync(file, '{}\n', { mode: 0o600 });
+    chmodSync(file, 0o600);
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it('never prints unrelated secrets and notes re-indentation', async () => {
+    const s = setup();
+    const file = join(s.home, '.claude', 'settings.json');
+    mkdirSync(join(s.home, '.claude'), { recursive: true });
+    const others = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`k${i}`, i]));
+    writeFileSync(file, JSON.stringify({ env: { SECRET: 'hunter2' }, ...others }));
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    const out = s.stdout.join('\n');
+    expect(out).not.toContain('hunter2');
+    expect(out).toContain(`Note: ${file} will be re-indented with 2 spaces.`);
+    expect(out).toContain('…');
+  });
+
+  it('leaves a foreign distill.js alone on uninstall and refuses to overwrite it', async () => {
+    const s = setup();
+    const file = join(s.home, '.config', 'opencode', 'plugins', 'distill.js');
+    mkdirSync(join(s.home, '.config', 'opencode', 'plugins'), { recursive: true });
+    writeFileSync(file, 'export const Mine = 1;\n');
+    await run(['hooks', 'uninstall', '--opencode', '--yes'], s.deps);
+    expect(s.stdout).toContain(`${file} was not created by distill; leaving it.`);
+    expect(s.exit).not.toHaveBeenCalled();
+    expect(existsSync(file)).toBe(true);
+    await run(['hooks', 'install', '--opencode', '--yes'], s.deps);
+    expect(s.exit).toHaveBeenCalledWith(1);
+    expect(readFileSync(file, 'utf8')).toBe('export const Mine = 1;\n');
+  });
+
+  it('upgrades a pinned entry', async () => {
+    const s = setup({ which: null });
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    const again = setup();
+    again.deps.homeDir = s.home;
+    await run(['hooks', 'install', '--claude', '--yes'], again.deps);
+    const text = readFileSync(join(s.home, '.claude', 'settings.json'), 'utf8');
+    expect(JSON.parse(text).hooks.PreToolUse[0].hooks[0].command).toBe('distillmd hook claude');
+  });
+
+  it('reports read errors on one line', async () => {
+    const s = setup();
+    mkdirSync(join(s.home, '.claude', 'settings.json'), { recursive: true });
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    expect(s.exit).toHaveBeenCalledWith(1);
+    expect(s.stderr).toHaveLength(1);
+    expect(s.stderr[0]).toMatch(/^Could not read .*settings\.json: /);
+  });
+
+  it('reports write errors on one line', async () => {
+    const s = setup();
+    const dir = join(s.home, '.claude');
+    mkdirSync(dir, { recursive: true });
+    chmodSync(dir, 0o500);
+    try {
+      await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    } finally {
+      chmodSync(dir, 0o700);
+    }
+    expect(s.exit).toHaveBeenCalledWith(1);
+    expect(s.stderr).toHaveLength(1);
+    expect(s.stderr[0]).toMatch(/^Could not write .*settings\.json: /);
   });
 });

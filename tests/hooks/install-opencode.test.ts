@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { opencodePluginSource } from '../../src/hooks/opencode-plugin';
-import { opencodePluginPath, planOpencodeInstall } from '../../src/hooks/install-opencode';
+import { INVOCATION_SOURCE, opencodePluginSource } from '../../src/hooks/opencode-plugin';
+import { isOwnOpencodePlugin, opencodePluginPath, planOpencodeInstall } from '../../src/hooks/install-opencode';
 
 interface Plugin {
   DistillPlugin: (ctx?: unknown) => Promise<{
@@ -108,5 +108,33 @@ describe('opencode paths and plans', () => {
     expect(first.next).toBe(opencodePluginSource('distillmd'));
     expect(planOpencodeInstall(first.next, 'distillmd').changed).toBe(false);
     expect(planOpencodeInstall(first.next, 'npx -y distillmd@1').changed).toBe(true);
+  });
+});
+
+describe('invocation builder', () => {
+  const build = new Function(`${INVOCATION_SOURCE}; return buildInvocation;`)() as (
+    command: string[],
+    file: string,
+    platform: string,
+  ) => { file: string; args: string[]; shell: boolean };
+
+  it('runs directly on posix', () => {
+    expect(build(['npx', '-y', 'distillmd@1'], '/a b/x.pdf', 'darwin')).toEqual({
+      file: 'npx',
+      args: ['-y', 'distillmd@1', 'hook', 'convert', '/a b/x.pdf'],
+      shell: false,
+    });
+  });
+
+  it('goes through a shell with quoted arguments on win32', () => {
+    const result = build(['distillmd'], 'C:\\My Docs\\a"b.pdf', 'win32');
+    expect(result.shell).toBe(true);
+    expect(result.args).toEqual([]);
+    expect(result.file).toBe('"distillmd" "hook" "convert" "C:\\My Docs\\a\\"b.pdf"');
+  });
+
+  it('recognizes its own plugin file', () => {
+    expect(isOwnOpencodePlugin(opencodePluginSource('distillmd'))).toBe(true);
+    expect(isOwnOpencodePlugin('export const Other = 1;')).toBe(false);
   });
 });

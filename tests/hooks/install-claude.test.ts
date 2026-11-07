@@ -49,9 +49,14 @@ describe('planClaudeInstall', () => {
     expect(second.next).toBe(first.next);
   });
 
-  it('recognizes an own entry installed with a different command', () => {
+  it('updates an own entry installed with a different command in place', () => {
     const first = planClaudeInstall(null, 'npx -y distillmd@1.0.0');
-    expect(planClaudeInstall(first.next, 'distillmd').changed).toBe(false);
+    const plan = planClaudeInstall(first.next, 'distillmd');
+    expect(plan.changed).toBe(true);
+    const next = JSON.parse(plan.next);
+    expect(next.hooks.PreToolUse).toHaveLength(1);
+    expect(next.hooks.PreToolUse[0].hooks[0].command).toBe('distillmd hook claude');
+    expect(planClaudeInstall(plan.next, 'distillmd').changed).toBe(false);
   });
 
   it('adds only the permission when the hook already exists', () => {

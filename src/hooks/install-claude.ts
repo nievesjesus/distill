@@ -35,13 +35,26 @@ function entryHooks(entry: unknown): unknown[] {
   return isObject(entry) && Array.isArray(entry.hooks) ? entry.hooks : [];
 }
 
+export function normalizeSettings(current: string): string {
+  return current.trim() === '' ? '' : serialize(parseSettings(current));
+}
+
 export function planClaudeInstall(current: string | null, command: string): Plan {
   const settings = parseSettings(current);
   let changed = false;
 
   const hooks = isObject(settings.hooks) ? settings.hooks : {};
   const preToolUse = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
-  if (!preToolUse.some((entry) => entryHooks(entry).some(isOwnHook))) {
+  const wanted = `${command} hook claude`;
+  const own = preToolUse.flatMap((entry) => entryHooks(entry).filter(isOwnHook)) as Json[];
+  if (own.length > 0) {
+    for (const hook of own) {
+      if (hook.command !== wanted) {
+        hook.command = wanted;
+        changed = true;
+      }
+    }
+  } else {
     preToolUse.push({
       matcher: 'Read',
       hooks: [{ type: 'command', command: `${command} hook claude`, timeout: HOOK_TIMEOUT_SECONDS }],
