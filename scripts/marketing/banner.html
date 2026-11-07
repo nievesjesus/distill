@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>distill banner</title>
+<style>
+  @font-face { font-family: 'Space Grotesk'; font-weight: 700; src: url('../../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-700-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'Inter'; font-weight: 400; src: url('../../node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'Inter'; font-weight: 500; src: url('../../node_modules/@fontsource/inter/files/inter-latin-500-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'Inter'; font-weight: 600; src: url('../../node_modules/@fontsource/inter/files/inter-latin-600-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'JetBrains Mono'; font-weight: 500; src: url('../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'JetBrains Mono'; font-weight: 700; src: url('../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff2') format('woff2'); }
+
+  :root {
+    --bg: #0b0b10;
+    --surface: #15151c;
+    --border: #26262f;
+    --text: #f3f3f6;
+    --muted: #a0a0ae;
+    --accent: #c8f53c;
+    --on-accent: #0b0b10;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { width: 1280px; height: 640px; background: var(--bg); overflow: hidden; }
+
+  body {
+    position: relative;
+    font-family: 'Inter', sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    background-size: 40px 40px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 90% at 72% 45%, #000 0%, transparent 75%);
+    mask-image: radial-gradient(ellipse 70% 90% at 72% 45%, #000 0%, transparent 75%);
+  }
+
+  .glow {
+    position: absolute;
+    left: 640px;
+    top: 40px;
+    width: 700px;
+    height: 600px;
+    background: radial-gradient(closest-side, rgba(200, 245, 60, 0.26), rgba(200, 245, 60, 0.07) 55%, transparent 100%);
+    filter: blur(24px);
+  }
+
+  .glow-low {
+    position: absolute;
+    left: -220px;
+    top: 330px;
+    width: 640px;
+    height: 460px;
+    background: radial-gradient(closest-side, rgba(200, 245, 60, 0.10), transparent 100%);
+  }
+
+  .copy {
+    position: absolute;
+    left: 64px;
+    top: 0;
+    bottom: 0;
+    width: 540px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .mark {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    background: var(--accent);
+    color: var(--on-accent);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 0 40px rgba(200, 245, 60, 0.35);
+  }
+
+  .wordmark {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 76px;
+    line-height: 1;
+    letter-spacing: -0.035em;
+  }
+
+  .tagline {
+    margin-top: 34px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 40px;
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+  }
+
+  .tagline em { font-style: normal; color: var(--accent); }
+
+  .sub {
+    margin-top: 20px;
+    font-size: 18px;
+    line-height: 1.5;
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  .sub strong { color: var(--text); font-weight: 500; }
+
+  .chips {
+    margin-top: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 13px;
+    padding: 6px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(21, 21, 28, 0.8);
+    color: var(--muted);
+  }
+
+  .pill {
+    margin-top: 30px;
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 12px 22px 12px 20px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: 0 10px 40px rgba(200, 245, 60, 0.28);
+  }
+
+  .pill .pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 26px;
+    letter-spacing: -0.04em;
+  }
+
+  .pill .detail {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 15px;
+    opacity: 0.8;
+  }
+
+  .win {
+    position: absolute;
+    border-radius: 14px;
+    background: var(--bg);
+    border: 1px solid #34343f;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  }
+
+  .bar {
+    height: 30px;
+    background: #17171f;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 7px;
+  }
+
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #3a3a46; }
+
+  .win img { display: block; width: 123%; max-width: none; margin-left: -11.5%; height: auto; }
+
+  .win .frame { overflow: hidden; }
+
+  .back { left: 928px; top: 30px; width: 312px; z-index: 1; }
+  .back .frame { height: 470px; }
+  .front { left: 604px; top: 190px; width: 340px; z-index: 2; box-shadow: 0 40px 90px rgba(0, 0, 0, 0.7), 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 60px rgba(200, 245, 60, 0.08); }
+  .front .frame { height: auto; }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="glow-low"></div>
+  <div class="grid"></div>
+
+  <div class="copy">
+    <div class="brand">
+      <span class="mark">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3c3.6 4.3 6.2 7.6 6.2 10.8a6.2 6.2 0 0 1-12.4 0C5.8 10.6 8.4 7.3 12 3z"/>
+          <path d="M9.5 15h5"/>
+        </svg>
+      </span>
+      <span class="wordmark">distill</span>
+    </div>
+    <h1 class="tagline">Documents in.<br><em>Fewer tokens</em> out.</h1>
+    <p class="sub"><strong>Local-first PDF/Office → LLM-ready Markdown.</strong></p>
+    <div class="chips" id="chips">
+      <span class="chip">Web</span><span class="chip">Desktop</span><span class="chip">CLI</span><span class="chip">MCP</span><span class="chip">Claude Code &amp; OpenCode hooks</span>
+    </div>
+    <div class="pill" id="pill"><span class="pct" id="pct">&minus;0%</span><span class="detail" id="detail"></span></div>
+  </div>
+
+  <div class="win back">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    <div class="frame"><img src="../../.github/assets/screenshot-detailed.png" alt=""></div>
+  </div>
+  <div class="win front">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    <div class="frame"><img src="../../.github/assets/screenshot-compact.png" alt=""></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    document.getElementById('pct').textContent = params.get('pct') ?? '';
+    document.getElementById('detail').textContent = params.get('detail') ?? '';
+  </script>
+</body>
+</html>
