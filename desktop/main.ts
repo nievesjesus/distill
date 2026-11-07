@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, screen, session, shell } from 'electron';
-import type { WebContents } from 'electron';
+import { fileURLToPath } from 'node:url';
+import { app, BrowserWindow, dialog, ipcMain, screen, session, shell } from 'electron';
+import type { IpcMainEvent, WebContents } from 'electron';
+import { REVEAL_CHANNEL, createDownloadHandler, createRevealHandler, createSavedRegistry } from './downloads';
 import { startServer } from '../src/server/start';
 import { readSavedState, restoreBounds, writeSavedState } from './window-state';
 import type { WindowState } from './window-state';
@@ -25,6 +27,8 @@ let server: { url: string; close(): Promise<void> } | null = null;
 let appUrl = '';
 let shutdown: Promise<void> | null = null;
 let shutdownDone = false;
+const savedRegistry = createSavedRegistry();
+const PRELOAD_PATH = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 
 function openExternal(url: string): void {
   if (isAllowedExternal(url)) void shell.openExternal(url);
@@ -33,7 +37,7 @@ function openExternal(url: string): void {
 function stopServer(): Promise<void> {
   shutdown ??= Promise.race([
     (server?.close() ?? Promise.resolve()).catch((error: unknown) => console.warn('could not stop server', error)),
-    new Promise<void>((resolve) => setTimeout(resolve, CLOSE_TIMEOUT_MS)),
+    new Promise<void>((resolve) => setTimeout(resolve, CLOSE_TIMEOUT_MS).unref()),
   ]).finally(() => {
     shutdownDone = true;
   });
@@ -58,6 +62,33 @@ function guardContents(contents: WebContents): void {
     return { action: 'deny' };
   });
   contents.on('will-attach-webview', (event) => event.preventDefault());
+}
+
+function isTrustedSender(event: IpcMainEvent): boolean {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const contents = mainWindow.webContents;
+  return event.sender === contents && event.senderFrame === contents.mainFrame && isSameOrigin(event.senderFrame.url, appUrl);
+}
+
+function installDownloads(): void {
+  const handleDownload = createDownloadHandler({
+    dialog,
+    downloadsDir: app.getPath('downloads'),
+    prefsFile: join(app.getPath('userData'), 'desktop-prefs.json'),
+    registry: savedRegistry,
+    dock: app.dock ?? undefined,
+  });
+  session.defaultSession.on('will-download', (_event, item, contents) => {
+    if (!mainWindow || contents !== mainWindow.webContents) {
+      item.cancel();
+      return;
+    }
+    handleDownload(item, mainWindow);
+  });
+  const reveal = createRevealHandler({ shell, registry: savedRegistry });
+  ipcMain.on(REVEAL_CHANNEL, (event, id: unknown) => {
+    if (isTrustedSender(event)) reveal(id);
+  });
 }
 
 function workAreas() {
@@ -98,7 +129,7 @@ function createWindow(url: string): BrowserWindow {
   const stateFile = join(app.getPath('userData'), 'window-state.json');
   const restored = restoreBounds(readSavedState(stateFile), workAreas(), WINDOW_DEFAULTS, WINDOW_MINIMUMS);
   const { maximized, fullScreen, ...bounds } = restored;
-  const window = new BrowserWindow({ ...windowOptions(process.platform), ...bounds });
+  const window = new BrowserWindow({ ...windowOptions(process.platform, PRELOAD_PATH), ...bounds });
   window.webContents.on('did-finish-load', () => {
     window.webContents.setVisualZoomLevelLimits(1, 1).catch((error) => console.warn('could not lock pinch zoom', error));
   });
@@ -122,6 +153,7 @@ async function boot(): Promise<void> {
     callback(isPermissionAllowed(permission)),
   );
   session.defaultSession.setPermissionCheckHandler((_contents, permission) => isPermissionAllowed(permission));
+  installDownloads();
   server = await startServer({ port: 0, host: '127.0.0.1', maxBytes: MAX_UPLOAD_BYTES });
   appUrl = server.url;
   mainWindow = createWindow(appUrl);

@@ -39,4 +39,27 @@ describe('store', () => {
     expect(store.get('a')).toBeDefined();
     expect(store.get('b')).toBeDefined();
   });
+
+  it('deletes one entry and releases its bytes', () => {
+    const store = createStore({ maxFiles: 10, maxBytes: 10 });
+    store.put(entry('a', 6));
+    store.delete('a');
+    store.delete('a');
+    expect(store.get('a')).toBeUndefined();
+    store.put(entry('b', 6));
+    store.put(entry('c', 4));
+    expect(store.get('b')).toBeDefined();
+    expect(store.get('c')).toBeDefined();
+  });
+
+  it('clears everything', () => {
+    const store = createStore({ maxFiles: 10, maxBytes: 10 });
+    store.put(entry('a', 5));
+    store.put(entry('b', 5));
+    store.clear();
+    expect(store.get('a')).toBeUndefined();
+    expect(store.get('b')).toBeUndefined();
+    store.put(entry('c', 10));
+    expect(store.get('c')).toBeDefined();
+  });
 });

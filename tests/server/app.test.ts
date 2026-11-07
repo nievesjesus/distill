@@ -403,6 +403,59 @@ describe('server app', () => {
     expect(res.status).toBe(503);
   });
 
+  describe('DELETE /api/files', () => {
+    const put = (store: ReturnType<typeof createStore>, id: string) =>
+      store.put({ id, name: `${id}.pdf`, kind: 'PDF', bytes: new Uint8Array(1), markdown: id });
+
+    it('removes one stored file with 204 and is idempotent', async () => {
+      const { app, store } = setup();
+      put(store, 'a');
+      put(store, 'b');
+      const first = await app.request('/api/files/a', { method: 'DELETE' });
+      expect(first.status).toBe(204);
+      expect(store.get('a')).toBeUndefined();
+      expect(store.get('b')).toBeDefined();
+      const second = await app.request('/api/files/a', { method: 'DELETE' });
+      expect(second.status).toBe(204);
+      const unknown = await app.request('/api/files/never-existed', { method: 'DELETE' });
+      expect(unknown.status).toBe(204);
+    });
+
+    it('clears every stored file with 204 and is idempotent', async () => {
+      const { app, store } = setup();
+      put(store, 'a');
+      put(store, 'b');
+      expect((await app.request('/api/files', { method: 'DELETE' })).status).toBe(204);
+      expect(store.get('a')).toBeUndefined();
+      expect(store.get('b')).toBeUndefined();
+      expect((await app.request('/api/files', { method: 'DELETE' })).status).toBe(204);
+    });
+
+    it.each(['/api/files', '/api/files/a'])('blocks DELETE %s with a foreign Origin', async (path) => {
+      const { app, store } = setup({ guardLoopback: true });
+      put(store, 'a');
+      const res = await app.request(path, { method: 'DELETE', headers: { host: 'localhost:4321', origin: 'https://evil.example' } });
+      expect(res.status).toBe(403);
+      expect(store.get('a')).toBeDefined();
+    });
+
+    it('blocks DELETE with a foreign Host', async () => {
+      const { app, store } = setup({ guardLoopback: true });
+      put(store, 'a');
+      const res = await app.request('/api/files/a', { method: 'DELETE', headers: { host: 'evil.example:4321' } });
+      expect(res.status).toBe(403);
+      expect(store.get('a')).toBeDefined();
+    });
+
+    it('allows DELETE with a loopback Origin', async () => {
+      const { app, store } = setup({ guardLoopback: true });
+      put(store, 'a');
+      const res = await app.request('/api/files/a', { method: 'DELETE', headers: { host: '127.0.0.1:4321', origin: 'http://127.0.0.1:4321' } });
+      expect(res.status).toBe(204);
+      expect(store.get('a')).toBeUndefined();
+    });
+  });
+
   describe('loopback guard', () => {
     const blockedBody = { code: 'forbidden', message: 'Request blocked: distill only accepts local requests' };
 

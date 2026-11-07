@@ -1,19 +1,32 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { DragEvent } from 'react';
+import type { DragEvent, RefObject } from 'react';
 import { collectFiles } from '../lib/collect-files';
 import { S } from '../strings';
 
 interface DropzoneProps {
   onFiles: (files: File[]) => void;
+  inputRef?: RefObject<HTMLInputElement | null>;
+  onDraggingChange?: (dragging: boolean) => void;
 }
 
-export function Dropzone({ onFiles }: DropzoneProps) {
+export function focusBrowse(): void {
+  document.querySelector<HTMLElement>('.dropzone-browse')?.focus();
+}
+
+export function Dropzone({ onFiles, inputRef: sharedInputRef, onDraggingChange }: DropzoneProps) {
   const inputId = useId();
   const formatsId = useId();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const ownInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = sharedInputRef ?? ownInputRef;
   const [dragging, setDragging] = useState(false);
   const onFilesRef = useRef(onFiles);
   onFilesRef.current = onFiles;
+  const onDraggingChangeRef = useRef(onDraggingChange);
+  onDraggingChangeRef.current = onDraggingChange;
+
+  useEffect(() => {
+    onDraggingChangeRef.current?.(dragging);
+  }, [dragging]);
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {

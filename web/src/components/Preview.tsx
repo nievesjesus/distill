@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { getJson } from '../api';
 import { downloadText } from '../lib/download';
+import { cachedJson, loadJson } from '../lib/json-cache';
 import { jsonName } from '../lib/names';
 import { ERROR_MESSAGES, S } from '../strings';
 import type { ErrorCode } from '@core/types';
@@ -28,34 +28,7 @@ const TABS: readonly Tab[] = ['markdown', 'json'];
 const JSON_LIMIT = 2_000_000;
 const JSON_TYPE = 'application/json;charset=utf-8';
 
-const jsonResults = new Map<string, string>();
-const jsonInflight = new Map<string, Promise<string>>();
-
-export function clearJsonCache(): void {
-  jsonResults.clear();
-  jsonInflight.clear();
-}
-
-function loadJson(serverId: string): Promise<string> {
-  const cached = jsonResults.get(serverId);
-  if (cached !== undefined) return Promise.resolve(cached);
-  const inflight = jsonInflight.get(serverId);
-  if (inflight) return inflight;
-  const request = getJson(serverId).then(
-    (value) => {
-      const text = JSON.stringify(value, null, 2);
-      jsonResults.set(serverId, text);
-      jsonInflight.delete(serverId);
-      return text;
-    },
-    (error: unknown) => {
-      jsonInflight.delete(serverId);
-      throw error;
-    },
-  );
-  jsonInflight.set(serverId, request);
-  return request;
-}
+export { clearJsonCache } from '../lib/json-cache';
 
 function errorCode(error: unknown): ErrorCode {
   if (typeof error === 'object' && error !== null) {
@@ -67,14 +40,14 @@ function errorCode(error: unknown): ErrorCode {
 
 function useJsonText(serverId: string | undefined, active: boolean) {
   const [state, setState] = useState<JsonState>(() => {
-    const cached = serverId === undefined ? undefined : jsonResults.get(serverId);
+    const cached = serverId === undefined ? undefined : cachedJson(serverId);
     return cached === undefined ? { status: 'idle' } : { status: 'ready', text: cached };
   });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!active || serverId === undefined) return;
-    const cached = jsonResults.get(serverId);
+    const cached = cachedJson(serverId);
     if (cached !== undefined) {
       setState({ status: 'ready', text: cached });
       return;

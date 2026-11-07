@@ -6,14 +6,27 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
   optionalDependencies?: Record<string, string>;
 };
 
-export default defineConfig({
-  entry: { main: 'desktop/main.ts' },
+const shared = {
   outDir: 'dist/desktop',
-  format: ['esm'],
   platform: 'node',
   target: 'node20',
   clean: false,
   sourcemap: false,
   dts: false,
-  external: ['electron', ...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.optionalDependencies ?? {})],
-});
+} as const;
+
+export default defineConfig([
+  {
+    ...shared,
+    entry: { main: 'desktop/main.ts' },
+    format: ['esm'],
+    external: ['electron', ...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.optionalDependencies ?? {})],
+  },
+  {
+    ...shared,
+    entry: { preload: 'desktop/preload.ts' },
+    format: ['cjs'],
+    outExtension: () => ({ js: '.cjs' }),
+    external: ['electron'],
+  },
+]);

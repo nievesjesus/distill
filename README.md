@@ -75,11 +75,11 @@ Counts use the `o200k_base` encoding (via `gpt-tokenizer`), computed in your bro
 
 ## Privacy
 
-Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. Distill can make two one-time downloads. First, the first OCR of an image or scan downloads about 15 MB of Tesseract English data (`eng.traineddata`) from GitHub, unless tessdata is already present. To avoid it, point `DISTILL_TESSDATA` or `TESSDATA_PREFIX` at a local tessdata directory (`DISTILL_OCR_LANG` sets the OCR language, default `eng`), or use the Docker image, which ships the data. Second, the LLMLingua model download, only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later.
+Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. Distill can make two one-time downloads. First, the first OCR of an image or scan downloads about 15 MB of Tesseract English data (`eng.traineddata`) from GitHub, unless tessdata is already present. To avoid it, point `DISTILL_TESSDATA` or `TESSDATA_PREFIX` at a local tessdata directory (`DISTILL_OCR_LANG` sets the OCR language, default `eng`), or use the Docker image, which ships the data. Second, the LLMLingua model download, only when you turn it on. Uploaded files are written to a temporary directory and deleted after parsing; the original bytes and the result stay in memory (a small LRU) only so the JSON view can be requested later. Removing a row or choosing Clear drops its copy from memory too. Nothing is written to disk except what you save yourself, and the list of documents is not remembered between launches: only your settings are.
 
 ## Desktop app
 
-Distill also ships as a desktop app for macOS (arm64 and x64, `.dmg`), Windows (x64, `.exe` installer) and Linux (x64, `.AppImage`). Downloads are on the [GitHub Releases](https://github.com/nievesjesus/distill/releases) page once published. It runs the same local server and UI as `npx distillmd` in its own window.
+Distill also ships as a desktop app for macOS (arm64 and x64, `.dmg`), Windows (x64, `.exe` installer) and Linux (x64, `.AppImage`). Downloads are on the [GitHub Releases](https://github.com/nievesjesus/distill/releases) page once published. It runs the same local server and UI as `npx distillmd` in its own window. Saving uses the native save dialog, which opens in the last folder you used, and a short "Show in Finder" link appears afterwards.
 
 | Variant | What it includes | Size |
 |---------|------------------|------|

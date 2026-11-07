@@ -210,3 +210,127 @@ describe('useFiles', () => {
     expect(result.current.files[0]?.status).toBe('queued');
   });
 });
+
+describe('useFiles remove and clear', () => {
+  function recordingFetch(options: { holdParse?: boolean } = {}) {
+    const calls: Array<{ url: string; method: string; signal?: AbortSignal | null }> = [];
+    const gates: Array<Deferred<Response>> = [];
+    const mock = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? 'GET', signal: init?.signal });
+      if (url === '/api/health') return health();
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+      const name = ((init?.body as FormData).get('file') as File).name;
+      if (options.holdParse) {
+        const gate = deferred<Response>();
+        gates.push(gate);
+        return gate.promise;
+      }
+      return parsed(name);
+    });
+    vi.stubGlobal('fetch', mock);
+    return { calls, gates };
+  }
+
+  it('removes a finished row and deletes it on the server', async () => {
+    const { calls } = recordingFetch();
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add([fileOf('a.pdf'), fileOf('b.pdf')]));
+    await waitFor(() => expect(result.current.files.every((f) => f.status === 'done')).toBe(true));
+    const [first, second] = result.current.files;
+    act(() => result.current.remove(first.localId));
+    expect(result.current.files.map((f) => f.localId)).toEqual([second.localId]);
+    expect(calls).toContainEqual(expect.objectContaining({ url: '/api/files/srv-a.pdf', method: 'DELETE' }));
+  });
+
+  it('aborts an in-flight upload when its row is removed', async () => {
+    const { calls, gates } = recordingFetch({ holdParse: true });
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add([fileOf('a.pdf')]));
+    await waitFor(() => expect(gates).toHaveLength(1));
+    const upload = calls.find((call) => call.url === '/api/parse');
+    expect(upload?.signal?.aborted).toBe(false);
+    act(() => result.current.remove(result.current.files[0].localId));
+    expect(upload?.signal?.aborted).toBe(true);
+    expect(result.current.files).toHaveLength(0);
+  });
+
+  it('never uploads a queued row that was removed', async () => {
+    const { gates } = recordingFetch({ holdParse: true });
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add(Array.from({ length: 5 }, (_, i) => fileOf(`f${i}.pdf`))));
+    await waitFor(() => expect(gates).toHaveLength(3));
+    const queued = result.current.files.filter((f) => f.status === 'queued');
+    expect(queued).toHaveLength(2);
+    act(() => result.current.remove(queued[0].localId));
+    act(() => gates[0].resolve(parsed('f0.pdf')));
+    await waitFor(() => expect(gates).toHaveLength(4));
+    act(() => {
+      gates[1].resolve(parsed('f1.pdf'));
+      gates[2].resolve(parsed('f2.pdf'));
+      gates[3].resolve(parsed('f4.pdf'));
+    });
+    await waitFor(() => expect(result.current.files.every((f) => f.status === 'done')).toBe(true));
+    expect(result.current.files.map((f) => f.name)).toEqual(['f0.pdf', 'f1.pdf', 'f2.pdf', 'f4.pdf']);
+    expect(gates).toHaveLength(4);
+  });
+
+  it('ignores a late worker reply for a removed row', async () => {
+    recordingFetch();
+    const slow = deferred<{ out: string; rawTokens: number; outTokens: number }>();
+    distillMock.mockImplementation(() => slow.promise);
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add([fileOf('a.pdf'), fileOf('b.pdf')]));
+    await waitFor(() => expect(result.current.files.every((f) => f.status === 'done')).toBe(true));
+    act(() => result.current.remove(result.current.files[0].localId));
+    await act(async () => {
+      slow.resolve({ out: 'x', rawTokens: 5, outTokens: 1 });
+    });
+    expect(result.current.files).toHaveLength(1);
+    expect(result.current.files[0].name).toBe('b.pdf');
+  });
+
+  it('clears everything, aborts uploads and deletes on the server', async () => {
+    const { calls, gates } = recordingFetch({ holdParse: true });
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add([fileOf('a.pdf'), fileOf('b.pdf'), fileOf('c.pdf'), fileOf('d.pdf')]));
+    await waitFor(() => expect(gates).toHaveLength(3));
+    act(() => result.current.clear());
+    expect(result.current.files).toEqual([]);
+    const uploads = calls.filter((call) => call.url === '/api/parse');
+    expect(uploads.every((call) => call.signal?.aborted)).toBe(true);
+    expect(calls).toContainEqual(expect.objectContaining({ url: '/api/files', method: 'DELETE' }));
+    await act(async () => {
+      gates.forEach((gate) => gate.resolve(parsed('late.pdf')));
+    });
+    expect(result.current.files).toEqual([]);
+    expect(gates).toHaveLength(3);
+  });
+
+  it('survives a failing server delete', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === '/api/health') return health();
+        if (init?.method === 'DELETE') throw new TypeError('network down');
+        return parsed('a.pdf');
+      }),
+    );
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add([fileOf('a.pdf')]));
+    await waitFor(() => expect(result.current.files[0]?.status).toBe('done'));
+    act(() => result.current.remove(result.current.files[0].localId));
+    act(() => result.current.clear());
+    expect(result.current.files).toEqual([]);
+  });
+
+  it('marks files as exported', async () => {
+    recordingFetch();
+    const { result } = renderHook(() => useFiles(DEFAULT_SETTINGS));
+    act(() => result.current.add([fileOf('a.pdf'), fileOf('b.pdf')]));
+    await waitFor(() => expect(result.current.files.every((f) => f.status === 'done')).toBe(true));
+    const [first, second] = result.current.files;
+    act(() => result.current.markExported([first.localId]));
+    expect(result.current.files.find((f) => f.localId === first.localId)?.exported).toBe(true);
+    expect(result.current.files.find((f) => f.localId === second.localId)?.exported).toBeUndefined();
+  });
+});

@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { savedPercent } from '@core/format';
-import { Dropzone } from './components/Dropzone';
+import { Dropzone, focusBrowse } from './components/Dropzone';
+import { EmptyState } from './components/EmptyState';
 import { FileList } from './components/FileList';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
@@ -15,8 +16,29 @@ const [taglineStart, taglineAccent, taglineEnd] = S.tagline;
 
 function AppBody() {
   const { settings, update, toggleBooster, toggleLingua } = useSettings();
-  const { files, add, healthError, health, linguaFailed, retryLingua } = useFiles(settings);
+  const { files, add, remove, clear, markExported, healthError, health, linguaFailed, retryLingua } = useFiles(settings);
   const announce = useAnnounce();
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const filesRef = useRef(files);
+  filesRef.current = files;
+
+  const removeFile = useCallback(
+    (localId: string) => {
+      const file = filesRef.current.find((candidate) => candidate.localId === localId);
+      remove(localId);
+      if (file) announce(S.removed(file.name));
+    },
+    [remove, announce],
+  );
+
+  const clearAll = useCallback(() => {
+    clear();
+    announce(S.cleared);
+    requestAnimationFrame(focusBrowse);
+  }, [clear, announce]);
+
+  const markOne = useCallback((localId: string) => markExported([localId]), [markExported]);
   const announced = useRef(new Map<string, 'done' | 'error'>());
 
   useEffect(() => {
@@ -56,7 +78,7 @@ function AppBody() {
             <em>{taglineAccent}</em>
             {taglineEnd}
           </h1>
-          <Dropzone onFiles={add} />
+          <Dropzone onFiles={add} inputRef={pickerRef} onDraggingChange={setDragging} />
           {healthError ? (
             <p className="app-error" role="alert">
               {healthError.message === S.unreachable ? S.unreachable : ERROR_MESSAGES[healthError.code]}
@@ -73,8 +95,12 @@ function AppBody() {
             onLinguaChange={(patch) => update({ lingua: { ...settings.lingua, ...patch } })}
             onRetryLingua={retryLingua}
           />
-          <FileList files={files} detailed={settings.detailed} />
-          <Footer files={files} />
+          {files.length === 0 ? (
+            <EmptyState dragging={dragging} onBrowse={() => pickerRef.current?.click()} />
+          ) : (
+            <FileList files={files} detailed={settings.detailed} onRemove={removeFile} onExported={markOne} />
+          )}
+          <Footer files={files} onClear={clearAll} onExported={markExported} />
         </div>
       </div>
     </div>

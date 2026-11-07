@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiError, ErrorCode, FileKind, Health } from '@core/types';
 import { detectKind } from '@core/kind';
-import { compress, getHealth, parseFile } from '../api';
+import { clearFiles, compress, deleteFile, getHealth, parseFile } from '../api';
+import { clearJsonCache, forgetJson } from '../lib/json-cache';
 import { distill } from '../worker/client';
 import type { Settings } from './settings';
 
@@ -25,11 +26,15 @@ export interface FileEntry {
   localOut?: string;
   localOutTokens?: number;
   compressing?: boolean;
+  exported?: boolean;
 }
 
 export interface FilesApi {
   files: FileEntry[];
   add: (files: File[]) => void;
+  remove: (localId: string) => void;
+  clear: () => void;
+  markExported: (localIds: string[]) => void;
   healthError: ApiError | null;
   health: Health | null;
   linguaFailed: boolean;
@@ -79,12 +84,17 @@ function clientError(code: ErrorCode): ApiError {
   return { code, message: code };
 }
 
+function ignoreFailure(): void {}
+
 export function useFiles(settings: Settings): FilesApi {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [maxBytes, setMaxBytes] = useState<number | null>(null);
   const [healthError, setHealthError] = useState<ApiError | null>(null);
   const blobs = useRef(new Map<string, File>());
+  const filesRef = useRef<FileEntry[]>([]);
+  filesRef.current = files;
   const started = useRef(new Set<string>());
+  const uploadControllers = useRef(new Map<string, AbortController>());
   const appliedKey = useRef(new Map<string, string>());
   const requestCounter = useRef(new Map<string, number>());
   const mounted = useRef(true);
@@ -107,12 +117,15 @@ export function useFiles(settings: Settings): FilesApi {
     mounted.current = true;
     const timers = linguaTimers.current;
     const controllers = linguaControllers.current;
+    const uploads = uploadControllers.current;
     return () => {
       mounted.current = false;
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
       for (const controller of controllers.values()) controller.abort();
       controllers.clear();
+      for (const controller of uploads.values()) controller.abort();
+      uploads.clear();
     };
   }, []);
 
@@ -150,6 +163,56 @@ export function useFiles(settings: Settings): FilesApi {
     );
   }, []);
 
+  const release = useCallback((localId: string, serverId?: string) => {
+    blobs.current.delete(localId);
+    started.current.delete(localId);
+    appliedKey.current.delete(localId);
+    requestCounter.current.delete(localId);
+    uploadControllers.current.get(localId)?.abort();
+    uploadControllers.current.delete(localId);
+    linguaKeys.current.delete(localId);
+    linguaTickets.current.delete(localId);
+    linguaStarted.current.delete(localId);
+    linguaControllers.current.get(localId)?.abort();
+    linguaControllers.current.delete(localId);
+    const pending = linguaTimers.current.get(localId);
+    if (pending) clearTimeout(pending);
+    linguaTimers.current.delete(localId);
+    for (const key of Array.from(compressCache.current.keys())) {
+      if (key.startsWith(`${localId}:`)) compressCache.current.delete(key);
+    }
+    if (serverId !== undefined) forgetJson(serverId);
+  }, []);
+
+  const remove = useCallback(
+    (localId: string) => {
+      const entry = filesRef.current.find((candidate) => candidate.localId === localId);
+      if (!entry) return;
+      release(localId, entry.serverId);
+      setFiles((current) => current.filter((candidate) => candidate.localId !== localId));
+      if (entry.serverId !== undefined) deleteFile(entry.serverId).catch(ignoreFailure);
+    },
+    [release],
+  );
+
+  const clear = useCallback(() => {
+    for (const entry of filesRef.current) release(entry.localId, entry.serverId);
+    compressCache.current.clear();
+    clearJsonCache();
+    setFiles([]);
+    setLinguaFailed(false);
+    clearFiles().catch(ignoreFailure);
+  }, [release]);
+
+  const markExported = useCallback((localIds: string[]) => {
+    const targets = new Set(localIds);
+    setFiles((current) =>
+      current.some((entry) => targets.has(entry.localId) && !entry.exported)
+        ? current.map((entry) => (targets.has(entry.localId) ? { ...entry, exported: true } : entry))
+        : current,
+    );
+  }, []);
+
   const add = useCallback((incoming: File[]) => {
     const entries = incoming.map<FileEntry>((file) => {
       const localId = `file-${nextLocalId++}`;
@@ -180,13 +243,18 @@ export function useFiles(settings: Settings): FilesApi {
       parsing += 1;
       started.current.add(entry.localId);
       patch(entry.localId, { status: 'parsing' });
-      parseFile(blob).then(
+      const controller = new AbortController();
+      uploadControllers.current.set(entry.localId, controller);
+      parseFile(blob, controller.signal).then(
         (response) => {
           blobs.current.delete(entry.localId);
+          uploadControllers.current.delete(entry.localId);
           patch(entry.localId, { status: 'done', serverId: response.id, raw: response.markdown });
         },
         (error: unknown) => {
           blobs.current.delete(entry.localId);
+          uploadControllers.current.delete(entry.localId);
+          if (controller.signal.aborted) return;
           patch(entry.localId, { status: 'error', error: toApiError(error) });
         },
       );
@@ -342,5 +410,5 @@ export function useFiles(settings: Settings): FilesApi {
     setRetryNonce((current) => current + 1);
   }, []);
 
-  return { files, add, healthError, health, linguaFailed, retryLingua };
+  return { files, add, remove, clear, markExported, healthError, health, linguaFailed, retryLingua };
 }

@@ -29,6 +29,7 @@ export interface AppDeps {
 const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 const MAX_COMPRESS_CHARS = 5_000_000;
 const MAX_COMPRESS_BODY_BYTES = MAX_COMPRESS_CHARS * 4 + MULTIPART_OVERHEAD_BYTES;
+const SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'OPTIONS']);
 const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const LINGUA_MODELS: ReadonlySet<string> = new Set<LinguaModel>(['tinybert', 'mobilebert', 'xlm-roberta']);
 
@@ -92,7 +93,7 @@ export function createApp(deps: AppDeps): Hono {
     app.use('*', async (c, next) => {
       if (!LOOPBACK_HOSTNAMES.has(hostnameOf(c.req.header('host') ?? ''))) return blocked(c);
       const origin = c.req.header('origin');
-      if (c.req.method === 'POST' && origin !== undefined) {
+      if (!SAFE_METHODS.has(c.req.method) && origin !== undefined) {
         const hostname = originHostname(origin);
         if (hostname === null || !LOOPBACK_HOSTNAMES.has(hostname)) return blocked(c);
       }
@@ -158,6 +159,16 @@ export function createApp(deps: AppDeps): Hono {
     if (!stored) return fail(c, 'not_found', 'File not found');
     const json = await withTempFile(extensionOf(stored.name), stored.bytes, (path) => deps.parser.toJson(path));
     return c.json(json as object);
+  });
+
+  app.delete('/api/files/:id', (c) => {
+    deps.store.delete(c.req.param('id'));
+    return c.body(null, 204);
+  });
+
+  app.delete('/api/files', (c) => {
+    deps.store.clear();
+    return c.body(null, 204);
   });
 
   app.post(

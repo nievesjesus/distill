@@ -39,14 +39,14 @@ describe('preview expansion', () => {
 
   it('expands one row at a time', () => {
     render(<FileList files={[entry('1', 'a.pdf'), entry('2', 'b.pdf')]} />);
-    fireEvent.click(screen.getByRole('button', { name: /b\.pdf/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^PDF.*b\.pdf/ }));
     expect(screen.queryByRole('region', { name: 'Markdown preview of a.pdf' })).toBeNull();
     expect(screen.getByRole('region', { name: 'Markdown preview of b.pdf' })).toBeInTheDocument();
   });
 
   it('links the toggle to the preview with aria-expanded and aria-controls', () => {
     render(<FileList files={[entry('1', 'a.pdf')]} />);
-    const toggle = screen.getByRole('button', { name: /a\.pdf/ });
+    const toggle = screen.getByRole('button', { name: /^PDF.*a\.pdf/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     const preview = screen.getByRole('region', { name: 'Markdown preview of a.pdf' });
     expect(toggle.getAttribute('aria-controls')).toBe(preview.id);
@@ -56,7 +56,7 @@ describe('preview expansion', () => {
   it('chooses the default row only once', () => {
     const first = entry('1', 'a.pdf');
     const { rerender } = render(<FileList files={[first]} />);
-    fireEvent.click(screen.getByRole('button', { name: /a\.pdf/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^PDF.*a\.pdf/ }));
     expect(screen.queryByRole('region', { name: 'Markdown preview of a.pdf' })).toBeNull();
     rerender(<FileList files={[first, entry('2', 'b.pdf')]} />);
     expect(screen.queryByRole('region')).toBeNull();
@@ -76,8 +76,8 @@ describe('preview expansion', () => {
       entry('2', 'wait.pdf', { status: 'parsing', out: undefined }),
     ];
     render(<FileList files={files} />);
-    expect(screen.queryByRole('button', { name: /bad\.pdf/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /wait\.pdf/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^PDF.*bad\.pdf/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^PDF.*wait\.pdf/ })).toBeNull();
     expect(document.querySelector('[aria-expanded]')).toBeNull();
   });
 

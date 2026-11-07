@@ -15,8 +15,17 @@ describe('windowOptions', () => {
     });
   });
 
-  it('declares no preload script', () => {
+  it('declares no preload script unless one is given', () => {
     expect(windowOptions('darwin').webPreferences).not.toHaveProperty('preload');
+  });
+
+  it('loads the given preload without weakening isolation', () => {
+    expect(windowOptions('darwin', '/app/preload.cjs').webPreferences).toEqual({
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: '/app/preload.cjs',
+    });
   });
 
   it('integrates the title bar with inset traffic lights on macOS', () => {

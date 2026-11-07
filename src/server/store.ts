@@ -11,6 +11,8 @@ export interface StoredFile {
 export interface Store {
   put(entry: StoredFile): void;
   get(id: string): StoredFile | undefined;
+  delete(id: string): void;
+  clear(): void;
 }
 
 export function createStore(opts: { maxFiles: number; maxBytes: number }): Store {
@@ -44,6 +46,11 @@ export function createStore(opts: { maxFiles: number; maxBytes: number }): Store
       entries.delete(id);
       entries.set(id, entry);
       return entry;
+    },
+    delete: remove,
+    clear() {
+      entries.clear();
+      totalBytes = 0;
     },
   };
 }

@@ -20,7 +20,7 @@ function titleBarOptions(platform: NodeJS.Platform): BrowserWindowConstructorOpt
   return {};
 }
 
-export function windowOptions(platform: NodeJS.Platform): BrowserWindowConstructorOptions {
+export function windowOptions(platform: NodeJS.Platform, preload?: string): BrowserWindowConstructorOptions {
   return {
     ...WINDOW_DEFAULTS,
     minWidth: WINDOW_MINIMUMS.width,
@@ -29,7 +29,7 @@ export function windowOptions(platform: NodeJS.Platform): BrowserWindowConstruct
     backgroundColor: BACKGROUND,
     show: false,
     ...titleBarOptions(platform),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, ...(preload ? { preload } : {}) },
   };
 }
 

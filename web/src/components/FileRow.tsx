@@ -13,6 +13,8 @@ interface FileRowProps {
   expanded?: boolean;
   detailed?: boolean;
   onToggle?: () => void;
+  onRemove?: () => void;
+  onExported?: () => void;
 }
 
 const LIBREOFFICE_URL = 'https://www.libreoffice.org/download/';
@@ -74,7 +76,7 @@ function Status({ file }: FileRowProps) {
   return <Tokens key="done" file={file} />;
 }
 
-function useCopy(text: string) {
+function useCopy(text: string, onExported?: () => void) {
   const announce = useAnnounce();
   const [state, setState] = useState<CopyState>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,6 +90,7 @@ function useCopy(text: string) {
 
   const copy = async () => {
     const ok = await copyText(text);
+    if (ok) onExported?.();
     if (timer.current) clearTimeout(timer.current);
     setState(ok ? 'copied' : 'failed');
     if (!ok) announce(S.copyFailed);
@@ -110,46 +113,68 @@ function FileMain({ file }: { file: FileEntry }) {
   );
 }
 
-function DoneActions({ file }: { file: FileEntry }) {
+function RemoveButton({ name, onRemove }: { name: string; onRemove?: () => void }) {
+  return (
+    <button type="button" className="icon-button remove-button" aria-label={S.remove(name)} onClick={onRemove}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M6 6l12 12" />
+        <path d="M18 6 6 18" />
+      </svg>
+    </button>
+  );
+}
+
+function DoneActions({ file, onRemove, onExported }: { file: FileEntry; onRemove?: () => void; onExported?: () => void }) {
   const out = file.out ?? '';
-  const { state, copy } = useCopy(out);
+  const { state, copy } = useCopy(out, onExported);
   const copied = state === 'copied';
+  const download = () => {
+    downloadText(mdName(file.name), out);
+    onExported?.();
+  };
   return (
     <>
-      <button
-        type="button"
-        className={copied ? 'icon-button is-copied' : 'icon-button'}
-        aria-label={copied ? S.copied : S.copy}
-        onClick={copy}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="8" y="8" width="12" height="12" rx="2" />
-          <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
-        </svg>
-      </button>
-      <button type="button" className="icon-button" aria-label={S.download} onClick={() => downloadText(mdName(file.name), out)}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 4v11" />
-          <path d="M7.5 10.5 12 15l4.5-4.5" />
-          <path d="M4 19h16" />
-        </svg>
-      </button>
-      {state === 'failed' ? (
-        <p className="copy-failed">
-          {S.copyFailed}
-        </p>
-      ) : null}
+      <div className="file-actions">
+        <button
+          type="button"
+          className={copied ? 'icon-button is-copied' : 'icon-button'}
+          aria-label={copied ? S.copied : S.copy}
+          onClick={copy}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="8" y="8" width="12" height="12" rx="2" />
+            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+          </svg>
+        </button>
+        <button type="button" className="icon-button" aria-label={S.download} onClick={download}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 4v11" />
+            <path d="M7.5 10.5 12 15l4.5-4.5" />
+            <path d="M4 19h16" />
+          </svg>
+        </button>
+        <RemoveButton name={file.name} onRemove={onRemove} />
+      </div>
+      {state === 'failed' ? <p className="copy-failed">{S.copyFailed}</p> : null}
     </>
   );
 }
 
-export function FileRow({ file, expanded = false, detailed = false, onToggle }: FileRowProps) {
+export function FileRow({ file, expanded = false, detailed = false, onToggle, onRemove, onExported }: FileRowProps) {
   const isDone = file.status === 'done';
   const previewId = `preview-${file.localId}`;
   const isOpen = isDone && expanded;
   return (
     <li className="file" data-status={file.status}>
-      <div className="file-row">
+      <div
+        className="file-row"
+        onKeyDown={(event) => {
+          if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+          if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select')) return;
+          event.preventDefault();
+          onRemove?.();
+        }}
+      >
         {isDone ? (
           <button type="button" className="file-main file-toggle" aria-expanded={isOpen} aria-controls={previewId} onClick={onToggle}>
             <FileMain file={file} />
@@ -159,7 +184,13 @@ export function FileRow({ file, expanded = false, detailed = false, onToggle }: 
             <FileMain file={file} />
           </span>
         )}
-        {isDone ? <DoneActions file={file} /> : null}
+        {isDone ? (
+          <DoneActions file={file} onRemove={onRemove} onExported={onExported} />
+        ) : (
+          <div className="file-actions">
+            <RemoveButton name={file.name} onRemove={onRemove} />
+          </div>
+        )}
       </div>
       {isOpen ? <Preview id={previewId} name={file.name} text={file.out ?? ''} detailed={detailed} serverId={file.serverId} rawTokens={file.rawTokens} outTokens={file.outTokens} /> : null}
     </li>
