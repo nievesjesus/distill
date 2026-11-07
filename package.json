@@ -1,6 +1,6 @@
 {
   "name": "distill-llm",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Turn documents into token-lean Markdown using LiteParse",
   "author": "Jesus Nieves <yo@nievesjesus.com>",
   "license": "Apache-2.0",
