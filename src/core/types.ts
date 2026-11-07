@@ -18,3 +18,4 @@ export interface LinguaStatus {
   modelError?: string;
 }
 export interface Health { version: string; liteparseVersion: string; libreoffice: boolean; lingua: LinguaStatus; maxBytes: number }
+export interface DistillResult { path: string; name: string; kind: FileKind; pages: number; markdown: string; tokens: { raw: number; out: number }; ms: number }
