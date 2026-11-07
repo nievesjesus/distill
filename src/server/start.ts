@@ -48,7 +48,7 @@ export async function startServer(opts: {
     });
 
     const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {
-      const listening = serve({ fetch: app.fetch, port: opts.port, hostname: opts.host }, () => resolve(listening));
+      const listening = serve({ fetch: app.fetch, port: opts.port, hostname: opts.host, overrideGlobalObjects: false }, () => resolve(listening));
       listening.once('error', reject);
     });
 

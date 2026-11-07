@@ -20,6 +20,18 @@ describe('startServer', () => {
     }
   }, 30_000);
 
+  it('keeps fetch responses instances of the global Response so model downloads can be cached', async () => {
+    const server = await startServer({ port: 0, host: '127.0.0.1', maxBytes: 10 });
+    try {
+      const res = await fetch(`${server.url}/api/health`);
+      expect(res instanceof Response).toBe(true);
+      expect(new Request(server.url) instanceof globalThis.Request).toBe(true);
+      expect(Object.getPrototypeOf(res)).toBe(Response.prototype);
+    } finally {
+      await server.close();
+    }
+  }, 30_000);
+
   it('rejects with EADDRINUSE when the port is taken', async () => {
     const blocker = createServer();
     await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
