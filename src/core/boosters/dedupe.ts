@@ -5,26 +5,44 @@ const MAX_LENGTH = 120;
 const STRUCTURAL_START = /^(#|\||[-*+>]|\d+[.)])/;
 const DEEP_INDENT = /^( {4}|\t)/;
 const UNESCAPED_PIPE = /(?<!\\)\|/;
-const INDICATOR =
-  '(?:\\b(?:page|pg|p\\.|pág\\.?|pagina|página)\\s*\\d+(?:\\s*(?:of|de|/)\\s*\\d+)?|(?<![\\d/])\\d+\\s*(?:of|de|/)\\s*\\d+(?!/\\d))';
+const PAGE_WORD = '(?:page|pg|p\\.|pág\\.?|pagina|página)';
+const KEYWORD_INDICATOR = `\\b${PAGE_WORD}\\s*\\d+(?:\\s*(?:of|de|/)\\s*\\d+)?`;
 const SEPARATOR = '[\\s—–|·:-]';
-const LEADING_INDICATOR = new RegExp(`^(${INDICATOR})(?=${SEPARATOR}|$)`, 'i');
-const TRAILING_INDICATOR = new RegExp(`(?<=^|${SEPARATOR})(${INDICATOR})$`, 'i');
+const LEADING_INDICATOR = new RegExp(`^(${KEYWORD_INDICATOR})(?=${SEPARATOR}|$)`, 'i');
+const TRAILING_INDICATOR = new RegExp(`(?<=^|${SEPARATOR})(${KEYWORD_INDICATOR})$`, 'i');
+const WHOLE_LINE_INDICATORS: readonly RegExp[] = [
+  new RegExp(`^${PAGE_WORD}\\s*\\d+(?:\\s*(?:of|de|/)\\s*\\d+)?$`, 'i'),
+  /^\d+\s*(?:of|de|\/)\s*\d+$/i,
+  /^[-—–]\s*\d+\s*[-—–]$/,
+];
+const MIN_REPEAT_WORDS = 4;
+const MIN_REPEAT_CHARS = 25;
 const MIN_REPEATS = 3;
 
 function maskDigits(indicator: string): string {
   return indicator.replace(/\d+/g, '#');
 }
 
+function isPageIndicatorLine(collapsed: string): boolean {
+  return WHOLE_LINE_INDICATORS.some((pattern) => pattern.test(collapsed));
+}
+
+function isSubstantial(signature: string): boolean {
+  return signature.length >= MIN_REPEAT_CHARS && signature.split(' ').length >= MIN_REPEAT_WORDS;
+}
+
 function signatureOf(line: string): string | null {
   const trimmed = line.trim();
   if (trimmed === '') return null;
+  const collapsedWhole = trimmed.replace(/\s+/g, ' ');
+  if (isPageIndicatorLine(collapsedWhole)) return maskDigits(collapsedWhole);
   if (STRUCTURAL_START.test(trimmed) || DEEP_INDENT.test(line) || UNESCAPED_PIPE.test(line)) return null;
   const collapsed = slimProse(trimmed).replace(/\s+/g, ' ').trim();
   const signature = collapsed
     .replace(LEADING_INDICATOR, maskDigits)
     .replace(TRAILING_INDICATOR, maskDigits);
-  return signature.length > MAX_LENGTH ? null : signature;
+  if (signature.length > MAX_LENGTH || !isSubstantial(signature)) return null;
+  return signature;
 }
 
 export function dropRepeatedBoilerplate(md: string): string {

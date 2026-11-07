@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { dropRepeatedBoilerplate } from '@core/boosters/dedupe';
 
 describe('dropRepeatedBoilerplate', () => {
-  it('keeps the first occurrence of a line repeated three or more times', () => {
-    expect(dropRepeatedBoilerplate('X\nCONFIDENTIAL\nA\nCONFIDENTIAL\nB\nCONFIDENTIAL')).toBe('X\nCONFIDENTIAL\nA\nB');
+  it('keeps the first occurrence of a long line repeated three or more times', () => {
+    const footer = 'CONFIDENTIAL — Example Co. internal use only';
+    expect(dropRepeatedBoilerplate(`X\n${footer}\nA\n${footer}\nB\n${footer}`)).toBe(`X\n${footer}\nA\nB`);
   });
 
   it('treats running headers differing only in the page indicator as the same', () => {
@@ -19,7 +20,9 @@ describe('dropRepeatedBoilerplate', () => {
   });
 
   it('keeps lines that appear fewer than three times', () => {
-    expect(dropRepeatedBoilerplate('A\nA\nB')).toBe('A\nA\nB');
+    const footer = 'CONFIDENTIAL — Example Co. internal use only';
+    const doc = `${footer}\n${footer}\nB`;
+    expect(dropRepeatedBoilerplate(doc)).toBe(doc);
   });
 
   it('never dedupes headings, list items or table rows', () => {
@@ -29,8 +32,9 @@ describe('dropRepeatedBoilerplate', () => {
   });
 
   it('counts across prose segments but never touches fenced code', () => {
-    const md = 'Footer\nx\n```\nFooter\n```\nFooter\ny\nFooter';
-    expect(dropRepeatedBoilerplate(md)).toBe('Footer\nx\n```\nFooter\n```\ny');
+    const f = 'Footer text that repeats on every page';
+    const md = `${f}\nx\n\`\`\`\n${f}\n\`\`\`\n${f}\ny\n${f}`;
+    expect(dropRepeatedBoilerplate(md)).toBe(`${f}\nx\n\`\`\`\n${f}\n\`\`\`\ny`);
   });
 
   it('is lossless for lines differing in non-page digits', () => {
@@ -46,14 +50,45 @@ describe('dropRepeatedBoilerplate', () => {
     expect(dropRepeatedBoilerplate(code)).toBe(code);
   });
 
-  it('dedupes page indicators written as n/m', () => {
-    const doc = 'Report — 3/14\nA\nReport — 4/14\nB\nReport — 5/14\nC';
-    expect(dropRepeatedBoilerplate(doc)).toBe('Report — 3/14\nA\nB\nC');
+  it('dedupes whole-line page indicators in every supported form', () => {
+    expect(dropRepeatedBoilerplate('3 / 12\nA\n4 / 12\nB\n5 / 12\nC')).toBe('3 / 12\nA\nB\nC');
+    expect(dropRepeatedBoilerplate('Page 3 of 12\nA\nPage 4 of 12\nB\nPage 5 of 12\nC')).toBe('Page 3 of 12\nA\nB\nC');
+    expect(dropRepeatedBoilerplate('Página 3 de 12\nA\nPágina 4 de 12\nB\nPágina 5 de 12\nC')).toBe('Página 3 de 12\nA\nB\nC');
+    expect(dropRepeatedBoilerplate('- 3 -\nA\n- 4 -\nB\n- 5 -\nC')).toBe('- 3 -\nA\nB\nC');
+  });
+
+  it('does not treat n/m inside a longer line as a page indicator', () => {
+    const doc = 'Example Co. annual report — 3/14\nA\nExample Co. annual report — 4/14\nB\nExample Co. annual report — 5/14\nC';
+    expect(dropRepeatedBoilerplate(doc)).toBe(doc);
+  });
+
+  it('keeps short repeated real content byte for byte', () => {
+    const fixtures = [
+      'Q: Is it covered?\nYes\nQ: Is it urgent?\nNo\nQ: Is it signed?\nYes\nQ: Is it paid?\nNo\nQ: Is it final?\nYes',
+      'Item A\nN/A\nItem B\nN/A\nItem C\nN/A\nItem D\nApproved\nItem E\nApproved\nItem F\nApproved',
+      'Subtotal\n$0.00\nTax\n$0.00\nShipping\n$0.00\nDiscount\n$0.00',
+      'Score: 3/4\nScore: 1/4\nScore: 2/4\nScore: 4/4',
+      'Score: 3/4\nScore: 3/4\nScore: 3/4\nScore: 3/4',
+      'Na na na na\nHey hey hey\nNa na na na\nHey hey hey\nNa na na na\nHey hey hey',
+      'Yes\nYes\nYes\nYes',
+    ];
+    for (const doc of fixtures) expect(dropRepeatedBoilerplate(doc)).toBe(doc);
+  });
+
+  it('requires four words and 25 characters to treat a line as boilerplate', () => {
+    const threeWordsLong = 'Extraordinarily confidential documentation';
+    const fourWordsShort = 'a b c d e f';
+    const three = `${threeWordsLong}\n${threeWordsLong}\n${threeWordsLong}`;
+    const short = `${fourWordsShort}\n${fourWordsShort}\n${fourWordsShort}`;
+    expect(dropRepeatedBoilerplate(three)).toBe(three);
+    expect(dropRepeatedBoilerplate(short)).toBe(short);
+    const qualifying = 'Internal use only please do not distribute';
+    expect(dropRepeatedBoilerplate(`${qualifying}\n${qualifying}\n${qualifying}`)).toBe(qualifying);
   });
 
   it('compares lines after media slimming and keeps the original first line', () => {
-    const doc = '[Edit this page](a.md)\nx\n[Edit this page](b.md)\ny\n[Edit this page](c.md)';
-    expect(dropRepeatedBoilerplate(doc)).toBe('[Edit this page](a.md)\nx\ny');
+    const doc = '[Edit this page on GitHub now](a.md)\nx\n[Edit this page on GitHub now](b.md)\ny\n[Edit this page on GitHub now](c.md)';
+    expect(dropRepeatedBoilerplate(doc)).toBe('[Edit this page on GitHub now](a.md)\nx\ny');
   });
 
   it('does not mask digits in dates or fractions', () => {
@@ -73,7 +108,7 @@ describe('dropRepeatedBoilerplate', () => {
   });
 
   it('applies the length limit after normalization', () => {
-    const long = (n: number) => `[Edit this page](https://github.com/example-org/docs/blob/main/section-${n}/intro-and-overview.md)`;
+    const long = (n: number) => `[Edit this page on GitHub now](https://github.com/example-org/docs/blob/main/section-${n}/intro-and-overview.md)`;
     const doc = [long(1), 'A', long(2), 'B', long(3)].join('\n');
     expect(dropRepeatedBoilerplate(doc)).toBe([long(1), 'A', 'B'].join('\n'));
   });
