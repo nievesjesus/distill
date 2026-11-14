@@ -8,3 +8,4 @@ test-results/
 release/
 build/lingua/
 /electron-builder.*.signed.yml
+docs/superpowers/
