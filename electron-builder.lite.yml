@@ -20,8 +20,10 @@ extraResources:
 mac:
   icon: build/icon.png
   target:
-    target: dmg
-    arch: [arm64, x64]
+    - arch: [arm64, x64]
+      target: dmg
+    - arch: [arm64, x64]
+      target: zip
   identity: "-"
   hardenedRuntime: false
 win:
@@ -35,4 +37,8 @@ linux:
     target: AppImage
     arch: [x64]
 artifactName: Distill-lite-${os}-${arch}.${ext}
-publish: null
+publish:
+  provider: github
+  owner: nievesjesus
+  repo: distill
+  channel: lite

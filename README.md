@@ -160,7 +160,7 @@ Each file prints a summary such as `report.pdf → report.md  5.7k → 4.6k toke
 - **"The app is damaged":** run `xattr -dr com.apple.quarantine /Applications/distill.app` and open it again.
 - **Windows:** in the SmartScreen dialog click **More info**, then **Run anyway**.
 
-Release builds are signed when the signing certificates are configured; if your installer is unsigned, the steps above apply. The desktop app has no auto-update. OCR data is bundled; Office files still need LibreOffice installed.
+Release builds are signed when the signing certificates are configured; if your installer is unsigned, the steps above apply. The desktop app checks GitHub Releases for a newer version at most once a day (same toggle and `DISTILL_NO_UPDATE_CHECK` as above), 5 seconds after launch, and shows a banner. It downloads and installs only when you click **Download and install**, then offers **Restart to update** (or installs on the next quit). Updates stay within your variant (lite or full) and never downgrade. OCR data is bundled; Office files still need LibreOffice installed.
 </details>
 
 **Docker:** LibreOffice and the English OCR data are included, so every format works out of the box.
@@ -212,7 +212,7 @@ Password-protected PDFs are reported as an error. Parsing quality is whatever Li
 
 Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. distill makes at most three one-time downloads, all of data and never of your documents: the Tesseract English data for the first OCR (skip it with `DISTILL_TESSDATA` or `TESSDATA_PREFIX`; `DISTILL_OCR_LANG` sets the language), and, only if you enable LLMLingua-2, its runtime from npm and its model from Hugging Face.
 
-Once a day distill also asks `registry.npmjs.org` for the latest `distill-llm` version, sending only its own version in the User-Agent, and caches the answer in `~/.cache/distill-llm/update-check.json`. Turn it off with `DISTILL_NO_UPDATE_CHECK=1` or in the web app (click the version in the header, then "Check for updates daily"). The hooks and the MCP server never check.
+Once a day distill also asks `registry.npmjs.org` for the latest `distill-llm` version, sending only its own version in the User-Agent, and caches the answer in `~/.cache/distill-llm/update-check.json`. Turn it off with `DISTILL_NO_UPDATE_CHECK=1` or in the web app (click the version in the header, then "Check for updates daily"). The desktop app does not ask `registry.npmjs.org`; it asks `github.com` for its release manifest instead, with the same toggle. The hooks and the MCP server never check.
 
 Uploaded files go to a temporary directory and are deleted after parsing. Results stay in a small in-memory cache so the JSON view can be requested later. The hooks write converted Markdown to `~/.cache/distill-llm/out/`. API responses are sent with `Cache-Control: no-store`.
 
@@ -232,7 +232,7 @@ The app and the CLI count with `o200k_base` (via `gpt-tokenizer`). Claude and Ge
 
 **Does anything leave my machine?** Your documents never do. See [Privacy](#privacy) for the optional one-time data downloads and the daily version check you can turn off.
 
-**How do I update?** The web app and the CLI tell you when a new version exists. With a global npm install, click **Update** in the web app (loopback only) or run `distill-llm update`, then restart distill. With npx, run `npx distill-llm@latest`. With Docker, run `docker pull ghcr.io/nievesjesus/distill`. The desktop app does not update itself yet: download the new installer from [GitHub Releases](https://github.com/nievesjesus/distill/releases).
+**How do I update?** The web app and the CLI tell you when a new version exists. With a global npm install, click **Update** in the web app (loopback only) or run `distill-llm update`, then restart distill. With npx, run `npx distill-llm@latest`. With Docker, run `docker pull ghcr.io/nievesjesus/distill`. With the desktop app, use the banner (or the version menu). Installs from before 0.2.0 have no updater: download the new installer once from [GitHub Releases](https://github.com/nievesjesus/distill/releases).
 
 **Why not just give the PDF to the model?** You can, and for charts and layout-heavy pages you sometimes should. For text, the same content as Markdown costs a fraction of the tokens: about a third on our demo files.
 

@@ -20,6 +20,7 @@ export default defineConfig([
     ...shared,
     entry: { main: 'desktop/main.ts' },
     format: ['esm'],
+    banner: { js: "import { createRequire as __createRequire } from 'node:module';\nconst require = __createRequire(import.meta.url);" },
     external: ['electron', ...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.optionalDependencies ?? {})],
   },
   {

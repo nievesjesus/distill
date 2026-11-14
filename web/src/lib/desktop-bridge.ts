@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { DesktopUpdateStatus } from '@core/types';
 import { S } from '../strings';
 
 export interface SavedInfo {
@@ -9,6 +10,13 @@ export interface SavedInfo {
 interface DesktopBridge {
   onSaved(callback: (saved: SavedInfo) => void): () => void;
   reveal(id: string): void;
+  updates?: {
+    get(): Promise<DesktopUpdateStatus>;
+    onStatus(callback: (status: DesktopUpdateStatus) => void): () => void;
+    check(): void;
+    download(): void;
+    install(): void;
+  };
 }
 
 declare global {

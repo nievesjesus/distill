@@ -918,6 +918,16 @@ describe('server app', () => {
       expect(h.checkCalls).toEqual([{ force: true }]);
     });
 
+    it('never reaches the npm registry for the desktop app', async () => {
+      const h = setup({ ...local, update: { method: 'desktop', latest: null, available: false } });
+      const get = await h.app.request('/api/update', { headers: localHeaders });
+      const post = await h.app.request('/api/update/check', { method: 'POST', headers: localHeaders });
+      expect(get.status).toBe(200);
+      expect(post.status).toBe(200);
+      expect(((await get.json()) as UpdateInfo).method).toBe('desktop');
+      expect(h.checkCalls).toEqual([]);
+    });
+
     it('POST /api/update/install returns 202 and installs the latest version', async () => {
       const h = setup({ ...local, update: available });
       const res = await h.app.request('/api/update/install', { ...jsonPost({ version: '9.9.9' }), headers: { ...localHeaders, 'content-type': 'application/json' } });

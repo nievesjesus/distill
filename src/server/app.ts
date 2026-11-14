@@ -246,9 +246,15 @@ export function createApp(deps: AppDeps): Hono {
     return { ...check, canInstall, install };
   };
 
-  app.get('/api/update', async (c) => c.json(updateInfo(await deps.updates.checker.check())));
+  const readUpdate = async (force: boolean): Promise<UpdateCheck> => {
+    const status = await deps.updates.checker.status();
+    if (status.method === 'desktop') return status;
+    return force ? deps.updates.checker.check({ force: true }) : deps.updates.checker.check();
+  };
 
-  app.post('/api/update/check', async (c) => c.json(updateInfo(await deps.updates.checker.check({ force: true }))));
+  app.get('/api/update', async (c) => c.json(updateInfo(await readUpdate(false))));
+
+  app.post('/api/update/check', async (c) => c.json(updateInfo(await readUpdate(true))));
 
   app.put('/api/update/settings', async (c) => {
     let payload: unknown;
