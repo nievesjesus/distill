@@ -1,17 +1,20 @@
 import { useRef, useState } from 'react';
 import { S } from '../strings';
+import type { UpdateState } from '../state/update';
 import { ConnectPanel } from './ConnectPanel';
+import { VersionMenu } from './VersionMenu';
 
 export type ViewMode = 'compact' | 'detailed';
 
 interface HeaderProps {
   mode: ViewMode;
   onModeChange: (mode: ViewMode) => void;
+  update?: UpdateState;
 }
 
 const GITHUB_URL = 'https://github.com/nievesjesus/distill';
 
-export function Header({ mode, onModeChange }: HeaderProps) {
+export function Header({ mode, onModeChange, update }: HeaderProps) {
   const [connectOpen, setConnectOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
 
@@ -32,6 +35,7 @@ export function Header({ mode, onModeChange }: HeaderProps) {
         <span className="brand-name">{S.brand}</span>
       </div>
       <div className="header-tools">
+        {update?.info ? <VersionMenu info={update.info} update={update} /> : null}
         <div className="segmented">
           <button type="button" aria-pressed={mode === 'compact'} onClick={() => onModeChange('compact')}>
             {S.compact}

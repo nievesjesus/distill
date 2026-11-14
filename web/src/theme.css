@@ -1339,3 +1339,124 @@ html[data-shell='desktop'],
 [data-shell='desktop'] .footer-link {
   min-height: 24px;
 }
+
+.update-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.update-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.update-command {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--code);
+  word-break: break-word;
+}
+
+.update-btn,
+.version-btn {
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.update-btn:disabled {
+  opacity: 0.6;
+}
+
+.update-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.update-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.update-dismiss:hover {
+  color: var(--text);
+}
+
+.version-menu {
+  position: relative;
+}
+
+.version-btn {
+  border-color: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.version-btn:hover {
+  color: var(--text);
+}
+
+.version-pop {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: min(280px, 90vw);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.version-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.version-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .update-btn,
+  .version-btn,
+  .update-dismiss {
+    min-height: 44px;
+  }
+
+  .update-dismiss {
+    width: 44px;
+  }
+}
