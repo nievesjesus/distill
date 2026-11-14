@@ -6,10 +6,13 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { serve } from '@hono/node-server';
 import { isLoopbackHost } from '../core/loopback';
+import type { InstallMethod } from '../core/types';
 import { exposeLibreOffice } from '../node/capabilities';
 import { createLingua, findPackageRoot } from '../node/lingua';
 import { createLinguaInstaller } from '../node/lingua-install';
 import { createParser } from '../node/parse';
+import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
+import { createGlobalUpdater } from '../node/update-install';
 import { createApp } from './app';
 import { createStore } from './store';
 
@@ -25,6 +28,7 @@ export async function startServer(opts: {
   host: string;
   maxBytes: number;
   allowedHosts?: readonly string[];
+  installMethod?: InstallMethod;
 }): Promise<{ url: string; close(): Promise<void> }> {
   const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url)));
   if (packageRoot === undefined) throw new Error('distill-llm package.json not found');
@@ -40,6 +44,9 @@ export async function startServer(opts: {
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
     const lingua = createLingua({ cacheDir, installer });
     await lingua.probe();
+    const method = opts.installMethod ?? detectInstallMethod({ packageRoot, env: process.env });
+    const checker = createUpdateChecker({ current: version, method, cacheDir });
+    const updater = method === 'npm-global' ? createGlobalUpdater({ packageRoot }) : null;
     const app = createApp({
       parser,
       lingua,
@@ -51,6 +58,7 @@ export async function startServer(opts: {
       webRoot: existsSync(webRoot) ? webRoot : undefined,
       guardLoopback: isLoopbackHost(opts.host),
       allowedHosts: opts.allowedHosts ?? [],
+      updates: { checker, updater },
     });
 
     const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {

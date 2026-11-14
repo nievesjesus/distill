@@ -9,7 +9,7 @@ import { openCommand, run } from '../../src/cli/run';
 
 function harness(
   startImpl?: (opts: unknown) => Promise<{ url: string; close(): Promise<void> }>,
-  env: Record<string, string | undefined> = {},
+  env: Record<string, string | undefined> = { DISTILL_NO_UPDATE_CHECK: '1' },
 ) {
   const stdout: string[] = [];
   const stderr: string[] = [];

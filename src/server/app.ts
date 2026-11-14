@@ -9,10 +9,12 @@ import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { detectKind, needsLibreOffice } from '../core/kind';
 import { isLoopbackHost } from '../core/loopback';
-import type { ApiError, ErrorCode, Health, LinguaModel, ParseResponse } from '../core/types';
+import type { ApiError, ErrorCode, Health, LinguaModel, ParseResponse, UpdateCheck, UpdateInfo } from '../core/types';
 import { DistillError } from '../node/errors';
 import type { Lingua } from '../node/lingua';
 import type { Parser } from '../node/parse';
+import type { UpdateChecker } from '../node/update-check';
+import type { GlobalUpdater } from '../node/update-install';
 import { hostnameOf, isAllowedHost, isCrossSiteRequest, originHostname } from './guards';
 import type { Store } from './store';
 
@@ -27,6 +29,7 @@ export interface AppDeps {
   webRoot?: string;
   guardLoopback: boolean;
   allowedHosts: readonly string[];
+  updates: { checker: UpdateChecker; updater: GlobalUpdater | null };
 }
 
 const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
@@ -234,6 +237,38 @@ export function createApp(deps: AppDeps): Hono {
     if (!before.installable) return fail(c, 'lingua_unavailable', before.unsupportedReason ?? 'LLMLingua-2 cannot be installed here');
     deps.lingua.install().catch(() => undefined);
     return c.json(deps.lingua.status(), 202);
+  });
+
+  const updateInfo = (check: UpdateCheck): UpdateInfo => {
+    const install = deps.updates.updater?.status() ?? { state: 'idle' as const };
+    const canInstall =
+      deps.guardLoopback && check.method === 'npm-global' && check.available && deps.updates.updater !== null && install.state !== 'running' && install.state !== 'done';
+    return { ...check, canInstall, install };
+  };
+
+  app.get('/api/update', async (c) => c.json(updateInfo(await deps.updates.checker.check())));
+
+  app.post('/api/update/check', async (c) => c.json(updateInfo(await deps.updates.checker.check({ force: true }))));
+
+  app.put('/api/update/settings', async (c) => {
+    let payload: unknown;
+    try {
+      payload = await c.req.json();
+    } catch {
+      return fail(c, 'bad_request', 'Invalid JSON body');
+    }
+    const enabled = (payload as { enabled?: unknown } | null)?.enabled;
+    if (typeof enabled !== 'boolean') return fail(c, 'bad_request', 'enabled must be a boolean');
+    return c.json(updateInfo(await deps.updates.checker.setEnabled(enabled)));
+  });
+
+  app.post('/api/update/install', async (c) => {
+    const info = updateInfo(await deps.updates.checker.check());
+    if (!info.canInstall || info.latest === null || deps.updates.updater === null) {
+      return fail(c, 'forbidden', 'Updating from the app only works for a global npm install on this machine');
+    }
+    deps.updates.updater.install(info.latest).catch(() => undefined);
+    return c.json(updateInfo(await deps.updates.checker.status()), 202);
   });
 
   app.all('/api/*', (c) => fail(c, 'not_found', 'Not found'));

@@ -13,6 +13,7 @@ function stubServer() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/update') return new Response(null, { status: 404 });
       if (url === '/api/health') return Response.json({ version: '1', liteparseVersion: '1', libreoffice: false, maxBytes: 100000, lingua: { installed: true, model: 'tinybert', state: 'ready', progress: 1 } });
       const name = ((init?.body as FormData).get('file') as File).name;
       return Response.json({ id: name, name, kind: 'PDF', pages: 1, markdown: RAW, ms: 1 });

@@ -415,6 +415,7 @@ describe('App list management', () => {
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
         calls.push({ url, method: init?.method ?? 'GET' });
+        if (url === '/api/update') return new Response(null, { status: 404 });
         if (url === '/api/health') return Response.json({ version: '1', liteparseVersion: '1', libreoffice: false, maxBytes: 100000, lingua: { installed: false } });
         if (init?.method === 'DELETE') return new Response(null, { status: 204 });
         const name = ((init?.body as FormData).get('file') as File).name;

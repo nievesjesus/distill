@@ -1,4 +1,4 @@
-import type { ApiError, Health, LinguaModel, ParseResponse } from '@core/types';
+import type { ApiError, Health, LinguaModel, ParseResponse, UpdateInfo } from '@core/types';
 import { S } from './strings';
 
 async function request(url: string, init?: RequestInit): Promise<Response> {
@@ -63,4 +63,25 @@ export async function deleteFile(id: string): Promise<void> {
 
 export async function installLingua(): Promise<Health['lingua']> {
   return (await request('/api/lingua/install', { method: 'POST' })).json();
+}
+
+export async function getUpdate(): Promise<UpdateInfo> {
+  return (await request('/api/update')).json();
+}
+
+export async function checkUpdateNow(): Promise<UpdateInfo> {
+  return (await request('/api/update/check', { method: 'POST' })).json();
+}
+
+export async function setUpdateEnabled(enabled: boolean): Promise<UpdateInfo> {
+  const response = await request('/api/update/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  return response.json();
+}
+
+export async function installUpdate(): Promise<UpdateInfo> {
+  return (await request('/api/update/install', { method: 'POST' })).json();
 }

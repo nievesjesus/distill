@@ -1,6 +1,6 @@
 import { createServer } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import type { Health } from '../../src/core/types';
+import type { Health, UpdateInfo } from '../../src/core/types';
 import { startServer } from '../../src/server/start';
 
 describe('startServer', () => {
@@ -29,6 +29,23 @@ describe('startServer', () => {
       expect(Object.getPrototypeOf(res)).toBe(Response.prototype);
     } finally {
       await server.close();
+    }
+  }, 30_000);
+
+  it('reports the injected install method on /api/update', async () => {
+    const previous = process.env.DISTILL_NO_UPDATE_CHECK;
+    process.env.DISTILL_NO_UPDATE_CHECK = '1';
+    const server = await startServer({ port: 0, host: '127.0.0.1', maxBytes: 10, installMethod: 'desktop' });
+    try {
+      const res = await fetch(`${server.url}/api/update`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UpdateInfo;
+      expect(body.method).toBe('desktop');
+      expect(body.canInstall).toBe(false);
+    } finally {
+      await server.close();
+      if (previous === undefined) delete process.env.DISTILL_NO_UPDATE_CHECK;
+      else process.env.DISTILL_NO_UPDATE_CHECK = previous;
     }
   }, 30_000);
 

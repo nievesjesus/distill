@@ -2,10 +2,12 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { ApiError, Health, ParseResponse } from '../../src/core/types';
+import type { ApiError, Health, InstallMethod, ParseResponse, UpdateCheck, UpdateInfo, UpdateInstallStatus } from '../../src/core/types';
 import { DistillError } from '../../src/node/errors';
 import type { Lingua } from '../../src/node/lingua';
 import type { Parser } from '../../src/node/parse';
+import type { GlobalUpdater } from '../../src/node/update-install';
+import type { UpdateChecker } from '../../src/node/update-check';
 import { createApp } from '../../src/server/app';
 import { createStore } from '../../src/server/store';
 
@@ -15,6 +17,10 @@ interface Harness {
   jsonPaths: string[];
   store: ReturnType<typeof createStore>;
   lingua: Lingua;
+  updateCheck: UpdateCheck;
+  installs: string[];
+  setEnabledCalls: boolean[];
+  checkCalls: Array<{ force?: boolean } | undefined>;
 }
 
 function setup(
@@ -27,6 +33,9 @@ function setup(
     webRoot?: string;
     guardLoopback?: boolean;
     allowedHosts?: string[];
+    update?: Partial<UpdateCheck>;
+    updater?: boolean;
+    installStatus?: UpdateInstallStatus;
   } = {},
 ): Harness {
   const paths: string[] = [];
@@ -55,6 +64,38 @@ function setup(
     ...opts.lingua,
   };
   const store = createStore({ maxFiles: 50, maxBytes: 1_000_000 });
+  const updateCheck: UpdateCheck = {
+    current: '1.2.3',
+    latest: '1.2.3',
+    available: false,
+    method: 'npm-global',
+    enabled: true,
+    disabledBy: null,
+    checkedAt: null,
+    ...opts.update,
+  };
+  const installs: string[] = [];
+  const setEnabledCalls: boolean[] = [];
+  const checkCalls: Array<{ force?: boolean } | undefined> = [];
+  const checker: UpdateChecker = {
+    async status() {
+      return updateCheck;
+    },
+    async check(o) {
+      checkCalls.push(o);
+      return updateCheck;
+    },
+    async setEnabled(enabled) {
+      setEnabledCalls.push(enabled);
+      return { ...updateCheck, enabled };
+    },
+  };
+  const updater: GlobalUpdater = {
+    status: () => opts.installStatus ?? { state: 'idle' },
+    async install(version) {
+      installs.push(version);
+    },
+  };
   const app = createApp({
     parser,
     lingua,
@@ -66,8 +107,9 @@ function setup(
     webRoot: opts.webRoot,
     guardLoopback: opts.guardLoopback ?? false,
     allowedHosts: opts.allowedHosts ?? [],
+    updates: { checker, updater: opts.updater === false ? null : updater },
   });
-  return { app, paths, jsonPaths, store, lingua };
+  return { app, paths, jsonPaths, store, lingua, updateCheck, installs, setEnabledCalls, checkCalls };
 }
 
 function upload(name: string, content: string | Uint8Array = 'data', field = 'file'): RequestInit {
@@ -824,6 +866,97 @@ describe('server app', () => {
       const { app } = setup({ lingua: { install } });
       await app.request('/api/lingua/install?dir=/tmp/evil', { method: 'POST', body: JSON.stringify({ dir: '/tmp/evil' }), headers: { 'content-type': 'application/json' } });
       expect(install).toHaveBeenCalledWith();
+    });
+  });
+
+  describe('updates', () => {
+    const available = { latest: '1.3.0', available: true } as const;
+    const local = { guardLoopback: true } as const;
+    const localHeaders = { host: 'localhost:3000' };
+
+    async function info(h: Harness, init?: RequestInit): Promise<UpdateInfo> {
+      const res = await h.app.request('/api/update', { headers: localHeaders, ...init });
+      return (await res.json()) as UpdateInfo;
+    }
+
+    it('GET /api/update returns the check plus canInstall and install', async () => {
+      const h = setup({ ...local, update: available });
+      const body = await info(h);
+      expect(body).toMatchObject({ current: '1.2.3', latest: '1.3.0', available: true, method: 'npm-global', canInstall: true, install: { state: 'idle' } });
+      expect(h.checkCalls).toEqual([undefined]);
+    });
+
+    it.each<[string, InstallMethod]>([
+      ['npx', 'npx'],
+      ['docker', 'docker'],
+    ])('canInstall is false for %s', async (_name, method) => {
+      const body = await info(setup({ ...local, update: { ...available, method } }));
+      expect(body.canInstall).toBe(false);
+    });
+
+    it('canInstall is false without guardLoopback, without an update, without an updater or while running', async () => {
+      expect((await info(setup({ update: available }))).canInstall).toBe(false);
+      expect((await info(setup({ ...local, update: { latest: '1.2.3', available: false } }))).canInstall).toBe(false);
+      expect((await info(setup({ ...local, update: available, updater: false }))).canInstall).toBe(false);
+      const running = await info(setup({ ...local, update: available, installStatus: { state: 'running', version: '1.3.0' } }));
+      expect(running.canInstall).toBe(false);
+      expect(running.install.state).toBe('running');
+    });
+
+    it('does not offer the same update again after it installed', async () => {
+      const h = setup({ ...local, update: available, installStatus: { state: 'done', version: '0.2.0' } });
+      expect((await info(h)).canInstall).toBe(false);
+      const res = await h.app.request('/api/update/install', { method: 'POST', headers: localHeaders });
+      expect(res.status).toBe(403);
+      expect(h.installs).toEqual([]);
+    });
+
+    it('POST /api/update/check forces a check', async () => {
+      const h = setup({ ...local, update: available });
+      const res = await h.app.request('/api/update/check', { method: 'POST', headers: localHeaders });
+      expect(res.status).toBe(200);
+      expect(h.checkCalls).toEqual([{ force: true }]);
+    });
+
+    it('POST /api/update/install returns 202 and installs the latest version', async () => {
+      const h = setup({ ...local, update: available });
+      const res = await h.app.request('/api/update/install', { ...jsonPost({ version: '9.9.9' }), headers: { ...localHeaders, 'content-type': 'application/json' } });
+      expect(res.status).toBe(202);
+      expect(h.installs).toEqual(['1.3.0']);
+    });
+
+    it('POST /api/update/install is forbidden when canInstall is false', async () => {
+      const h = setup({ update: available });
+      const res = await h.app.request('/api/update/install', { method: 'POST' });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as ApiError;
+      expect(body).toEqual({ code: 'forbidden', message: 'Updating from the app only works for a global npm install on this machine' });
+      expect(h.installs).toEqual([]);
+    });
+
+    it('POST /api/update/install rejects cross-site requests', async () => {
+      const h = setup({ ...local, update: available });
+      const res = await h.app.request('/api/update/install', { method: 'POST', headers: { ...localHeaders, 'sec-fetch-site': 'cross-site' } });
+      expect(res.status).toBe(403);
+      expect(h.installs).toEqual([]);
+    });
+
+    it('PUT /api/update/settings toggles the check', async () => {
+      const h = setup({ ...local, update: available });
+      const res = await h.app.request('/api/update/settings', { method: 'PUT', headers: { ...localHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }) });
+      expect(res.status).toBe(200);
+      expect(h.setEnabledCalls).toEqual([false]);
+      expect(((await res.json()) as UpdateInfo).enabled).toBe(false);
+    });
+
+    it('PUT /api/update/settings rejects a non-boolean body', async () => {
+      const h = setup({ ...local, update: available });
+      const bad = await h.app.request('/api/update/settings', { method: 'PUT', headers: { ...localHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: 'no' }) });
+      expect(bad.status).toBe(400);
+      expect(((await bad.json()) as ApiError).code).toBe('bad_request');
+      const invalid = await h.app.request('/api/update/settings', { method: 'PUT', headers: { ...localHeaders, 'content-type': 'application/json' }, body: '{' });
+      expect(invalid.status).toBe(400);
+      expect(h.setEnabledCalls).toEqual([]);
     });
   });
 });

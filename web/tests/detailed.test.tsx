@@ -37,6 +37,7 @@ function stubServer() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/update') return new Response(null, { status: 404 });
       if (url === '/api/health') {
         server.healthCalls += 1;
         return Response.json({ version: '1', liteparseVersion: '1', libreoffice: true, maxBytes: 100000, lingua: server.lingua });

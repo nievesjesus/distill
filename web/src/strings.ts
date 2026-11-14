@@ -90,6 +90,23 @@ export const S = {
   connectMcp: 'MCP server',
   connectHooks: 'Hooks',
   connectIntro: 'Let your agent call distill directly.',
+  updateAvailable: (latest: string, current: string) => `distill ${latest} is available. You have ${current}.`,
+  updateAction: 'Update',
+  updateRunning: 'Updating…',
+  updateRetry: 'Retry',
+  updateDone: (version: string) => `Updated to ${version}. Restart distill to use it.`,
+  updateFailed: 'The update failed.',
+  updateCopy: 'Copy',
+  updateCopied: 'Copied',
+  updateDismiss: 'Dismiss update notice',
+  updateCommandLabel: 'Update command',
+  updateMenuLabel: 'Updates',
+  updateDaily: 'Check for updates daily',
+  updateEnvOff: 'Turned off by DISTILL_NO_UPDATE_CHECK',
+  updateCheckNow: 'Check now',
+  updateChecking: 'Checking…',
+  updateUpToDate: 'Up to date',
+  versionLabel: (current: string) => `v${current}`,
 } as const;
 
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {

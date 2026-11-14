@@ -4,6 +4,7 @@ import { Dropzone, focusBrowse } from './components/Dropzone';
 import { EmptyState } from './components/EmptyState';
 import { FileList } from './components/FileList';
 import { Footer } from './components/Footer';
+import { UpdateBanner } from './components/UpdateBanner';
 import { Header } from './components/Header';
 import type { ViewMode } from './components/Header';
 import { OptimizeBar } from './components/OptimizeBar';
@@ -11,14 +12,16 @@ import { useExportTracking } from './lib/desktop-bridge';
 import { AnnouncerProvider, useAnnounce } from './state/announcer';
 import { useFiles } from './state/files';
 import { useSettings } from './state/settings';
+import { useUpdateInfo } from './state/update';
 import { ERROR_MESSAGES, S } from './strings';
 
 const [taglineStart, taglineAccent, taglineEnd] = S.tagline;
 
 function AppBody() {
-  const { settings, update, toggleBooster, toggleLingua } = useSettings();
+  const { settings, update: updateSettings, toggleBooster, toggleLingua } = useSettings();
   const { files, add, remove, clear, markExported, healthError, health, linguaFailed, retryLingua, installLingua } = useFiles(settings);
   const announce = useAnnounce();
+  const update = useUpdateInfo();
   const pickerRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const filesRef = useRef(files);
@@ -76,7 +79,8 @@ function AppBody() {
   return (
     <div className="page">
       <div className="column">
-        <Header mode={mode} onModeChange={(next) => update({ detailed: next === 'detailed', optionsOpen: next === 'detailed' })} />
+        <Header mode={mode} onModeChange={(next) => updateSettings({ detailed: next === 'detailed', optionsOpen: next === 'detailed' })} update={update} />
+        <UpdateBanner update={update} />
         <div className="body">
           <h1 className="tagline">
             {taglineStart}
@@ -91,16 +95,16 @@ function AppBody() {
           ) : null}
           <OptimizeBar
             settings={settings}
-            onOptimizeChange={(optimize) => update({ optimize })}
-            onOptionsOpenChange={(optionsOpen) => update({ optionsOpen })}
+            onOptimizeChange={(optimize) => updateSettings({ optimize })}
+            onOptionsOpenChange={(optionsOpen) => updateSettings({ optionsOpen })}
             onToggleBooster={toggleBooster}
             onToggleLingua={toggleLingua}
             health={health}
             linguaFailed={linguaFailed}
-            onLinguaChange={(patch) => update({ lingua: { ...settings.lingua, ...patch } })}
+            onLinguaChange={(patch) => updateSettings({ lingua: { ...settings.lingua, ...patch } })}
             onRetryLingua={retryLingua}
             onInstallLingua={() => {
-              update({ lingua: { ...settings.lingua, on: true } });
+              updateSettings({ lingua: { ...settings.lingua, on: true } });
               installLingua();
             }}
           />

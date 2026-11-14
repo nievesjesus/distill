@@ -20,3 +20,7 @@ export interface LinguaStatus {
 }
 export interface Health { version: string; liteparseVersion: string; libreoffice: boolean; lingua: LinguaStatus; maxBytes: number }
 export interface DistillResult { path: string; name: string; kind: FileKind; pages: number; markdown: string; tokens: { raw: number; out: number }; ms: number }
+export type InstallMethod = 'npm-global' | 'npx' | 'docker' | 'desktop' | 'source';
+export interface UpdateCheck { current: string; latest: string | null; available: boolean; method: InstallMethod; enabled: boolean; disabledBy: 'env' | 'setting' | null; checkedAt: string | null }
+export interface UpdateInstallStatus { state: 'idle' | 'running' | 'done' | 'failed'; version?: string; error?: string }
+export interface UpdateInfo extends UpdateCheck { canInstall: boolean; install: UpdateInstallStatus }
