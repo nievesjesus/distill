@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createDesktopUpdater, desktopVariant } from '../../desktop/updater';
 import type { UpdaterLike } from '../../desktop/updater';
@@ -121,7 +122,7 @@ describe('createDesktopUpdater', () => {
 
 describe('desktopVariant', () => {
   it('is full when the lingua folder exists and lite otherwise', () => {
-    expect(desktopVariant('/res', (p) => p === '/res/lingua')).toBe('full');
+    expect(desktopVariant('/res', (p) => p === join('/res', 'lingua'))).toBe('full');
     expect(desktopVariant('/res', () => false)).toBe('lite');
   });
 });
