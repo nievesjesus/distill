@@ -258,7 +258,7 @@
       </div>
 
       <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" tabindex="0" hidden>
-        <p>A Claude Code <code>PreToolUse</code> hook on <code>Read</code> makes the agent read the distilled Markdown instead of the binary. Only PDF and Office files are converted, images are left alone, and a failure never blocks the read.</p>
+        <p>A Claude Code <code>PreToolUse</code> hook on <code>Read</code> makes the agent read the distilled Markdown instead of the PDF. Claude Code refuses Office files before any hook runs, so the installer also adds a skill that has Claude convert them with <code>distill-llm convert --stdout</code>. Images are left alone, and a failure never blocks the read.</p>
         <div class="code"><pre><code>npm i -g distill-llm
 distill-llm hooks install --claude</code></pre><button class="copy" type="button" data-copy="npm i -g distill-llm&#10;distill-llm hooks install --claude" aria-label="Copy commands"><span class="copy-t">Copy</span></button></div>
       </div>
