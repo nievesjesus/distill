@@ -230,7 +230,7 @@ The app and the CLI count with `o200k_base` (via `gpt-tokenizer`). Claude and Ge
 
 **Is it free?** Yes. Apache-2.0, no account, no paid tier.
 
-**Does anything leave my machine?** Your documents never do. See [Privacy](#privacy) for the optional one-time data downloads.
+**Does anything leave my machine?** Your documents never do. See [Privacy](#privacy) for the optional one-time data downloads and the daily version check you can turn off.
 
 **How do I update?** The web app and the CLI tell you when a new version exists. With a global npm install, click **Update** in the web app (loopback only) or run `distill-llm update`, then restart distill. With npx, run `npx distill-llm@latest`. With Docker, run `docker pull ghcr.io/nievesjesus/distill`. The desktop app does not update itself yet: download the new installer from [GitHub Releases](https://github.com/nievesjesus/distill/releases).
 
