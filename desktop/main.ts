@@ -1,9 +1,22 @@
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, screen, session, shell } from 'electron';
-import type { IpcMainEvent, WebContents } from 'electron';
+import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
+import electronUpdater from 'electron-updater';
 import { REVEAL_CHANNEL, createDownloadHandler, createRevealHandler, createSavedRegistry } from './downloads';
+import {
+  UPDATE_CHECK_CHANNEL,
+  UPDATE_DOWNLOAD_CHANNEL,
+  UPDATE_GET_CHANNEL,
+  UPDATE_INSTALL_CHANNEL,
+  UPDATE_STATUS_CHANNEL,
+} from './channels';
+import { createDesktopUpdater, desktopVariant } from './updater';
+import type { DesktopUpdater } from './updater';
+import type { DesktopUpdateStatus } from '../src/core/types';
+import { createUpdateChecker } from '../src/node/update-check';
 import { startServer } from '../src/server/start';
 import { readSavedState, restoreBounds, writeSavedState } from './window-state';
 import type { WindowState } from './window-state';
@@ -20,6 +33,7 @@ import {
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const SAVE_DEBOUNCE_MS = 500;
+const UPDATE_CHECK_DELAY_MS = 5000;
 const CLOSE_TIMEOUT_MS = 2000;
 
 let mainWindow: BrowserWindow | null = null;
@@ -64,7 +78,7 @@ function guardContents(contents: WebContents): void {
   contents.on('will-attach-webview', (event) => event.preventDefault());
 }
 
-function isTrustedSender(event: IpcMainEvent): boolean {
+function isTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   const contents = mainWindow.webContents;
   return event.sender === contents && event.senderFrame === contents.mainFrame && isSameOrigin(event.senderFrame.url, appUrl);
@@ -89,6 +103,49 @@ function installDownloads(): void {
   ipcMain.on(REVEAL_CHANNEL, (event, id: unknown) => {
     if (isTrustedSender(event)) reveal(id);
   });
+}
+
+function installUpdates(): DesktopUpdater | null {
+  let desktopUpdater: DesktopUpdater | null = null;
+  if (app.isPackaged) {
+    desktopUpdater = createDesktopUpdater({
+      updater: electronUpdater.autoUpdater,
+      variant: desktopVariant(process.resourcesPath, existsSync),
+      onStatus: (status) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(UPDATE_STATUS_CHANNEL, status);
+      },
+    });
+  }
+  const idle: DesktopUpdateStatus = { state: 'idle' };
+  ipcMain.handle(UPDATE_GET_CHANNEL, (event) => (isTrustedSender(event) ? (desktopUpdater?.status() ?? idle) : idle));
+  ipcMain.on(UPDATE_CHECK_CHANNEL, (event) => {
+    if (isTrustedSender(event)) void desktopUpdater?.check();
+  });
+  ipcMain.on(UPDATE_DOWNLOAD_CHANNEL, (event) => {
+    if (isTrustedSender(event)) void desktopUpdater?.download();
+  });
+  ipcMain.on(UPDATE_INSTALL_CHANNEL, (event) => {
+    if (isTrustedSender(event)) desktopUpdater?.install();
+  });
+  return desktopUpdater;
+}
+
+function scheduleUpdateCheck(desktopUpdater: DesktopUpdater | null): void {
+  if (!desktopUpdater) return;
+  const checker = createUpdateChecker({
+    current: app.getVersion(),
+    method: 'desktop',
+    cacheDir: join(homedir(), '.cache', 'distill-llm'),
+  });
+  setTimeout(() => {
+    checker
+      .status()
+      .then((status) => {
+        if (status.enabled) return desktopUpdater.check();
+        return undefined;
+      })
+      .catch((error: unknown) => console.warn('could not check for updates', error));
+  }, UPDATE_CHECK_DELAY_MS).unref();
 }
 
 function workAreas() {
@@ -154,9 +211,11 @@ async function boot(): Promise<void> {
   );
   session.defaultSession.setPermissionCheckHandler((_contents, permission) => isPermissionAllowed(permission));
   installDownloads();
-  server = await startServer({ port: 0, host: '127.0.0.1', maxBytes: MAX_UPLOAD_BYTES });
+  const desktopUpdater = installUpdates();
+  server = await startServer({ port: 0, host: '127.0.0.1', maxBytes: MAX_UPLOAD_BYTES, installMethod: 'desktop' });
   appUrl = server.url;
   mainWindow = createWindow(appUrl);
+  scheduleUpdateCheck(desktopUpdater);
 }
 
 if (!app.requestSingleInstanceLock()) {

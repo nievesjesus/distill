@@ -24,3 +24,4 @@ export type InstallMethod = 'npm-global' | 'npx' | 'docker' | 'desktop' | 'sourc
 export interface UpdateCheck { current: string; latest: string | null; available: boolean; method: InstallMethod; enabled: boolean; disabledBy: 'env' | 'setting' | null; checkedAt: string | null }
 export interface UpdateInstallStatus { state: 'idle' | 'running' | 'done' | 'failed'; version?: string; error?: string }
 export interface UpdateInfo extends UpdateCheck { canInstall: boolean; install: UpdateInstallStatus }
+export interface DesktopUpdateStatus { state: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error'; version?: string; percent?: number; error?: string }
