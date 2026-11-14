@@ -1,34 +1,49 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { isInside } from '../node/inside';
+import { type MatchContext, type ReadRule, parseReadRule, ruleMayMatch } from './read-rules';
 import { isHookConvertible } from './supported';
 
 export interface ClaudeHookDeps {
   homeDir: string;
   projectDir?: string;
   managedSettingsPaths?: string[];
+  platform?: NodeJS.Platform;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readRuleList(permissions: Record<string, unknown>, key: string): boolean {
-  const rules = permissions[key];
-  return Array.isArray(rules) && rules.some((rule) => typeof rule === 'string' && rule.startsWith('Read'));
+interface SettingsFile {
+  path: string;
+  root: string | null;
 }
 
-async function hasReadRestriction(file: string): Promise<boolean> {
+function readRules(permissions: Record<string, unknown>, key: string, root: string | null): ReadRule[] {
+  const rules = permissions[key];
+  if (!Array.isArray(rules)) return [];
+  const parsed: ReadRule[] = [];
+  for (const rule of rules) {
+    if (typeof rule !== 'string') continue;
+    const read = parseReadRule(rule, root);
+    if (read !== null) parsed.push(read);
+  }
+  return parsed;
+}
+
+async function hasReadRestriction(file: SettingsFile, paths: string[], ctx: MatchContext): Promise<boolean> {
   let text: string;
   try {
-    text = await readFile(file, 'utf8');
+    text = await readFile(file.path, 'utf8');
   } catch (error) {
     return (error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'ENOTDIR';
   }
   try {
     const settings: unknown = JSON.parse(text);
     if (!isRecord(settings) || !isRecord(settings.permissions)) return false;
-    return readRuleList(settings.permissions, 'deny') || readRuleList(settings.permissions, 'ask');
+    const rules = [...readRules(settings.permissions, 'deny', file.root), ...readRules(settings.permissions, 'ask', file.root)];
+    return rules.some((rule) => paths.some((path) => ruleMayMatch(rule, path, ctx)));
   } catch {
     return true;
   }
@@ -51,15 +66,21 @@ function ancestors(dir: string): string[] {
   }
 }
 
-function settingsFiles(realCwd: string, realProject: string | null, deps: ClaudeHookDeps): string[] {
+function settingsFiles(realCwd: string, realProject: string | null, deps: ClaudeHookDeps): SettingsFile[] {
   const dirs = [...(realProject === null ? [] : [realProject]), ...ancestors(realCwd)];
-  const files = [join(deps.homeDir, '.claude', 'settings.json'), ...(deps.managedSettingsPaths ?? defaultManagedSettingsPaths())];
-  for (const dir of dirs) files.push(join(dir, '.claude', 'settings.json'), join(dir, '.claude', 'settings.local.json'));
-  return [...new Set(files)];
+  const files: SettingsFile[] = [
+    { path: join(deps.homeDir, '.claude', 'settings.json'), root: null },
+    ...(deps.managedSettingsPaths ?? defaultManagedSettingsPaths()).map((path) => ({ path, root: null })),
+  ];
+  for (const dir of dirs) {
+    files.push({ path: join(dir, '.claude', 'settings.json'), root: dir }, { path: join(dir, '.claude', 'settings.local.json'), root: dir });
+  }
+  const seen = new Set<string>();
+  return files.filter((file) => !seen.has(file.path) && seen.add(file.path));
 }
 
-async function anyReadRestriction(files: string[]): Promise<boolean> {
-  return (await Promise.all(files.map(hasReadRestriction))).some(Boolean);
+async function anyReadRestriction(files: SettingsFile[], paths: string[], ctx: MatchContext): Promise<boolean> {
+  return (await Promise.all(files.map((file) => hasReadRestriction(file, paths, ctx)))).some(Boolean);
 }
 
 async function realpathOrNull(path: string | undefined): Promise<string | null> {
@@ -85,7 +106,9 @@ export async function handleClaudePreToolUse(
     const original = isAbsolute(toolInput.file_path) ? toolInput.file_path : resolve(cwd, toolInput.file_path);
     const [realOriginal, realCwd, realProject] = await Promise.all([realpath(original), realpath(cwd), realpathOrNull(deps.projectDir)]);
     if (!isInside(realOriginal, realCwd) && !(realProject !== null && isInside(realOriginal, realProject))) return null;
-    if (await anyReadRestriction(settingsFiles(realCwd, realProject, deps))) return null;
+    const ctx: MatchContext = { cwd: realCwd, home: deps.homeDir, platform: deps.platform ?? process.platform };
+    const candidates = [original, realOriginal, join(deps.homeDir, '.cache', 'distill-llm', 'out', 'probe.md')];
+    if (await anyReadRestriction(settingsFiles(realCwd, realProject, deps), candidates, ctx)) return null;
     const mdPath = await convert(realOriginal);
     return {
       hookSpecificOutput: {
