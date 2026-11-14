@@ -64,7 +64,9 @@ export function ruleMayMatch(rule: ReadRule, absPath: string, ctx: MatchContext)
   const win = ctx.platform === 'win32';
   const spec = rule.spec;
   if (spec === null || spec === '' || spec === '*' || spec === '**') return true;
-  if (/[[\]{}!]/.test(spec)) return true;
+  if (/[[\]{}!$]/.test(spec)) return true;
+  if (spec !== spec.trim()) return true;
+  if (spec.startsWith('~') && !spec.startsWith('~/')) return true;
   if (!win && spec.includes('\\')) return true;
 
   const insensitive = win || ctx.platform === 'darwin';
@@ -74,6 +76,8 @@ export function ruleMayMatch(rule: ReadRule, absPath: string, ctx: MatchContext)
   };
 
   const text = norm(spec);
+  const unprefixed = text.replace(/^(\/\/|~\/|\/|\.\/)/, '');
+  if (unprefixed.split('/').some((segment) => segment === '.' || segment === '..')) return true;
   let pattern: string;
   let basenameToo = false;
 

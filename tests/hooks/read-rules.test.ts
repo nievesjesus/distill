@@ -63,6 +63,14 @@ describe('ruleMayMatch', () => {
     expect(m('Read(./a\\ b.pdf)', '/p/c.pdf')).toBe(true);
   });
 
+  it('is conservative for relative segments, bare ~, $ and padded specs', () => {
+    expect(m('Read(../secrets/**)', '/p/b.pdf')).toBe(true);
+    expect(m('Read(//p/./x/**)', '/q/b.pdf')).toBe(true);
+    expect(m('Read(~)', '/p/b.pdf')).toBe(true);
+    expect(m('Read($HOME/x/**)', '/p/b.pdf')).toBe(true);
+    expect(m('Read( ./secrets/** )', '/p/b.pdf')).toBe(true);
+  });
+
   it('translates ? and escapes regex metacharacters', () => {
     expect(m('Read(./a?.pdf)', '/p/ab.pdf')).toBe(true);
     expect(m('Read(./a?.pdf)', '/p/a/.pdf')).toBe(false);
