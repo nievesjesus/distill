@@ -249,11 +249,28 @@ describe('desktop updates', () => {
     expect(updates.install).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the error and Retry calls check', async () => {
-    await mountDesktop({ state: 'error', error: 'network down' });
+  it('keeps a background error silent without a user action', async () => {
+    await mountDesktop({ state: 'none' });
+    await act(async () => {
+      push({ state: 'error', error: 'offline' });
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('shows the error after Check now with Retry and a working dismiss', async () => {
+    await mountDesktop({ state: 'none' });
+    fireEvent.click(screen.getByRole('button', { name: 'v0.1.2' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    });
+    await act(async () => {
+      push({ state: 'error', error: 'network down' });
+    });
     expect(screen.getByRole('status')).toHaveTextContent('network down');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(updates.check).toHaveBeenCalledTimes(1);
+    expect(updates.check).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss update notice' }));
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('shows nothing while checking, up to date or idle', async () => {

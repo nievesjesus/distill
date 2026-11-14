@@ -45,7 +45,7 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function DesktopBanner({ update }: { update: UpdateState }) {
-  const { info, desktop, dismissed, dismiss, desktopCheck, desktopDownload, desktopInstall } = update;
+  const { info, desktop, dismissed, dismiss, checkedNow, errorHidden, dismissError, desktopCheck, desktopDownload, desktopInstall } = update;
   if (!info || !desktop || !desktopActive(update)) return null;
 
   const version = desktop.version ?? '';
@@ -70,7 +70,7 @@ function DesktopBanner({ update }: { update: UpdateState }) {
         </button>
       </>
     );
-  } else if (desktop.state === 'error') {
+  } else if (desktop.state === 'error' && checkedNow && !errorHidden) {
     body = (
       <>
         <span className="update-text">{desktop.error ?? S.updateFailed}</span>
@@ -86,8 +86,13 @@ function DesktopBanner({ update }: { update: UpdateState }) {
   return (
     <div className="update-banner" role="status">
       {body}
-      {version ? (
-        <button type="button" className="update-dismiss" aria-label={S.updateDismiss} onClick={() => dismiss(version)}>
+      {version || desktop.state === 'error' ? (
+        <button
+          type="button"
+          className="update-dismiss"
+          aria-label={S.updateDismiss}
+          onClick={() => (desktop.state === 'error' ? dismissError() : dismiss(version))}
+        >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>

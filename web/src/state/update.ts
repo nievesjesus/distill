@@ -32,6 +32,7 @@ export function useUpdateInfo() {
   const [dismissed, setDismissed] = useState<string | null>(readDismissed);
   const [desktop, setDesktop] = useState<DesktopUpdateStatus | null>(null);
   const [checkedNow, setCheckedNow] = useState(false);
+  const [errorHidden, setErrorHidden] = useState(false);
 
   useEffect(() => {
     const updates = desktopUpdates();
@@ -90,11 +91,23 @@ export function useUpdateInfo() {
     writeDismissed(null);
     setDismissed(null);
     setCheckedNow(true);
+    setErrorHidden(false);
     desktopUpdates()?.check();
   }, []);
 
-  const desktopDownload = useCallback(() => desktopUpdates()?.download(), []);
-  const desktopInstall = useCallback(() => desktopUpdates()?.install(), []);
+  const desktopDownload = useCallback(() => {
+    setCheckedNow(true);
+    setErrorHidden(false);
+    desktopUpdates()?.download();
+  }, []);
+
+  const desktopInstall = useCallback(() => {
+    setCheckedNow(true);
+    setErrorHidden(false);
+    desktopUpdates()?.install();
+  }, []);
+
+  const dismissError = useCallback(() => setErrorHidden(true), []);
 
   const checkNow = useCallback(async () => {
     if (desktopUpdates() && info?.method === 'desktop') {
@@ -128,7 +141,7 @@ export function useUpdateInfo() {
     }
   }, []);
 
-  return { info, dismissed, dismiss, checkNow, setEnabled, install, desktop, checkedNow, desktopCheck, desktopDownload, desktopInstall };
+  return { info, dismissed, dismiss, checkNow, setEnabled, install, desktop, checkedNow, errorHidden, dismissError, desktopCheck, desktopDownload, desktopInstall };
 }
 
 export type UpdateState = ReturnType<typeof useUpdateInfo>;
