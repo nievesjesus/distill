@@ -242,7 +242,7 @@ export function createApp(deps: AppDeps): Hono {
   const updateInfo = (check: UpdateCheck): UpdateInfo => {
     const install = deps.updates.updater?.status() ?? { state: 'idle' as const };
     const canInstall =
-      deps.guardLoopback && check.method === 'npm-global' && check.available && deps.updates.updater !== null && install.state !== 'running';
+      deps.guardLoopback && check.method === 'npm-global' && check.available && deps.updates.updater !== null && install.state !== 'running' && install.state !== 'done';
     return { ...check, canInstall, install };
   };
 

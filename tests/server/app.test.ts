@@ -903,6 +903,14 @@ describe('server app', () => {
       expect(running.install.state).toBe('running');
     });
 
+    it('does not offer the same update again after it installed', async () => {
+      const h = setup({ ...local, update: available, installStatus: { state: 'done', version: '0.2.0' } });
+      expect((await info(h)).canInstall).toBe(false);
+      const res = await h.app.request('/api/update/install', { method: 'POST', headers: localHeaders });
+      expect(res.status).toBe(403);
+      expect(h.installs).toEqual([]);
+    });
+
     it('POST /api/update/check forces a check', async () => {
       const h = setup({ ...local, update: available });
       const res = await h.app.request('/api/update/check', { method: 'POST', headers: localHeaders });
