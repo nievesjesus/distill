@@ -17,6 +17,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production \
+    DISTILL_DOCKER=1 \
     TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata \
     DISTILL_TESSDATA=/usr/share/tesseract-ocr/5/tessdata
 COPY package.json package-lock.json ./
