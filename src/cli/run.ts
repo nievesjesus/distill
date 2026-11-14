@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { lstatSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, rmdirSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -10,6 +10,7 @@ import { handleClaudePreToolUse } from '../hooks/claude';
 import { convertCached } from '../hooks/cache';
 import { readIfExists, realTarget, writeAtomic } from '../hooks/atomic';
 import { findOnPath, hookCommand } from '../hooks/command';
+import { claudeSkillMarkdown, claudeSkillPath, isOwnSkill } from '../hooks/claude-skill';
 import { lineDiff } from '../hooks/diff';
 import { normalizeSettings, planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
 import { isOwnOpencodePlugin, opencodePluginPath, planOpencodeInstall } from '../hooks/install-opencode';
@@ -434,7 +435,10 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     }
     try {
       if (next === null) rmSync(path, { force: true });
-      else writeAtomic(path, next);
+      else {
+        mkdirSync(dirname(path), { recursive: true });
+        writeAtomic(path, next);
+      }
     } catch (error) {
       stderr(`Could not write ${path}: ${errorMessage(error)}`);
       exit(1);
@@ -444,13 +448,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     return true;
   };
 
-  const processTarget = async (target: Target, action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
-    const location = { home: homeDir, cwd, project: options.project === true };
-    const path =
-      target === 'claude'
-        ? join(location.project ? cwd : homeDir, '.claude', location.project ? 'settings.local.json' : 'settings.json')
-        : opencodePluginPath(location);
-    let label = path;
+  const resolveTargetPath = (path: string, project: boolean): string | null => {
     let isLink = false;
     try {
       isLink = lstatSync(path).isSymbolicLink();
@@ -462,17 +460,73 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     } catch {
       stderr(`Refusing to follow ${isLink ? 'dangling symlink' : 'unresolvable path'} ${path}.`);
       exit(1);
-      return false;
+      return null;
     }
-    if (location.project) {
+    if (project) {
       const root = realpathSync(cwd);
       if (!isInside(resolved, root)) {
         stderr(`Refusing to write ${path}: it links outside the project (${resolved}).`);
         exit(1);
-        return false;
+        return null;
       }
     }
-    if (resolved !== path) label = `${path} -> ${resolved}`;
+    return resolved;
+  };
+
+  const processSkill = async (action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
+    const project = options.project === true;
+    const path = claudeSkillPath(project ? cwd : homeDir);
+    const resolved = resolveTargetPath(path, project);
+    if (resolved === null) return false;
+    const label = resolved !== path ? `${path} -> ${resolved}` : path;
+    let current: string | null;
+    try {
+      current = readIfExists(path);
+    } catch (error) {
+      stderr(`Could not read ${path}: ${errorMessage(error)}`);
+      exit(1);
+      return false;
+    }
+    if (current === null) {
+      if (action === 'uninstall') return true;
+      return applyChange(path, label, null, claudeSkillMarkdown(command), options);
+    }
+    if (!isOwnSkill(current)) {
+      stdout(`${path} exists and was not created by distill; leaving it.`);
+      return true;
+    }
+    if (action === 'install') {
+      const next = claudeSkillMarkdown(command);
+      if (next === current) {
+        stdout(`Already installed: ${path}`);
+        return true;
+      }
+      return applyChange(path, label, current, next, options);
+    }
+    const removed = await applyChange(path, label, current, null, options);
+    if (removed) {
+      try {
+        rmdirSync(dirname(path));
+      } catch {}
+    }
+    return removed;
+  };
+
+  const processTarget = async (target: Target, action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
+    const settingsOk = await processSettingsTarget(target, action, options, command);
+    if (!settingsOk || target !== 'claude') return settingsOk;
+    return processSkill(action, options, command);
+  };
+
+  const processSettingsTarget = async (target: Target, action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
+    const location = { home: homeDir, cwd, project: options.project === true };
+    const path =
+      target === 'claude'
+        ? join(location.project ? cwd : homeDir, '.claude', location.project ? 'settings.local.json' : 'settings.json')
+        : opencodePluginPath(location);
+    const resolved = resolveTargetPath(path, location.project);
+    if (resolved === null) return false;
+    const label = resolved !== path ? `${path} -> ${resolved}` : path;
     let current: string | null;
     try {
       current = readIfExists(path);

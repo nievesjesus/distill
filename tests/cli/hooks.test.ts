@@ -380,3 +380,67 @@ describe('hooks install real-target and masking', () => {
     expect(out).toContain('distill-llm hook claude');
   });
 });
+
+describe('office skill', () => {
+  const skillIn = (base: string) => join(base, '.claude', 'skills', 'distill-office-documents', 'SKILL.md');
+
+  it('install --claude --yes writes the office skill', async () => {
+    const s = setup();
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    const text = readFileSync(skillIn(s.home), 'utf8');
+    expect(text).toContain('distill-llm convert --stdout');
+    expect(s.exit).not.toHaveBeenCalled();
+  });
+
+  it('second install reports the skill as already installed', async () => {
+    const s = setup();
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    const before = readFileSync(skillIn(s.home), 'utf8');
+    s.stdout.length = 0;
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    expect(s.stdout).toContain(`Already installed: ${skillIn(s.home)}`);
+    expect(readFileSync(skillIn(s.home), 'utf8')).toBe(before);
+  });
+
+  it('install --claude --project --yes writes the skill inside the project', async () => {
+    const s = setup();
+    await run(['hooks', 'install', '--claude', '--project', '--yes'], s.deps);
+    expect(existsSync(skillIn(s.cwd))).toBe(true);
+    expect(existsSync(skillIn(s.home))).toBe(false);
+  });
+
+  it('install keeps a foreign SKILL.md', async () => {
+    const s = setup();
+    mkdirSync(join(s.home, '.claude', 'skills', 'distill-office-documents'), { recursive: true });
+    writeFileSync(skillIn(s.home), '# mine');
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    expect(readFileSync(skillIn(s.home), 'utf8')).toBe('# mine');
+    expect(s.stdout.join('\n')).toContain('was not created by distill');
+    expect(s.exit).not.toHaveBeenCalled();
+    expect(existsSync(join(s.home, '.claude', 'settings.json'))).toBe(true);
+  });
+
+  it('uninstall --claude --yes removes the skill and its empty folder', async () => {
+    const s = setup();
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    await run(['hooks', 'uninstall', '--claude', '--yes'], s.deps);
+    expect(existsSync(skillIn(s.home))).toBe(false);
+    expect(existsSync(join(s.home, '.claude', 'skills', 'distill-office-documents'))).toBe(false);
+  });
+
+  it('uninstall keeps a foreign SKILL.md', async () => {
+    const s = setup();
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    writeFileSync(skillIn(s.home), '# mine');
+    await run(['hooks', 'uninstall', '--claude', '--yes'], s.deps);
+    expect(readFileSync(skillIn(s.home), 'utf8')).toBe('# mine');
+    expect(s.stdout.join('\n')).toContain('was not created by distill');
+  });
+
+  it('install does not add a Bash allow rule', async () => {
+    const s = setup();
+    await run(['hooks', 'install', '--claude', '--yes'], s.deps);
+    const text = readFileSync(join(s.home, '.claude', 'settings.json'), 'utf8');
+    expect(text).not.toContain('Bash(');
+  });
+});
