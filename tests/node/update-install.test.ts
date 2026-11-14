@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGlobalUpdater } from '../../src/node/update-install';
 
@@ -33,11 +34,13 @@ function fakeSpawn(reply: (args: string[]) => Reply) {
   return { spawn, calls };
 }
 
+const globalRoot = resolve('/usr/local/lib/node_modules');
+const globalPkg = join(globalRoot, 'distill-llm');
 const npm = async () => ({ command: 'npm', prefixArgs: ['cli.js'] });
 const identity = async (p: string) => p;
 
 function setup(packageRoot: string, installReply: Reply = {}) {
-  const fake = fakeSpawn((args) => (args.includes('root') ? { stdout: '/usr/local/lib/node_modules\n' } : installReply));
+  const fake = fakeSpawn((args) => (args.includes('root') ? { stdout: `${globalRoot}\n` } : installReply));
   const updater = createGlobalUpdater({ packageRoot, spawn: fake.spawn, findNpm: npm, realpath: identity });
   return { updater, calls: fake.calls };
 }
@@ -48,7 +51,7 @@ describe('createGlobalUpdater', () => {
   });
 
   it('refuses a project-local install', async () => {
-    const { updater, calls } = setup('/proj/node_modules/distill-llm');
+    const { updater, calls } = setup(resolve('/proj/node_modules/distill-llm'));
     await updater.install('0.2.0');
     const status = updater.status();
     expect(status.state).toBe('failed');
@@ -57,14 +60,14 @@ describe('createGlobalUpdater', () => {
   });
 
   it('installs the exact version', async () => {
-    const { updater, calls } = setup('/usr/local/lib/node_modules/distill-llm');
+    const { updater, calls } = setup(globalPkg);
     await updater.install('0.2.0');
     expect(calls[calls.length - 1]!.args.slice(-3)).toEqual(['install', '-g', 'distill-llm@0.2.0']);
     expect(updater.status()).toEqual({ state: 'done', version: '0.2.0' });
   });
 
   it('rejects a bad version', async () => {
-    const { updater, calls } = setup('/usr/local/lib/node_modules/distill-llm');
+    const { updater, calls } = setup(globalPkg);
     await updater.install('latest');
     expect(updater.status().state).toBe('failed');
     expect(updater.status().error).toBe('Invalid version');
@@ -72,7 +75,7 @@ describe('createGlobalUpdater', () => {
   });
 
   it('does not run twice', async () => {
-    const { updater, calls } = setup('/usr/local/lib/node_modules/distill-llm');
+    const { updater, calls } = setup(globalPkg);
     const first = updater.install('0.2.0');
     const second = updater.install('0.2.0');
     expect(second).toBe(first);
@@ -81,7 +84,7 @@ describe('createGlobalUpdater', () => {
   });
 
   it('reports npm errors', async () => {
-    const { updater } = setup('/usr/local/lib/node_modules/distill-llm', { stderr: 'EACCES: permission denied', code: 1 });
+    const { updater } = setup(globalPkg, { stderr: 'EACCES: permission denied', code: 1 });
     await updater.install('0.2.0');
     expect(updater.status().state).toBe('failed');
     expect(updater.status().error).toContain('EACCES');
@@ -94,7 +97,7 @@ describe('createGlobalUpdater', () => {
   });
 
   it('can run again after finishing', async () => {
-    const { updater, calls } = setup('/usr/local/lib/node_modules/distill-llm');
+    const { updater, calls } = setup(globalPkg);
     await updater.install('0.2.0');
     await updater.install('0.3.0');
     expect(calls.filter((c) => c.args.includes('install'))).toHaveLength(2);

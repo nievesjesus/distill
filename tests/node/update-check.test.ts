@@ -149,6 +149,8 @@ describe('createUpdateChecker', () => {
     await make().check();
     const saved = JSON.parse(readFileSync(join(dir, 'update-check.json'), 'utf8'));
     expect(saved.latest).toBe('0.2.0');
-    expect(statSync(join(dir, 'update-check.json')).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') {
+      expect(statSync(join(dir, 'update-check.json')).mode & 0o777).toBe(0o600);
+    }
   });
 });
