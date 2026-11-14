@@ -43,4 +43,46 @@ describe("release workflow", () => {
     expect(lines.length).toBeGreaterThan(0);
     for (const l of lines) expect(l).toContain("--publish never");
   });
+
+  const wf = () => read(".github/workflows/release.yml");
+
+  it("builds the mac zip on both mac runners", () => {
+    expect(wf().match(/target: mac dmg zip/g)).toHaveLength(2);
+    expect(wf()).not.toMatch(/target: mac dmg$/m);
+  });
+
+  it("includes zip files in the arch check and the upload", () => {
+    const text = wf();
+    const archCheck = text.split("Fail on artifacts for another arch")[1].split("Verify lite variant")[0];
+    expect(archCheck).toContain("Distill-*.zip");
+    const upload = text.split("name: upload-artifact v4.6.2\n")[1].split("draft-release:")[0];
+    expect(upload).toContain("release/**/Distill-*.zip");
+    expect(upload).toContain("manifests/*.yml");
+  });
+
+  it("refreshes manifests only for signed Windows builds", () => {
+    const text = wf();
+    const step = text.split("name: Collect update manifests")[1].split("name: upload-artifact v4.6.2\n")[0];
+    expect(step).toContain("update-manifests.mjs refresh");
+    expect(step).toMatch(/SIGNPATH_ENABLED[^\n]*== 'true'|SIGNPATH_ENABLED[^\n]*= \"true\"|SIGNPATH_ENABLED[^\n]*= 'true'/);
+    expect(text.match(/update-manifests\.mjs refresh/g)).toHaveLength(1);
+  });
+
+  it("merges all six manifests in draft-release", () => {
+    const text = wf();
+    const job = text.split("draft-release:")[1];
+    for (const out of [
+      "lite-mac",
+      "full-mac",
+      "lite",
+      "full",
+      "lite-linux",
+      "full-linux",
+    ]) {
+      expect(job).toContain(`installers/${out}.yml`);
+    }
+    expect(job.match(/update-manifests\.mjs merge/g)?.length).toBeGreaterThanOrEqual(1);
+    expect(job).toContain("installers/*.yml");
+    expect(job).toContain("installers/**/Distill-*");
+  });
 });

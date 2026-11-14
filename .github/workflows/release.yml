@@ -21,13 +21,13 @@ jobs:
       matrix:
         include:
           - os: macos-15
-            target: mac dmg
+            target: mac dmg zip
             resources: mac-arm64/distill.app/Contents/Resources
             platform: mac
             arch: arm64
             full: true
           - os: macos-15-intel
-            target: mac dmg
+            target: mac dmg zip
             resources: mac/distill.app/Contents/Resources
             platform: mac
             arch: x64
@@ -160,7 +160,7 @@ jobs:
               *-"$arch".*|*-"$alias".*) ;;
               *) echo "unexpected artifact: $f"; bad=1 ;;
             esac
-          done < <(find release \( -name 'Distill-*.dmg' -o -name 'Distill-*.exe' -o -name 'Distill-*.AppImage' \))
+          done < <(find release \( -name 'Distill-*.dmg' -o -name 'Distill-*.zip' -o -name 'Distill-*.exe' -o -name 'Distill-*.AppImage' \))
           if [ "$found" -eq 0 ]; then echo "no installers produced"; bad=1; fi
           exit $bad
       - name: Verify lite variant
@@ -241,14 +241,35 @@ jobs:
           rm release/lite/Distill-*.exe release/full/Distill-*.exe
           mkdir release/signed
           cp signed/Distill-*.exe release/signed/
+      - name: Collect update manifests
+        shell: bash
+        run: |
+          variants=lite
+          if [ "${{ matrix.full }}" = "true" ]; then variants="lite full"; fi
+          case "${{ matrix.platform }}" in
+            mac) suffix="-mac" ;;
+            linux) suffix="-linux" ;;
+            *) suffix="" ;;
+          esac
+          mkdir manifests
+          for variant in $variants; do
+            manifest="release/$variant/$variant$suffix.yml"
+            [ -f "$manifest" ] || { echo "missing update manifest $manifest"; exit 1; }
+            if [ "${{ matrix.platform }}" = "win" ] && [ "$SIGNPATH_ENABLED" = "true" ]; then
+              node scripts/update-manifests.mjs refresh "$manifest" "release/signed/Distill-$variant-win-x64.exe"
+            fi
+            cp "$manifest" "manifests/$variant-${{ matrix.platform }}-${{ matrix.arch }}.yml"
+          done
       - name: upload-artifact v4.6.2
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: installers-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             release/**/Distill-*.dmg
+            release/**/Distill-*.zip
             release/**/Distill-*.exe
             release/**/Distill-*.AppImage
+            manifests/*.yml
           if-no-files-found: error
 
   draft-release:
@@ -258,12 +279,32 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: checkout v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: setup-node v4.4.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
       - name: download-artifact v4.3.0
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           pattern: installers-*
           path: installers
           merge-multiple: true
+      - name: Merge update manifests
+        shell: bash
+        run: |
+          pick() {
+            found=$(find installers -name "$1" -type f | head -n 1)
+            [ -n "$found" ] || { echo "missing update manifest $1" >&2; exit 1; }
+            printf '%s\n' "$found"
+          }
+          node scripts/update-manifests.mjs merge installers/lite-mac.yml "$(pick lite-mac-arm64.yml)" "$(pick lite-mac-x64.yml)"
+          node scripts/update-manifests.mjs merge installers/full-mac.yml "$(pick full-mac-arm64.yml)"
+          node scripts/update-manifests.mjs merge installers/lite.yml "$(pick lite-win-x64.yml)"
+          node scripts/update-manifests.mjs merge installers/full.yml "$(pick full-win-x64.yml)"
+          node scripts/update-manifests.mjs merge installers/lite-linux.yml "$(pick lite-linux-x64.yml)"
+          node scripts/update-manifests.mjs merge installers/full-linux.yml "$(pick full-linux-x64.yml)"
       - name: Refuse to modify a published release
         shell: bash
         env:
@@ -285,4 +326,6 @@ jobs:
           draft: true
           fail_on_unmatched_files: true
           overwrite_files: false
-          files: installers/**/Distill-*
+          files: |
+            installers/**/Distill-*
+            installers/*.yml
