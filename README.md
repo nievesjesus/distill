@@ -115,15 +115,15 @@ distill-llm hooks install --claude     # Claude Code
 distill-llm hooks install --opencode   # OpenCode
 ```
 
-- **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or your personal `.claude/settings.local.json` with `--project`). When Claude reads a PDF or Office file inside the project it is working in, the hook converts it once, caches it by content hash in `~/.cache/distill-llm/out/` (private to your user) and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distill-llm/out/**)` so those reads do not prompt.
+- **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or your personal `.claude/settings.local.json` with `--project`). When Claude reads a PDF inside the project it is working in, the hook converts it once, caches it by content hash in `~/.cache/distill-llm/out/` (private to your user) and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distill-llm/out/**)` so those reads do not prompt. Claude Code refuses Office files before any hook runs (checked on Claude Code 2.1.296), so the installer also writes the skill `distill-office-documents` to `~/.claude/skills/` (or `.claude/skills/` with `--project`). It has Claude run `distill-llm convert --stdout` through Bash for `.docx`, `.doc`, `.xlsx`, `.xls`, `.pptx`, `.ppt`, `.odt`, `.ods` and `.odp` files. Claude Code asks before each of those Bash calls unless you allow it; distill does not add that permission, because Bash is not subject to `Read` deny rules. A `SKILL.md` you wrote yourself is left alone.
 - **OpenCode** (experimental): writes a plugin to `~/.config/opencode/plugins/distill.js` (or `.opencode/plugins/` with `--project`) that does the same on `tool.execute.before` for `read`. OpenCode's plugin API is changing; if the plugin does not apply, OpenCode simply reads the original file.
 
-The installer shows the exact change and asks before writing (`--yes` skips the question). It keeps your other settings, follows symlinked dotfiles, keeps the file mode, and masks existing values in the diff it prints. `distill-llm hooks uninstall --claude|--opencode` removes only what it added. Install it globally first: a command written from a temporary `npx` run would disappear.
+The installer shows the exact change and asks before writing (`--yes` skips the question). It keeps your other settings, follows symlinked dotfiles, keeps the file mode, and masks existing values in the diff it prints. `distill-llm hooks uninstall --claude|--opencode` removes only what it added, including the skill. Install it globally first: a command written from a temporary `npx` run would disappear.
 
 The hooks respect your permissions and never block a read:
 
 - Files outside the project the agent works in are not converted, so Claude Code asks you about them as usual.
-- If any `deny` or `ask` rule for `Read` exists in your user, project (any parent folder or `CLAUDE_PROJECT_DIR`), local or managed settings, or one of those files can't be read, the Claude Code hook stays out of the way entirely. Rules passed on the command line (`--settings`, `--disallowedTools`) are invisible to hooks.
+- The Claude Code hook steps aside when a `deny` or `ask` rule for `Read` in your user, project (any parent folder or `CLAUDE_PROJECT_DIR`), local or managed settings could match the file being read (or its real path) or distill's cache. Relative rules are checked against the working directory and the folder that holds the settings file. A rule it cannot interpret (character classes, braces, `!`, `$`, a `~` without `/`, `.` or `..` segments) counts as matching. If a settings file can't be read, the hook stays out of the way entirely. Rules passed on the command line (`--settings`, `--disallowedTools`) are invisible to hooks.
 - Images and CSV files are left alone.
 - If anything fails (a missing file, a timeout, a password-protected PDF, a scan with no text), the agent reads the original file.
 
@@ -230,7 +230,7 @@ The app and the CLI count with `o200k_base` (via `gpt-tokenizer`). Claude and Ge
 
 **Why not just give the PDF to the model?** You can, and for charts and layout-heavy pages you sometimes should. For text, the same content as Markdown costs a fraction of the tokens: about a third on our demo files.
 
-**Will the hook break my agent?** No. It only touches PDF and Office reads inside your project, never blocks a read, respects your permission rules, and falls back to the original file on any error.
+**Will the hook break my agent?** No. It only touches PDF reads inside your project (Office files go through the skill and a Bash call you approve), never blocks a read, steps aside when a `Read` deny or ask rule could match, and falls back to the original file on any error.
 
 **Is LLMLingua-2 safe to use on contracts?** It is lossy by design: it removes words. Keep it off when every word matters.
 

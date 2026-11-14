@@ -138,10 +138,63 @@ describe('handleClaudePreToolUse', () => {
       join(proj, '.claude', 'settings.local.json'),
     ];
 
-    it.each([0, 1, 2])('passes through when settings file %i has a Read deny rule', async (index) => {
+    it.each([0, 1, 2])('converts when settings file %i has a Read deny rule that does not cover the file', async (index) => {
       const file = settingsFiles()[index];
       mkdirSync(join(file, '..'), { recursive: true });
       writeFileSync(file, JSON.stringify({ permissions: { deny: ['Bash(rm:*)', 'Read(./secrets/**)'] } }));
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
+      expect(convert).toHaveBeenCalledTimes(1);
+    });
+
+    const writeSettings = (file: string, permissions: Record<string, unknown>): void => {
+      mkdirSync(join(file, '..'), { recursive: true });
+      writeFileSync(file, JSON.stringify({ permissions }));
+    };
+
+    it('converts when an unrelated deny rule exists', async () => {
+      writeSettings(join(proj, '.claude', 'settings.json'), { deny: ['Read(./.env)'] });
+      const convert = vi.fn(async () => '/c.md');
+      const result = (await handleClaudePreToolUse(payload({ file_path: pdf('b.pdf') }), convert, deps())) as {
+        hookSpecificOutput: { updatedInput: { file_path: string } };
+      };
+      expect(result.hookSpecificOutput.updatedInput.file_path).toBe('/c.md');
+    });
+
+    it('steps aside when a deny rule matches the file', async () => {
+      writeSettings(join(proj, '.claude', 'settings.json'), { deny: ['Read(./secret.pdf)'] });
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf('secret.pdf') }), convert, deps())).toBeNull();
+      expect(convert).not.toHaveBeenCalled();
+    });
+
+    it('steps aside when an ask rule matches the file', async () => {
+      writeSettings(join(proj, '.claude', 'settings.json'), { ask: ['Read(./secrets/**)'] });
+      mkdirSync(join(proj, 'secrets'));
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf('a.pdf', join(proj, 'secrets')) }), convert, deps())).toBeNull();
+      expect(convert).not.toHaveBeenCalled();
+    });
+
+    it('steps aside for a symlink into a denied folder', async () => {
+      writeSettings(join(proj, '.claude', 'settings.json'), { deny: ['Read(./secrets/**)'] });
+      mkdirSync(join(proj, 'secrets'));
+      const real = pdf('real.pdf', join(proj, 'secrets'));
+      symlinkSync(real, join(proj, 'link.pdf'));
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'link.pdf') }), convert, deps())).toBeNull();
+      expect(convert).not.toHaveBeenCalled();
+    });
+
+    it('steps aside when the cache is denied', async () => {
+      writeSettings(join(home, '.claude', 'settings.json'), { deny: ['Read(~/.cache/**)'] });
+      const convert = vi.fn(async () => '/c.md');
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
+      expect(convert).not.toHaveBeenCalled();
+    });
+
+    it('steps aside on a user-level /-relative rule', async () => {
+      writeSettings(join(home, '.claude', 'settings.json'), { deny: ['Read(/docs/**)'] });
       const convert = vi.fn(async () => '/c.md');
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
       expect(convert).not.toHaveBeenCalled();
@@ -175,12 +228,12 @@ describe('handleClaudePreToolUse', () => {
       expect(convert).not.toHaveBeenCalled();
     });
 
-    it('passes through when a Read ask rule exists', async () => {
+    it('converts when a Read ask rule does not cover the file', async () => {
       mkdirSync(join(proj, '.claude'));
       writeFileSync(join(proj, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { ask: ['Read(./docs/**)'] } }));
       const convert = vi.fn(async () => '/c.md');
-      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
-      expect(convert).not.toHaveBeenCalled();
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
+      expect(convert).toHaveBeenCalledTimes(1);
     });
 
     it('passes through when a managed settings file denies Read', async () => {
@@ -191,13 +244,13 @@ describe('handleClaudePreToolUse', () => {
       expect(convert).not.toHaveBeenCalled();
     });
 
-    it('reads settings from CLAUDE_PROJECT_DIR', async () => {
+    it('converts when a CLAUDE_PROJECT_DIR rule does not cover the file', async () => {
       const sub = join(proj, 'sub');
       mkdirSync(sub);
       mkdirSync(join(proj, '.claude'));
       writeFileSync(join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(./x/**)'] } }));
       const convert = vi.fn(async () => '/c.md');
-      expect(await handleClaudePreToolUse(payload({ file_path: pdf('y.pdf', sub) }, { cwd: sub }), convert, deps({ projectDir: proj }))).toBeNull();
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf('y.pdf', sub) }, { cwd: sub }), convert, deps({ projectDir: proj }))).not.toBeNull();
     });
   });
 
