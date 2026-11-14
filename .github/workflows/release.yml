@@ -93,7 +93,7 @@ jobs:
           npm run fetch:tessdata
           node scripts/make-signed-config.mjs lite
           attempt=1
-          until npx electron-builder --config electron-builder.lite.signed.yml --${{ matrix.target }} --${{ matrix.arch }}; do
+          until npx electron-builder --config electron-builder.lite.signed.yml --${{ matrix.target }} --${{ matrix.arch }} --publish never; do
             echo "electron-builder lite attempt $attempt failed"
             if [ "$attempt" -ge 3 ]; then exit 1; fi
             rm -rf release/lite
@@ -108,7 +108,7 @@ jobs:
           npm run prepare:lingua
           node scripts/make-signed-config.mjs full
           attempt=1
-          until npx electron-builder --config electron-builder.full.signed.yml --${{ matrix.target }} --${{ matrix.arch }}; do
+          until npx electron-builder --config electron-builder.full.signed.yml --${{ matrix.target }} --${{ matrix.arch }} --publish never; do
             echo "electron-builder full attempt $attempt failed"
             if [ "$attempt" -ge 3 ]; then exit 1; fi
             rm -rf release/full
