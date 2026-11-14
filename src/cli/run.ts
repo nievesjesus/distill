@@ -20,6 +20,12 @@ import { cwdResolver, resolveRoots, rootResolver } from '../mcp/roots';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isInside } from '../node/inside';
 import { readLiteparseVersion } from '../node/versions';
+import { findPackageRoot } from '../node/lingua';
+import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
+import type { UpdateChecker } from '../node/update-check';
+import { createGlobalUpdater } from '../node/update-install';
+import type { GlobalUpdater } from '../node/update-install';
+import type { InstallMethod, UpdateCheck } from '../core/types';
 import { parseBoosters, parseRate, runConvert } from './convert';
 import type { ConvertOptions } from './convert';
 
@@ -44,6 +50,8 @@ export interface CliDeps {
   isTTY?: boolean;
   prompt?: (question: string) => Promise<string>;
   isGitIgnored?: (cwd: string, file: string) => boolean | null;
+  updateChecker?: UpdateChecker;
+  globalUpdater?: GlobalUpdater | null;
 }
 
 function gitCheckIgnore(cwd: string, file: string): boolean | null {
@@ -89,6 +97,30 @@ export function readVersion(): string {
     }
   }
   return '0.0.0';
+}
+
+const NOTICE_TIMEOUT_MS = 1500;
+
+function updateCommand(method: InstallMethod, latest: string): string | null {
+  switch (method) {
+    case 'npm-global':
+      return `npm install -g distill-llm@${latest}`;
+    case 'npx':
+      return 'npx distill-llm@latest';
+    case 'docker':
+      return 'docker pull ghcr.io/nievesjesus/distill';
+    case 'source':
+      return 'git pull && npm ci && npm run build';
+    default:
+      return null;
+  }
+}
+
+export function updateNotice(info: UpdateCheck): string | null {
+  if (!info.available || info.latest === null) return null;
+  const hint = info.method === 'npm-global' ? 'distill-llm update' : updateCommand(info.method, info.latest);
+  const head = `distill-llm ${info.latest} is available (you have ${info.current}).`;
+  return hint === null ? `${head} Open the desktop app to update it.` : `${head} Run: ${hint}`;
 }
 
 function parseHostList(value: string): string[] {
@@ -174,6 +206,37 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const prompt = deps.prompt ?? defaultPrompt;
   const isGitIgnored = deps.isGitIgnored ?? gitCheckIgnore;
 
+  let checker = deps.updateChecker;
+  const getChecker = (): UpdateChecker => {
+    if (checker) return checker;
+    const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url))) ?? process.cwd();
+    checker = createUpdateChecker({
+      current: readVersion(),
+      method: detectInstallMethod({ packageRoot, env }),
+      cacheDir: join(homeDir, '.cache', 'distill-llm'),
+      env,
+    });
+    return checker;
+  };
+  let updater = deps.globalUpdater;
+  const getUpdater = (): GlobalUpdater => {
+    if (updater) return updater;
+    const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url))) ?? process.cwd();
+    updater = createGlobalUpdater({ packageRoot });
+    return updater;
+  };
+
+  const showNotice = async (): Promise<void> => {
+    try {
+      const timeout = new Promise<null>((done) => setTimeout(() => done(null), NOTICE_TIMEOUT_MS).unref());
+      const info = await Promise.race([getChecker().check(), timeout]);
+      const line = info === null ? null : updateNotice(info);
+      if (line !== null) stderr(line);
+    } catch {
+      return;
+    }
+  };
+
   const program = new Command();
   program
     .name('distill-llm')
@@ -217,6 +280,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         stderr(`Warning: listening on ${options.host} — anyone on your network can reach distill`);
       }
       if (options.open) openUrl(server.url);
+      void showNotice();
 
       if (handleSignals) {
         let closing = false;
@@ -250,7 +314,61 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
     .action(async (files: string[], options: ConvertOptions) => {
       const code = await runConvert(files, options, { stdout, stderr, openDistiller });
+      if (isTTY && !options.json && !options.stdout) await showNotice();
       if (code !== 0) exit(code);
+    });
+
+  program
+    .command('update')
+    .description('Check for a newer distill-llm and update it')
+    .option('--yes', 'install without asking when installed globally with npm')
+    .action(async (options: { yes?: boolean }) => {
+      let info: UpdateCheck;
+      try {
+        info = await getChecker().check({ force: true });
+      } catch (error) {
+        stderr(`Could not check for updates: ${errorMessage(error)}`);
+        exit(1);
+        return;
+      }
+      if (info.latest === null) {
+        stderr('Could not reach the npm registry.');
+        exit(1);
+        return;
+      }
+      if (!info.available) {
+        stdout(`distill-llm ${info.current} is up to date.`);
+        return;
+      }
+      const latest = info.latest;
+      stdout(`distill-llm ${latest} is available (you have ${info.current}).`);
+      if (info.method === 'desktop') {
+        stdout('Open the desktop app to update it.');
+        return;
+      }
+      const command = updateCommand(info.method, latest) as string;
+      if (info.method !== 'npm-global') {
+        stdout(`Run: ${command}`);
+        return;
+      }
+      let confirmed = options.yes === true;
+      if (!confirmed && isTTY) {
+        const answer = (await prompt('Update now? [y/N] ')).trim().toLowerCase();
+        confirmed = answer === 'y' || answer === 'yes';
+      }
+      if (!confirmed) {
+        if (!isTTY) stdout(`Run: ${command}`);
+        return;
+      }
+      const globalUpdater = getUpdater();
+      await globalUpdater.install(latest);
+      const result = globalUpdater.status();
+      if (result.state === 'failed') {
+        stderr(result.error ?? 'Update failed.');
+        exit(1);
+        return;
+      }
+      stdout(`Updated to ${latest}.`);
     });
 
   program

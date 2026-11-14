@@ -44,7 +44,7 @@ function harness(fail?: Set<string>) {
     stdout: (line: string) => stdout.push(line),
     stderr: (line: string) => stderr.push(line),
     handleSignals: false,
-    env: {},
+    env: { DISTILL_NO_UPDATE_CHECK: '1' },
   };
   return { deps, stdout, stderr, exit, openDistiller, ...fake };
 }
