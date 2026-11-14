@@ -29,8 +29,13 @@ function globToRegExp(pattern: string): RegExp {
     const char = pattern[i];
     if (char === '*') {
       if (pattern[i + 1] === '*') {
-        source += '.*';
-        i++;
+        if (pattern[i + 2] === '/') {
+          source += '(?:.*/)?';
+          i += 2;
+        } else {
+          source += '.*';
+          i++;
+        }
       } else {
         source += '[^/]*';
       }
@@ -78,29 +83,30 @@ export function ruleMayMatch(rule: ReadRule, absPath: string, ctx: MatchContext)
   const text = norm(spec);
   const unprefixed = text.replace(/^(\/\/|~\/|\/|\.\/)/, '');
   if (unprefixed.split('/').some((segment) => segment === '.' || segment === '..')) return true;
-  let pattern: string;
+  let patterns: string[];
   let basenameToo = false;
 
   if (text.startsWith('//')) {
     const rest = text.slice(2);
     const drive = win ? /^([a-z])\/(.*)$/.exec(rest) : null;
-    pattern = drive ? `${drive[1]}:/${drive[2]}` : `/${rest}`;
+    patterns = [drive ? `${drive[1]}:/${drive[2]}` : `/${rest}`];
   } else if (text.startsWith('~/')) {
-    pattern = join(norm(ctx.home), text.slice(2));
+    patterns = [join(norm(ctx.home), text.slice(2))];
   } else if (text.startsWith('/')) {
     if (rule.root === null) return true;
-    pattern = join(norm(rule.root), text.slice(1));
+    patterns = [join(norm(rule.root), text.slice(1))];
   } else {
     const rest = text.startsWith('./') ? text.slice(2) : text;
-    pattern = join(norm(ctx.cwd), rest);
+    patterns = [join(norm(ctx.cwd), rest)];
+    if (rule.root !== null) patterns.push(join(norm(rule.root), rest));
     basenameToo = !rest.includes('/');
   }
 
-  const full = globToRegExp(trimTrailingSlash(pattern));
+  const fulls = patterns.map((pattern) => globToRegExp(trimTrailingSlash(pattern)));
   const base = basenameToo ? globToRegExp(text.startsWith('./') ? text.slice(2) : text) : null;
 
   return ancestorsOf(trimTrailingSlash(norm(absPath))).some((candidate) => {
-    if (full.test(candidate)) return true;
+    if (fulls.some((full) => full.test(candidate))) return true;
     if (base === null) return false;
     return base.test(candidate.slice(candidate.lastIndexOf('/') + 1));
   });

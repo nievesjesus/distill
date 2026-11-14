@@ -30,6 +30,15 @@ describe('ruleMayMatch', () => {
     expect(m('Read()', '/p/b.pdf')).toBe(true);
   });
 
+  it('matches ** followed by a slash against zero folders', () => {
+    expect(m('Read(**/*.pdf)', '/p/b.pdf')).toBe(true);
+    expect(m('Read(./a/**/x.pdf)', '/p/a/x.pdf')).toBe(true);
+  });
+
+  it('matches relative rules against the settings root as well as the cwd', () => {
+    expect(m('Read(./sub/private/**)', '/p/sub/private/x.pdf', '/p', { ...ctx, cwd: '/p/sub' })).toBe(true);
+  });
+
   it('matches cwd-relative patterns', () => {
     expect(m('Read(./.env)', '/p/b.pdf')).toBe(false);
     expect(m('Read(./.env)', '/p/.env')).toBe(true);

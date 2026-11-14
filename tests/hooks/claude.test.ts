@@ -138,13 +138,13 @@ describe('handleClaudePreToolUse', () => {
       join(proj, '.claude', 'settings.local.json'),
     ];
 
-    it.each([0, 1, 2])('passes through when settings file %i has a Read deny rule', async (index) => {
+    it.each([0, 1, 2])('converts when settings file %i has a Read deny rule that does not cover the file', async (index) => {
       const file = settingsFiles()[index];
       mkdirSync(join(file, '..'), { recursive: true });
-      writeFileSync(file, JSON.stringify({ permissions: { deny: ['Bash(rm:*)', 'Read(./*.pdf)'] } }));
+      writeFileSync(file, JSON.stringify({ permissions: { deny: ['Bash(rm:*)', 'Read(./secrets/**)'] } }));
       const convert = vi.fn(async () => '/c.md');
-      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
-      expect(convert).not.toHaveBeenCalled();
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
+      expect(convert).toHaveBeenCalledTimes(1);
     });
 
     const writeSettings = (file: string, permissions: Record<string, unknown>): void => {
@@ -221,36 +221,36 @@ describe('handleClaudePreToolUse', () => {
       const sub = join(proj, 'sub');
       mkdirSync(join(sub, 'private'), { recursive: true });
       mkdirSync(join(proj, '.claude'));
-      writeFileSync(join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(./private/**)'] } }));
+      writeFileSync(join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(./sub/private/**)'] } }));
       const convert = vi.fn(async () => '/c.md');
       const file = pdf('x.pdf', join(sub, 'private'));
       expect(await handleClaudePreToolUse(payload({ file_path: file }, { cwd: sub }), convert, deps())).toBeNull();
       expect(convert).not.toHaveBeenCalled();
     });
 
-    it('passes through when a Read ask rule exists', async () => {
+    it('converts when a Read ask rule does not cover the file', async () => {
       mkdirSync(join(proj, '.claude'));
-      writeFileSync(join(proj, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { ask: ['Read(./*.pdf)'] } }));
+      writeFileSync(join(proj, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { ask: ['Read(./docs/**)'] } }));
       const convert = vi.fn(async () => '/c.md');
-      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
-      expect(convert).not.toHaveBeenCalled();
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
+      expect(convert).toHaveBeenCalledTimes(1);
     });
 
     it('passes through when a managed settings file denies Read', async () => {
       const managed = join(base, 'managed-settings.json');
-      writeFileSync(managed, JSON.stringify({ permissions: { deny: ['Read(./*.pdf)'] } }));
+      writeFileSync(managed, JSON.stringify({ permissions: { deny: ['Read(**/*.pdf)'] } }));
       const convert = vi.fn(async () => '/c.md');
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ managedSettingsPaths: [managed] }))).toBeNull();
       expect(convert).not.toHaveBeenCalled();
     });
 
-    it('reads settings from CLAUDE_PROJECT_DIR', async () => {
+    it('converts when a CLAUDE_PROJECT_DIR rule does not cover the file', async () => {
       const sub = join(proj, 'sub');
       mkdirSync(sub);
       mkdirSync(join(proj, '.claude'));
-      writeFileSync(join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(./y.pdf)'] } }));
+      writeFileSync(join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(./x/**)'] } }));
       const convert = vi.fn(async () => '/c.md');
-      expect(await handleClaudePreToolUse(payload({ file_path: pdf('y.pdf', sub) }, { cwd: sub }), convert, deps({ projectDir: proj }))).toBeNull();
+      expect(await handleClaudePreToolUse(payload({ file_path: pdf('y.pdf', sub) }, { cwd: sub }), convert, deps({ projectDir: proj }))).not.toBeNull();
     });
   });
 
