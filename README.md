@@ -144,6 +144,8 @@ npx distill-llm convert report.pdf deck.pptx --out md/
 | `--json` | Print a JSON array with tokens, pages and timings per file |
 | `--stdout` | Print the Markdown of a single file instead of writing it |
 
+`distill-llm update [--yes]` checks for a newer version right away. A global npm install updates after a y/N question (or straight away with `--yes`); other installs print the command to run. After `convert` on a terminal, and when the web app starts, a one-line notice goes to stderr if a newer version exists (never with `--json` or `--stdout`).
+
 Each file prints a summary such as `report.pdf → report.md  5.7k → 4.6k tokens (−19%)`. The exit code is 1 if any file failed; the others are still converted.
 
 ## Desktop app and Docker
@@ -210,6 +212,8 @@ Password-protected PDFs are reported as an error. Parsing quality is whatever Li
 
 Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. distill makes at most three one-time downloads, all of data and never of your documents: the Tesseract English data for the first OCR (skip it with `DISTILL_TESSDATA` or `TESSDATA_PREFIX`; `DISTILL_OCR_LANG` sets the language), and, only if you enable LLMLingua-2, its runtime from npm and its model from Hugging Face.
 
+Once a day distill also asks `registry.npmjs.org` for the latest `distill-llm` version, sending only its own version in the User-Agent, and caches the answer in `~/.cache/distill-llm/update-check.json`. Turn it off with `DISTILL_NO_UPDATE_CHECK=1` or in the web app (click the version in the header, then "Check for updates daily"). The hooks and the MCP server never check.
+
 Uploaded files go to a temporary directory and are deleted after parsing. Results stay in a small in-memory cache so the JSON view can be requested later. The hooks write converted Markdown to `~/.cache/distill-llm/out/`. API responses are sent with `Cache-Control: no-store`.
 
 <details>
@@ -227,6 +231,8 @@ The app and the CLI count with `o200k_base` (via `gpt-tokenizer`). Claude and Ge
 **Is it free?** Yes. Apache-2.0, no account, no paid tier.
 
 **Does anything leave my machine?** Your documents never do. See [Privacy](#privacy) for the optional one-time data downloads.
+
+**How do I update?** The web app and the CLI tell you when a new version exists. With a global npm install, click **Update** in the web app (loopback only) or run `distill-llm update`, then restart distill. With npx, run `npx distill-llm@latest`. With Docker, run `docker pull ghcr.io/nievesjesus/distill`. The desktop app does not update itself yet: download the new installer from [GitHub Releases](https://github.com/nievesjesus/distill/releases).
 
 **Why not just give the PDF to the model?** You can, and for charts and layout-heavy pages you sometimes should. For text, the same content as Markdown costs a fraction of the tokens: about a third on our demo files.
 

@@ -296,7 +296,7 @@ distill-llm hooks install --opencode</code></pre><button class="copy" type="butt
     </div>
     <div class="qa">
       <details><summary>Is it free?</summary><p>Yes. distill is open source under the Apache-2.0 license.</p></details>
-      <details><summary>Does anything leave my machine?</summary><p>No. Files are parsed locally, with no telemetry and no CDN. The only network use is the optional one-time downloads described above (OCR data, and the LLMLingua-2 runtime and model if you turn it on).</p></details>
+      <details><summary>Does anything leave my machine?</summary><p>No. Files are parsed locally, with no telemetry and no CDN. The only network use is the optional one-time downloads described above (OCR data, and the LLMLingua-2 runtime and model if you turn it on) and a once-a-day version check against registry.npmjs.org that you can turn off.</p></details>
       <details><summary>Which formats are supported?</summary><p>PDF and images (PNG, JPG, TIFF, WebP, with built-in OCR) need nothing else. DOCX, PPTX, XLSX and ODF need LibreOffice on your PATH, which the Docker image already includes. Parsing quality is whatever LiteParse gives you, and it varies on dense tables and complex scans.</p></details>
       <details><summary>How are tokens counted?</summary><p>With the <code>o200k_base</code> encoding, in your browser. Other models, such as Claude or Gemini, tokenize differently, so absolute counts are approximate. The percentage saved is comparable across tokenizers.</p></details>
       <details><summary>Is LLMLingua-2 lossy?</summary><p>Yes. A local model removes low-value words, so it is marked as lossy, experimental and off by default. The default boosters drop only formatting, repeats and link targets.</p></details>
