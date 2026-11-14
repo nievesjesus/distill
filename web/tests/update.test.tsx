@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { UpdateInfo } from '@core/types';
+import type { DesktopUpdateStatus, UpdateInfo } from '@core/types';
 import { Header } from '../src/components/Header';
 import { UpdateBanner } from '../src/components/UpdateBanner';
 import { useUpdateInfo } from '../src/state/update';
@@ -195,5 +195,122 @@ describe('without update data', () => {
     await act(async () => {});
     expect(screen.queryByRole('status')).toBeNull();
     expect(screen.queryByRole('button', { name: /^v\d/ })).toBeNull();
+  });
+});
+
+describe('desktop updates', () => {
+  let push: (status: DesktopUpdateStatus) => void;
+  let unsubscribe: ReturnType<typeof vi.fn>;
+  let updates: { get: ReturnType<typeof vi.fn>; onStatus: ReturnType<typeof vi.fn>; check: ReturnType<typeof vi.fn>; download: ReturnType<typeof vi.fn>; install: ReturnType<typeof vi.fn> };
+
+  async function mountDesktop(status: DesktopUpdateStatus, info: Partial<UpdateInfo> = {}) {
+    unsubscribe = vi.fn();
+    updates = {
+      get: vi.fn(async () => status),
+      onStatus: vi.fn((callback: (next: DesktopUpdateStatus) => void) => {
+        push = callback;
+        return unsubscribe;
+      }),
+      check: vi.fn(),
+      download: vi.fn(),
+      install: vi.fn(),
+    };
+    (window as unknown as { distillDesktop: unknown }).distillDesktop = { onSaved: () => () => {}, reveal: () => {}, updates };
+    await mount({ method: 'desktop', latest: null, available: false, ...info });
+  }
+
+  afterEach(() => {
+    delete (window as unknown as { distillDesktop?: unknown }).distillDesktop;
+  });
+
+  it('offers Download and install for an available version and calls download', async () => {
+    await mountDesktop({ state: 'available', version: '0.2.0' });
+    expect(screen.getByRole('status')).toHaveTextContent('distill 0.2.0 is available. You have 0.1.2.');
+    fireEvent.click(screen.getByRole('button', { name: 'Download and install' }));
+    expect(updates.download).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows download progress pushed by the main process', async () => {
+    await mountDesktop({ state: 'available', version: '0.2.0' });
+    await act(async () => {
+      push({ state: 'downloading', version: '0.2.0', percent: 42 });
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Downloading distill 0.2.0… 42%');
+    expect(screen.queryByRole('button', { name: 'Download and install' })).toBeNull();
+  });
+
+  it('offers Restart to update when ready and calls install', async () => {
+    await mountDesktop({ state: 'available', version: '0.2.0' });
+    await act(async () => {
+      push({ state: 'ready', version: '0.2.0' });
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('distill 0.2.0 is ready.');
+    fireEvent.click(screen.getByRole('button', { name: 'Restart to update' }));
+    expect(updates.install).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the error and Retry calls check', async () => {
+    await mountDesktop({ state: 'error', error: 'network down' });
+    expect(screen.getByRole('status')).toHaveTextContent('network down');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(updates.check).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows nothing while checking, up to date or idle', async () => {
+    await mountDesktop({ state: 'checking' });
+    expect(screen.queryByRole('status')).toBeNull();
+    await act(async () => {
+      push({ state: 'none' });
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('is hidden when updates are disabled until Check now is pressed', async () => {
+    await mountDesktop({ state: 'available', version: '0.2.0' }, { enabled: false });
+    expect(screen.queryByRole('status')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'v0.1.2' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('distill 0.2.0 is available.');
+  });
+
+  it('stays dismissed for the same version', async () => {
+    await mountDesktop({ state: 'available', version: '0.2.0' });
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss update notice' }));
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(localStorage.getItem('distill:update-dismissed')).toBe('0.2.0');
+  });
+
+  it('Check now in the menu calls updates.check and not the HTTP check', async () => {
+    await mountDesktop({ state: 'none' });
+    fireEvent.click(screen.getByRole('button', { name: 'v0.1.2' }));
+    expect(screen.getByText('Up to date')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    });
+    expect(updates.check).toHaveBeenCalledTimes(1);
+    expect(calls.some((c) => c.url === '/api/update/check')).toBe(false);
+  });
+
+  it('keeps using the settings endpoint for the checkbox', async () => {
+    await mountDesktop({ state: 'none' });
+    fireEvent.click(screen.getByRole('button', { name: 'v0.1.2' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Check for updates daily' }));
+    });
+    expect(calls.find((c) => c.url === '/api/update/settings')?.method).toBe('PUT');
+  });
+
+  it('unsubscribes on unmount', async () => {
+    await mountDesktop({ state: 'none' });
+    expect(updates.onStatus).toHaveBeenCalledTimes(1);
+    cleanup();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows nothing for the desktop method without the bridge', async () => {
+    await mount({ method: 'desktop' });
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

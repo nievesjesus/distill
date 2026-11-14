@@ -55,7 +55,7 @@ export function VersionMenu({ info, update }: VersionMenuProps) {
           <button type="button" className="update-btn" disabled={checking} onClick={checkNow}>
             {checking ? S.updateChecking : S.updateCheckNow}
           </button>
-          {info.latest && !info.available ? <p className="version-hint">{S.updateUpToDate}</p> : null}
+          {info.method === 'desktop' ? (update.desktop?.state === 'none' ? <p className="version-hint">{S.updateUpToDate}</p> : null) : info.latest && !info.available ? <p className="version-hint">{S.updateUpToDate}</p> : null}
         </div>
       ) : null}
     </div>

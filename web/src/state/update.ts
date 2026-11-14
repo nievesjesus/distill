@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ApiError, UpdateInfo } from '@core/types';
+import type { ApiError, DesktopUpdateStatus, UpdateInfo } from '@core/types';
 import { checkUpdateNow, getUpdate, installUpdate, setUpdateEnabled } from '../api';
 import { S } from '../strings';
+
+function desktopUpdates() {
+  return window.distillDesktop?.updates;
+}
 
 const DISMISS_KEY = 'distill:update-dismissed';
 const POLL_MS = 1500;
@@ -26,6 +30,27 @@ function writeDismissed(version: string | null): void {
 export function useUpdateInfo() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(readDismissed);
+  const [desktop, setDesktop] = useState<DesktopUpdateStatus | null>(null);
+  const [checkedNow, setCheckedNow] = useState(false);
+
+  useEffect(() => {
+    const updates = desktopUpdates();
+    if (!updates) return;
+    let cancelled = false;
+    updates
+      .get()
+      .then((status) => {
+        if (!cancelled) setDesktop((previous) => previous ?? status);
+      })
+      .catch(() => undefined);
+    const off = updates.onStatus((status) => {
+      if (!cancelled) setDesktop(status);
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +86,21 @@ export function useUpdateInfo() {
     setDismissed(version);
   }, []);
 
+  const desktopCheck = useCallback(() => {
+    writeDismissed(null);
+    setDismissed(null);
+    setCheckedNow(true);
+    desktopUpdates()?.check();
+  }, []);
+
+  const desktopDownload = useCallback(() => desktopUpdates()?.download(), []);
+  const desktopInstall = useCallback(() => desktopUpdates()?.install(), []);
+
   const checkNow = useCallback(async () => {
+    if (desktopUpdates() && info?.method === 'desktop') {
+      desktopCheck();
+      return;
+    }
     try {
       const next = await checkUpdateNow();
       writeDismissed(null);
@@ -70,7 +109,7 @@ export function useUpdateInfo() {
     } catch {
       return;
     }
-  }, []);
+  }, [info?.method, desktopCheck]);
 
   const setEnabled = useCallback(async (enabled: boolean) => {
     try {
@@ -89,7 +128,7 @@ export function useUpdateInfo() {
     }
   }, []);
 
-  return { info, dismissed, dismiss, checkNow, setEnabled, install };
+  return { info, dismissed, dismiss, checkNow, setEnabled, install, desktop, checkedNow, desktopCheck, desktopDownload, desktopInstall };
 }
 
 export type UpdateState = ReturnType<typeof useUpdateInfo>;

@@ -44,9 +44,67 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function DesktopBanner({ update }: { update: UpdateState }) {
+  const { info, desktop, dismissed, dismiss, desktopCheck, desktopDownload, desktopInstall } = update;
+  if (!info || !desktop || !desktopActive(update)) return null;
+
+  const version = desktop.version ?? '';
+  let body;
+  if (desktop.state === 'available' && version && dismissed !== version) {
+    body = (
+      <>
+        <span className="update-text">{S.updateAvailable(version, info.current)}</span>
+        <button type="button" className="update-btn update-btn-primary" onClick={desktopDownload}>
+          {S.updateDesktopDownload}
+        </button>
+      </>
+    );
+  } else if (desktop.state === 'downloading') {
+    body = <span className="update-text">{S.updateDesktopDownloading(version, Math.round(desktop.percent ?? 0))}</span>;
+  } else if (desktop.state === 'ready' && dismissed !== version) {
+    body = (
+      <>
+        <span className="update-text">{S.updateDesktopReady(version)}</span>
+        <button type="button" className="update-btn update-btn-primary" onClick={desktopInstall}>
+          {S.updateDesktopRestart}
+        </button>
+      </>
+    );
+  } else if (desktop.state === 'error') {
+    body = (
+      <>
+        <span className="update-text">{desktop.error ?? S.updateFailed}</span>
+        <button type="button" className="update-btn" onClick={desktopCheck}>
+          {S.updateRetry}
+        </button>
+      </>
+    );
+  } else {
+    return null;
+  }
+
+  return (
+    <div className="update-banner" role="status">
+      {body}
+      {version ? (
+        <button type="button" className="update-dismiss" aria-label={S.updateDismiss} onClick={() => dismiss(version)}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function desktopActive(update: UpdateState): boolean {
+  return Boolean(window.distillDesktop?.updates) && (Boolean(update.info?.enabled) || update.checkedNow);
+}
+
 export function UpdateBanner({ update }: { update: UpdateState }) {
   const { info, dismissed, dismiss, install } = update;
-  if (!info || !info.enabled || info.method === 'desktop') return null;
+  if (info?.method === 'desktop') return <DesktopBanner update={update} />;
+  if (!info || !info.enabled) return null;
 
   const state = info.install.state;
   const doneVersion = info.install.version ?? info.latest ?? '';
