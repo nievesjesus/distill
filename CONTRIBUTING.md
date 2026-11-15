@@ -38,11 +38,21 @@ Keep them focused, include tests, and make sure `npm test`, `npm run typecheck` 
 
 ## Releasing
 
-1. Bump `version` in `package.json` and commit it.
-2. Tag the commit `vX.Y.Z` and push the tag. The Release workflow builds the installers for macOS, Windows and Linux and attaches them to a draft release. Installer names carry no version (`Distill-lite-mac-arm64.dmg`), so the site's `releases/latest/download/<file>` links keep working; do not add `${version}` back to `artifactName`. Intel Macs get only the lite installer, because the LLMLingua-2 ONNX runtime supports Apple Silicon, Windows x64 and Linux x64 only.
-3. Review the draft, then publish the release.
-4. Publishing triggers the Publish workflow: it stages `distill-llm` on npm and pushes the multi-arch image to `ghcr.io/nievesjesus/distill`. It fails if `package.json` does not match the tag.
-5. A maintainer approves the staged version with 2FA: npmjs.com > `distill-llm` > Staged Packages, or `npm stage list distill-llm` then `npm stage approve <stage-id>`. Only then does it become public, with provenance.
+A release is one PR that bumps the version with `npm version X.Y.Z --no-git-tag-version`. Commit `package.json` and `package-lock.json`. Optionally add `release-notes/vX.Y.Z.md`; without it, GitHub generates the notes from the merged PRs.
+
+After that PR merges into `main`, everything runs on its own:
+
+1. The `Tag release` workflow creates `vX.Y.Z`, only if it is new and higher than every existing release tag, and starts `Release`.
+2. `Release` builds and signs the installers for macOS, Windows and Linux, verifies every update manifest (size and SHA-512) against the files, publishes the GitHub release and starts `Publish`.
+3. `Publish` stages `distill-llm` on npm and pushes the multi-arch image to `ghcr.io/nievesjesus/distill`. It fails if `package.json` does not match the tag.
+
+The only manual step: a maintainer approves the staged version with 2FA on npmjs.com > `distill-llm` > Staged Packages, or with `npm stage list distill-llm` then `npm stage approve <stage-id>`. Only then does it become public, with provenance.
+
+If a build or the verification fails, the release stays a draft and nothing reaches npm. Re-run the failed jobs, or fix and publish the draft by hand; publishing a draft by hand also starts `Publish`.
+
+Release tags `v*` can be created but never moved or deleted (repository ruleset).
+
+Installer names carry no version (`Distill-lite-mac-arm64.dmg`), so the site's `releases/latest/download/<file>` links keep working; do not add `${version}` back to `artifactName`. Intel Macs get only the lite installer, because the LLMLingua-2 ONNX runtime supports Apple Silicon, Windows x64 and Linux x64 only.
 
 npm uses trusted publishing (OIDC) with staged publishing, so the workflow holds no npm token. The trusted publisher is configured on npmjs.com under the `distill-llm` package's Settings > Trusted Publisher: repository `nievesjesus/distill`, workflow `publish.yml`, with "Allow npm publish" left off so the workflow can only run `npm stage publish`. Nothing reaches the registry until a maintainer approves it with 2FA.
 

@@ -55,7 +55,7 @@ describe("release workflow", () => {
     const text = wf();
     const archCheck = text.split("Fail on artifacts for another arch")[1].split("Verify lite variant")[0];
     expect(archCheck).toContain("Distill-*.zip");
-    const upload = text.split("name: upload-artifact v4.6.2\n")[1].split("draft-release:")[0];
+    const upload = text.split("name: upload-artifact v4.6.2\n")[1].split("\n  release:\n")[0];
     expect(upload).toContain("release/**/Distill-*.zip");
     expect(upload).toContain("manifests/*.yml");
   });
@@ -65,12 +65,12 @@ describe("release workflow", () => {
     const step = text.split("name: Collect update manifests")[1].split("name: upload-artifact v4.6.2\n")[0];
     expect(step).toContain("update-manifests.mjs refresh");
     expect(step).toMatch(/SIGNPATH_ENABLED[^\n]*== 'true'|SIGNPATH_ENABLED[^\n]*= \"true\"|SIGNPATH_ENABLED[^\n]*= 'true'/);
-    expect(text.match(/update-manifests\.mjs refresh/g)).toHaveLength(1);
+    expect(text.match(/update-manifests\.mjs refresh/g)).toHaveLength(2);
   });
 
-  it("merges all six manifests in draft-release", () => {
+  it("merges all six manifests in the release job", () => {
     const text = wf();
-    const job = text.split("draft-release:")[1];
+    const job = text.split("\n  release:\n")[1];
     for (const out of [
       "lite-mac",
       "full-mac",
@@ -84,5 +84,53 @@ describe("release workflow", () => {
     expect(job.match(/update-manifests\.mjs merge/g)?.length).toBeGreaterThanOrEqual(1);
     expect(job).toContain("installers/*.yml");
     expect(job).toContain("installers/**/Distill-*");
+  });
+});
+
+describe("release automation workflows", () => {
+  const tagRelease = () => read(".github/workflows/tag-release.yml");
+  const release = () => read(".github/workflows/release.yml");
+  const publish = () => read(".github/workflows/publish.yml");
+
+  it("tag-release triggers on main package.json and dispatches release.yml", () => {
+    const text = tagRelease();
+    expect(text).toMatch(/branches: \[main\]/);
+    expect(text).toMatch(/paths: \[package\.json\]/);
+    expect(text).toContain("workflow_dispatch");
+    expect(text).toContain("scripts/release-tag.mjs");
+    expect(text).toContain('gh workflow run release.yml --ref "$TAG"');
+    expect(text).toContain("github.ref == 'refs/heads/main'");
+    expect(text).toContain("cancel-in-progress: false");
+    expect(text).toMatch(/actions: write/);
+  });
+
+  it("release.yml verifies manifests before the release step and publishes it", () => {
+    const job = release().split("\n  release:\n")[1];
+    const verify = job.indexOf("update-manifests.mjs verify installers installers/*.yml");
+    expect(verify).toBeGreaterThan(-1);
+    expect(verify).toBeLessThan(job.indexOf("softprops/action-gh-release"));
+    expect(job).toContain("--draft=false");
+    expect(job).toMatch(/gh workflow run publish\.yml --ref main -f tag="\$TAG"/);
+    expect(job).toContain("body_path:");
+    expect(job).toContain("generate_release_notes:");
+    expect(job.match(/softprops\/action-gh-release/g)).toHaveLength(1);
+  });
+
+  it("release.yml refreshes the mac dmg manifest and retries with backoff", () => {
+    const text = release();
+    expect(text).toMatch(/update-manifests\.mjs refresh "\$manifest" "release\/\$variant\/Distill-\$variant-mac-/);
+    expect(text).toContain("attempt * 60");
+    expect(text).not.toContain("-ge 3");
+    expect(text).not.toContain("sleep 30");
+    expect(text.match(/-ge 5/g)!.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("publish.yml accepts a dispatched tag and no longer reads the release event tag directly", () => {
+    const text = publish();
+    expect(text).toContain("workflow_dispatch:");
+    expect(text).toMatch(/inputs:\n\s+tag:/);
+    const rest = text.replace("TAG: ${{ inputs.tag || github.event.release.tag_name }}", "");
+    expect(rest).not.toContain("github.event.release.tag_name");
+    expect(text.match(/\^v\[0-9\]\+/g)).toHaveLength(2);
   });
 });

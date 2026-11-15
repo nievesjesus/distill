@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 class ManifestError extends Error {}
@@ -133,12 +133,59 @@ function merge(outPath, inputPaths) {
   return outPath;
 }
 
+function findByName(dir, name) {
+  const matches = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) matches.push(...findByName(full, name));
+    else if (entry.name === name) matches.push(full);
+  }
+  return matches;
+}
+
+function verify(dir, manifestPaths) {
+  if (manifestPaths.length === 0) throw new ManifestError('verify needs at least one manifest');
+  const problems = [];
+  let checked = 0;
+  for (const manifestPath of manifestPaths) {
+    const manifest = load(manifestPath);
+    for (const entry of manifest.files ?? []) {
+      checked += 1;
+      const matches = findByName(dir, basename(String(entry.url)));
+      if (matches.length !== 1) {
+        problems.push(`${manifestPath}: ${entry.url}: expected exactly one file under ${dir}, found ${matches.length}`);
+        continue;
+      }
+      const bytes = readFileSync(matches[0]);
+      if (bytes.length !== entry.size) {
+        problems.push(`${manifestPath}: ${entry.url}: size ${entry.size} in manifest, ${bytes.length} on disk`);
+      }
+      const sha512 = createHash('sha512').update(bytes).digest('base64');
+      if (sha512 !== entry.sha512) problems.push(`${manifestPath}: ${entry.url}: sha512 does not match the file`);
+    }
+    if (manifest.path !== undefined) {
+      const entry = (manifest.files ?? []).find((file) => file.url === manifest.path);
+      if (!entry) problems.push(`${manifestPath}: ${manifest.path}: path has no files entry`);
+      else if (entry.sha512 !== manifest.sha512) {
+        problems.push(`${manifestPath}: ${manifest.path}: top-level sha512 differs from its files entry`);
+      }
+    }
+  }
+  if (problems.length > 0) throw new ManifestError(problems.join('\n'));
+  return checked;
+}
+
 function main(argv) {
   const [command, target, ...rest] = argv;
   try {
     if (command === 'refresh' && target && rest.length > 0) console.log(`wrote ${refresh(target, rest)}`);
     else if (command === 'merge' && target && rest.length > 0) console.log(`wrote ${merge(target, rest)}`);
-    else throw new ManifestError('usage: update-manifests.mjs refresh <manifest.yml> <file>... | merge <out.yml> <in.yml>...');
+    else if (command === 'verify' && target && rest.length > 0) console.log(`verified ${verify(target, rest)} files`);
+    else {
+      throw new ManifestError(
+        'usage: update-manifests.mjs refresh <manifest.yml> <file>... | merge <out.yml> <in.yml>... | verify <dir> <manifest.yml>...',
+      );
+    }
   } catch (error) {
     console.error(error instanceof ManifestError || error?.code === 'ENOENT' ? error.message : error);
     process.exit(1);

@@ -95,9 +95,9 @@ jobs:
           attempt=1
           until npx electron-builder --config electron-builder.lite.signed.yml --${{ matrix.target }} --${{ matrix.arch }} --publish never; do
             echo "electron-builder lite attempt $attempt failed"
-            if [ "$attempt" -ge 3 ]; then exit 1; fi
+            if [ "$attempt" -ge 5 ]; then exit 1; fi
             rm -rf release/lite
-            sleep 30
+            sleep $((attempt * 60))
             attempt=$((attempt + 1))
           done
       - name: Build signed and notarized full installer
@@ -110,9 +110,9 @@ jobs:
           attempt=1
           until npx electron-builder --config electron-builder.full.signed.yml --${{ matrix.target }} --${{ matrix.arch }} --publish never; do
             echo "electron-builder full attempt $attempt failed"
-            if [ "$attempt" -ge 3 ]; then exit 1; fi
+            if [ "$attempt" -ge 5 ]; then exit 1; fi
             rm -rf release/full
-            sleep 30
+            sleep $((attempt * 60))
             attempt=$((attempt + 1))
           done
       - name: Notarize and staple macOS dmg
@@ -133,8 +133,8 @@ jobs:
                   exit 1
                 fi
                 echo "notarytool submit attempt $attempt failed for $dmg"
-                if [ "$attempt" -ge 3 ]; then exit 1; fi
-                sleep $((attempt * 30))
+                if [ "$attempt" -ge 5 ]; then exit 1; fi
+                sleep $((attempt * 60))
                 attempt=$((attempt + 1))
               done
               attempt=1
@@ -255,6 +255,9 @@ jobs:
           for variant in $variants; do
             manifest="release/$variant/$variant$suffix.yml"
             [ -f "$manifest" ] || { echo "missing update manifest $manifest"; exit 1; }
+            if [ "${{ matrix.platform }}" = "mac" ] && [ "$MAC_SIGNED" = "true" ]; then
+              node scripts/update-manifests.mjs refresh "$manifest" "release/$variant/Distill-$variant-mac-${{ matrix.arch }}.dmg"
+            fi
             if [ "${{ matrix.platform }}" = "win" ] && [ "$SIGNPATH_ENABLED" = "true" ]; then
               node scripts/update-manifests.mjs refresh "$manifest" "release/signed/Distill-$variant-win-x64.exe"
             fi
@@ -272,12 +275,13 @@ jobs:
             manifests/*.yml
           if-no-files-found: error
 
-  draft-release:
+  release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - name: checkout v4.4.0
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -320,12 +324,41 @@ jobs:
             *"Not Found"*) echo "no published release for $TAG" ;;
             *) echo "could not check releases for $TAG: $output"; exit 1 ;;
           esac
+      - name: Verify update manifests against installers
+        shell: bash
+        run: node scripts/update-manifests.mjs verify installers installers/*.yml
+      - name: Pick release notes
+        id: notes
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -f "release-notes/$TAG.md" ]; then
+            echo "path=release-notes/$TAG.md" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+          fi
       - name: action-gh-release v2.6.2
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
         with:
+          name: distill ${{ github.ref_name }}
           draft: true
+          body_path: ${{ steps.notes.outputs.path }}
+          generate_release_notes: ${{ steps.notes.outputs.path == '' }}
           fail_on_unmatched_files: true
           overwrite_files: false
           files: |
             installers/**/Distill-*
             installers/*.yml
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --draft=false --latest
+      - name: Start npm and ghcr publishing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh workflow run publish.yml --ref main -f tag="$TAG"

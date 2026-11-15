@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -105,6 +105,62 @@ describe('update-manifests', () => {
     writeFileSync(a, macManifest('arm64', '0.2.0', '2026-11-14T13:00:00.000Z'));
     writeFileSync(b, macManifest('x64', '0.3.0', '2026-11-14T13:00:00.000Z'));
     expect(run('merge', join(dir, 'out.yml'), a, b).status).toBe(1);
+  });
+
+  describe('verify', () => {
+    const bytes = Buffer.alloc(512, 3);
+    const digest = createHash('sha512').update(bytes).digest('base64');
+
+    function fixture(overrides: { size?: number; sha512?: string; topSha512?: string; skipFile?: boolean } = {}) {
+      const nested = join(dir, 'artifacts', 'win');
+      mkdirSync(nested, { recursive: true });
+      if (!overrides.skipFile) writeFileSync(join(nested, 'Distill-lite-win-x64.exe'), bytes);
+      const manifest = join(dir, 'lite.yml');
+      writeFileSync(
+        manifest,
+        `version: 0.2.0
+files:
+  - url: Distill-lite-win-x64.exe
+    sha512: ${overrides.sha512 ?? digest}
+    size: ${overrides.size ?? bytes.length}
+path: Distill-lite-win-x64.exe
+sha512: ${overrides.topSha512 ?? digest}
+releaseDate: '2026-11-14T13:00:00.000Z'
+`,
+      );
+      return manifest;
+    }
+
+    it('passes for a matching fixture', () => {
+      const result = run('verify', join(dir, 'artifacts'), fixture());
+      expect(result.stderr).toBe('');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('verified 1 files');
+    });
+
+    it('fails on a size mismatch', () => {
+      const result = run('verify', join(dir, 'artifacts'), fixture({ size: 1 }));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Distill-lite-win-x64.exe');
+    });
+
+    it('fails on a sha512 mismatch', () => {
+      const result = run('verify', join(dir, 'artifacts'), fixture({ sha512: 'wrong==', topSha512: 'wrong==' }));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Distill-lite-win-x64.exe');
+    });
+
+    it('fails on a missing file', () => {
+      const result = run('verify', join(dir, 'artifacts'), fixture({ skipFile: true }));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Distill-lite-win-x64.exe');
+    });
+
+    it('fails when the top-level sha512 disagrees with its path entry', () => {
+      const result = run('verify', join(dir, 'artifacts'), fixture({ topSha512: 'other==' }));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Distill-lite-win-x64.exe');
+    });
   });
 
   it('fails on unsupported syntax with the line number', () => {
