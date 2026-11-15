@@ -8,6 +8,8 @@ import type { Lingua } from '../../src/node/lingua';
 import type { Parser } from '../../src/node/parse';
 import type { GlobalUpdater } from '../../src/node/update-install';
 import type { UpdateChecker } from '../../src/node/update-check';
+import { withBuiltinOffice } from '../../src/node/office';
+import { makeXlsx } from '../fixtures/office';
 import { createApp } from '../../src/server/app';
 import { createStore } from '../../src/server/store';
 
@@ -97,7 +99,7 @@ function setup(
     },
   };
   const app = createApp({
-    parser,
+    parser: withBuiltinOffice(parser, { libreoffice: opts.libreoffice ?? false }),
     lingua,
     store,
     maxBytes: opts.maxBytes ?? 1_000_000,
@@ -197,9 +199,21 @@ describe('server app', () => {
     expect(paths).toHaveLength(0);
   });
 
-  it('returns 422 needs_libreoffice for .docx when libreoffice=false', async () => {
+  it('parses .xlsx with the built-in reader when libreoffice=false', async () => {
+    const { app, paths } = setup({ libreoffice: false });
+    const res = await app.request('/api/parse', upload('book.xlsx', makeXlsx([{ name: 'S', rows: [['a', 'b'], [1, 2]] }])));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ParseResponse;
+    expect(body.engine).toBe('builtin');
+    expect(body.markdown).toContain('| a | b |');
+    expect(paths).toHaveLength(0);
+    const json = await app.request(`/api/files/${body.id}/json`);
+    expect(await json.json()).toHaveProperty('sheets');
+  });
+
+  it('returns 422 needs_libreoffice for .doc when libreoffice=false', async () => {
     const { app } = setup({ libreoffice: false });
-    const res = await app.request('/api/parse', upload('doc.docx'));
+    const res = await app.request('/api/parse', upload('doc.doc'));
     expect(res.status).toBe(422);
     expect(((await res.json()) as ApiError).code).toBe('needs_libreoffice');
   });

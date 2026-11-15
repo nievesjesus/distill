@@ -115,7 +115,7 @@ export const S = {
 
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   unsupported_type: 'Unsupported file type',
-  needs_libreoffice: 'Office files need LibreOffice — install it and restart distill',
+  needs_libreoffice: 'Legacy Office (.doc, .xls, .ppt) and OpenDocument files need LibreOffice — install it and restart distill',
   too_large: 'File is larger than the size limit',
   password_protected: 'Password-protected file',
   timeout: 'Took too long to parse',

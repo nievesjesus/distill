@@ -29,7 +29,7 @@ ${command} convert --stdout "<path>"
 
 - Read the Markdown the command prints.
 - Convert one file per call.
-- Exit code 1 means the conversion failed; the message on stderr says why (for example LibreOffice is missing or the file is password-protected).
+- Exit code 1 means the conversion failed; the message on stderr says why (for example the file is password-protected, or it is a .doc, .xls, .ppt or OpenDocument file and LibreOffice is missing).
 - For PDFs just use Read; the distill hook handles them.
 `;
 }
