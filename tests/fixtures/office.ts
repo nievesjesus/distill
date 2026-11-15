@@ -136,7 +136,10 @@ export function makeXlsx(
   });
 }
 
-export function makePptx(slides: { title?: string; paragraphs: string[]; notes?: string }[]): Uint8Array {
+export function makePptx(
+  slides: { title?: string; paragraphs: string[]; notes?: string; rawBody?: string }[],
+  options: { order?: number[] } = {},
+): Uint8Array {
   const pns = 'http://schemas.openxmlformats.org/presentationml/2006/main';
   const ans = 'http://schemas.openxmlformats.org/drawingml/2006/main';
   const parts: Record<string, string> = {};
@@ -153,7 +156,9 @@ export function makePptx(slides: { title?: string; paragraphs: string[]; notes?:
         ? ''
         : `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title ${n}"/><p:cNvSpPr/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>${esc(slide.title)}</a:t></a:r></a:p></p:txBody></p:sp>`;
     const paras = slide.paragraphs.map((p) => `<a:p><a:r><a:t>${esc(p)}</a:t></a:r></a:p>`).join('');
-    const bodyShape = `<p:sp><p:nvSpPr><p:cNvPr id="3" name="Content ${n}"/><p:cNvSpPr/><p:nvPr><p:ph idx="1"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/>${paras}</p:txBody></p:sp>`;
+    const bodyShape =
+      slide.rawBody ??
+      `<p:sp><p:nvSpPr><p:cNvPr id="3" name="Content ${n}"/><p:cNvSpPr/><p:nvPr><p:ph idx="1"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/>${paras}</p:txBody></p:sp>`;
     parts[`ppt/slides/slide${n}.xml`] =
       `${XML}<p:sld xmlns:a="${ans}" xmlns:r="${OD_REL}" xmlns:p="${pns}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${titleShape}${bodyShape}</p:spTree></p:cSld></p:sld>`;
     overrides.push([`/ppt/slides/slide${n}.xml`, 'application/vnd.openxmlformats-officedocument.presentationml.slide+xml']);
@@ -173,7 +178,7 @@ export function makePptx(slides: { title?: string; paragraphs: string[]; notes?:
   return pack({
     '[Content_Types].xml': contentTypes(overrides),
     '_rels/.rels': rootRels('ppt/presentation.xml'),
-    'ppt/presentation.xml': `${XML}<p:presentation xmlns:a="${ans}" xmlns:r="${OD_REL}" xmlns:p="${pns}"><p:sldIdLst>${idList.join('')}</p:sldIdLst></p:presentation>`,
+    'ppt/presentation.xml': `${XML}<p:presentation xmlns:a="${ans}" xmlns:r="${OD_REL}" xmlns:p="${pns}"><p:sldIdLst>${(options.order ?? idList.map((_, i) => i)).map((i) => idList[i]).join('')}</p:sldIdLst></p:presentation>`,
     'ppt/_rels/presentation.xml.rels': rels(presRels),
     ...parts,
   });
