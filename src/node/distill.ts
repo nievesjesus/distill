@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_ACTIVE, runBoosters } from '../core/boosters/pipeline';
-import { detectKind, needsLibreOffice } from '../core/kind';
+import { detectKind, needsLibreOfficeFor } from '../core/kind';
 import { countTokens } from '../core/tokens';
 import type { DistillResult, Health, LinguaStatus, LocalBoosterId } from '../core/types';
 import { exposeLibreOffice } from './capabilities';
@@ -14,6 +14,7 @@ import { DEFAULT_MAX_BYTES } from './limits';
 import { createLingua, findPackageRoot } from './lingua';
 import type { Lingua } from './lingua';
 import { createLinguaInstaller } from './lingua-install';
+import { withBuiltinOffice } from './office';
 import { createParser } from './parse';
 import type { Parser } from './parse';
 
@@ -60,7 +61,7 @@ export function createDistiller(deps: {
       const kind = detectKind(name);
       if (!kind) throw new DistillError('unsupported_type', 'Unsupported file type');
       if (size > maxBytes) throw new DistillError('too_large', `File exceeds the ${maxBytes} byte limit`);
-      if (needsLibreOffice(kind) && !deps.libreoffice) {
+      if (needsLibreOfficeFor(name) && !deps.libreoffice) {
         throw new DistillError('needs_libreoffice', 'LibreOffice is required to read this file type');
       }
       const lingua = opts.lingua ? deps.lingua : undefined;
@@ -78,6 +79,7 @@ export function createDistiller(deps: {
         markdown,
         tokens: { raw: countTokens(parsed.markdown), out: countTokens(markdown) },
         ms: Math.round(performance.now() - started),
+        ...(parsed.engine ? { engine: parsed.engine } : {}),
       };
     },
     health: () => ({
@@ -102,7 +104,7 @@ export async function openDistiller(maxBytes?: number): Promise<Distiller> {
   const version = readVersion(join(packageRoot, 'package.json'));
   const liteparseVersion = readVersion(require.resolve('@llamaindex/liteparse/package.json'));
   const libreoffice = await exposeLibreOffice();
-  const parser = createParser();
+  const parser = withBuiltinOffice(createParser(), { libreoffice });
   try {
     const cacheDir = join(homedir(), '.cache', 'distill-llm');
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });

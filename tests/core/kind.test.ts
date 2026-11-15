@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectKind, needsLibreOffice } from '@core/kind';
+import { detectKind, needsLibreOfficeFor } from '@core/kind';
 
 describe('detectKind', () => {
   it('detects by extension ignoring case', () => {
@@ -25,13 +25,9 @@ describe('detectKind', () => {
   });
 });
 
-describe('needsLibreOffice', () => {
-  it('is true only for office kinds', () => {
-    expect(needsLibreOffice('DOCX')).toBe(true);
-    expect(needsLibreOffice('PPTX')).toBe(true);
-    expect(needsLibreOffice('XLSX')).toBe(true);
-    expect(needsLibreOffice('ODF')).toBe(true);
-    expect(needsLibreOffice('PDF')).toBe(false);
-    expect(needsLibreOffice('IMG')).toBe(false);
+describe('needsLibreOfficeFor', () => {
+  it('is true only for legacy and OpenDocument office files', () => {
+    for (const name of ['a.doc', 'a.xls', 'a.ppt', 'a.odt', 'a.ods', 'a.ODP']) expect(needsLibreOfficeFor(name)).toBe(true);
+    for (const name of ['a.docx', 'a.xlsx', 'a.pptx', 'a.csv', 'a.pdf', 'a.png', 'noext']) expect(needsLibreOfficeFor(name)).toBe(false);
   });
 });

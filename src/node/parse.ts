@@ -3,7 +3,7 @@ import { LiteParse, ParseTimeoutError } from '@llamaindex/liteparse';
 import { DistillError } from './errors';
 
 export interface Parser {
-  toMarkdown(path: string): Promise<{ markdown: string; pages: number }>;
+  toMarkdown(path: string): Promise<{ markdown: string; pages: number; engine?: 'liteparse' | 'builtin' }>;
   toJson(path: string): Promise<unknown>;
   close(): void;
 }

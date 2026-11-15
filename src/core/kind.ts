@@ -20,7 +20,7 @@ const KIND_BY_EXTENSION: Record<string, FileKind> = {
   webp: 'IMG',
 };
 
-const OFFICE_KINDS: ReadonlySet<FileKind> = new Set(['DOCX', 'PPTX', 'XLSX', 'ODF']);
+const LEGACY_OFFICE_EXTENSIONS: ReadonlySet<string> = new Set(['doc', 'xls', 'ppt', 'odt', 'ods', 'odp']);
 
 export function detectKind(filename: string): FileKind | null {
   const dot = filename.lastIndexOf('.');
@@ -28,6 +28,8 @@ export function detectKind(filename: string): FileKind | null {
   return KIND_BY_EXTENSION[filename.slice(dot + 1).toLowerCase()] ?? null;
 }
 
-export function needsLibreOffice(kind: FileKind): boolean {
-  return OFFICE_KINDS.has(kind);
+export function needsLibreOfficeFor(name: string): boolean {
+  const dot = name.lastIndexOf('.');
+  if (dot < 0) return false;
+  return LEGACY_OFFICE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
 }

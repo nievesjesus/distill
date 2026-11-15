@@ -7,7 +7,7 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { detectKind, needsLibreOffice } from '../core/kind';
+import { detectKind, needsLibreOfficeFor } from '../core/kind';
 import { isLoopbackHost } from '../core/loopback';
 import type { ApiError, ErrorCode, Health, LinguaModel, ParseResponse, UpdateCheck, UpdateInfo } from '../core/types';
 import { DistillError } from '../node/errors';
@@ -156,7 +156,7 @@ export function createApp(deps: AppDeps): Hono {
     const kind = detectKind(file.name);
     if (!kind) return fail(c, 'unsupported_type', 'Unsupported file type');
     if (file.size > deps.maxBytes) return fail(c, 'too_large', tooLarge());
-    if (needsLibreOffice(kind) && !deps.libreoffice) {
+    if (needsLibreOfficeFor(file.name) && !deps.libreoffice) {
       return fail(c, 'needs_libreoffice', 'LibreOffice is required to read this file type');
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -172,6 +172,7 @@ export function createApp(deps: AppDeps): Hono {
       pages: result.pages,
       markdown: result.markdown,
       ms: Math.round(performance.now() - started),
+      ...(result.engine ? { engine: result.engine } : {}),
     };
     return c.json(body);
   });

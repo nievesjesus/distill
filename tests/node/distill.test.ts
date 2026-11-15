@@ -10,13 +10,15 @@ import { DistillError } from '../../src/node/errors';
 import type { Lingua } from '../../src/node/lingua';
 import { createParser } from '../../src/node/parse';
 import type { Parser } from '../../src/node/parse';
+import { withBuiltinOffice } from '../../src/node/office';
+import { makeDocx } from '../fixtures/office';
 import { makeSamplePdf } from '../fixtures/make-pdf';
 
 const RAW = 'Title\n\n\n\nBody   text\n\n\n\nMore';
 
 let dir: string;
 let pdfPath: string;
-let docxPath: string;
+let docPath: string;
 let txtPath: string;
 let bigPath: string;
 
@@ -46,11 +48,11 @@ async function expectCode(promise: Promise<unknown>, code: string): Promise<void
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'distill-core-'));
   pdfPath = join(dir, 'a.pdf');
-  docxPath = join(dir, 'a.docx');
+  docPath = join(dir, 'a.doc');
   txtPath = join(dir, 'a.txt');
   bigPath = join(dir, 'big.pdf');
   await writeFile(pdfPath, makeSamplePdf(['Quarterly Report', 'Revenue grew']));
-  await writeFile(docxPath, 'x');
+  await writeFile(docPath, 'x');
   await writeFile(txtPath, 'x');
   await writeFile(bigPath, Buffer.alloc(100));
   await mkdir(join(dir, 'folder.pdf'));
@@ -95,7 +97,16 @@ describe('createDistiller with a fake parser', () => {
 
   it('fails with needs_libreoffice for office files without LibreOffice', async () => {
     const distiller = createDistiller({ parser: fakeParser(), libreoffice: false });
-    await expectCode(distiller.distillFile(docxPath), 'needs_libreoffice');
+    await expectCode(distiller.distillFile(docPath), 'needs_libreoffice');
+  });
+
+  it('converts a docx through the built-in reader without LibreOffice', async () => {
+    const docxPath = join(dir, 'real.docx');
+    await writeFile(docxPath, makeDocx('<w:p><w:r><w:t>Hello builtin</w:t></w:r></w:p>'));
+    const distiller = createDistiller({ parser: withBuiltinOffice(fakeParser(), { libreoffice: false }), libreoffice: false });
+    const result = await distiller.distillFile(docxPath);
+    expect(result.markdown).toContain('Hello builtin');
+    expect(result.engine).toBe('builtin');
   });
 
   it('fails with too_large above maxBytes', async () => {

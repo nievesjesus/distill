@@ -27,7 +27,7 @@ export interface ConvertIo {
 }
 
 type Outcome =
-  | { input: string; output?: string; tokens: { raw: number; out: number }; pages: number; ms: number }
+  | { input: string; output?: string; tokens: { raw: number; out: number }; pages: number; ms: number; engine?: string }
   | { input: string; error: { code: string; message: string } };
 
 export function parseBoosters(value: string): Set<LocalBoosterId> {
@@ -98,13 +98,13 @@ export async function runConvert(files: string[], options: ConvertOptions, io: C
       const result = await distiller.distillFile(input, { boosters, lingua: options.lingua ?? false, rate: options.rate });
       if (options.stdout) {
         io.stdout(result.markdown);
-        outcomes[index] = { input, tokens: result.tokens, pages: result.pages, ms: result.ms };
+        outcomes[index] = { input, tokens: result.tokens, pages: result.pages, ms: result.ms, ...(result.engine ? { engine: result.engine } : {}) };
         return;
       }
       const output = destinations[index];
       await mkdir(dirname(output), { recursive: true });
       await writeFile(output, result.markdown);
-      outcomes[index] = { input, output, tokens: result.tokens, pages: result.pages, ms: result.ms };
+      outcomes[index] = { input, output, tokens: result.tokens, pages: result.pages, ms: result.ms, ...(result.engine ? { engine: result.engine } : {}) };
       if (!options.json) {
         const { raw, out } = result.tokens;
         io.stdout(`${input} → ${output}  ${shortCount(raw)} → ${shortCount(out)} tokens (−${savedPercent(raw, out)}%)`);
