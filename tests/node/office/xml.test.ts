@@ -20,13 +20,8 @@ describe('parseXml', () => {
   });
 
   it('does not resolve external entities', () => {
-    let out = '';
-    try {
-      out = textOf(parseXml('<!DOCTYPE x [<!ENTITY x SYSTEM "file:///etc/passwd">]><r>&x;</r>'));
-    } catch {
-      out = '';
-    }
-    expect(out).not.toContain('root:');
-    expect(out.length).toBeLessThan(20);
+    expect(() => parseXml('<!DOCTYPE x [<!ENTITY x SYSTEM "file:///etc/passwd">]><r>&x;</r>')).toThrowError(
+      expect.objectContaining({ name: 'DistillError', code: 'parse_failed', message: 'Could not read the document XML' }),
+    );
   });
 });

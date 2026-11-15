@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { DistillError } from '../errors';
 
 const parser = new XMLParser({
   preserveOrder: true,
@@ -12,7 +13,11 @@ const parser = new XMLParser({
 });
 
 export function parseXml(text: string): unknown[] {
-  return parser.parse(text) as unknown[];
+  try {
+    return parser.parse(text) as unknown[];
+  } catch (error) {
+    throw new DistillError('parse_failed', 'Could not read the document XML', { cause: error });
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
