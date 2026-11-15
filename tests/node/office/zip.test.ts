@@ -4,6 +4,26 @@ import { readZip, zipText } from '../../../src/node/office/zip';
 
 const enc = (s: string) => new TextEncoder().encode(s);
 
+const CENTRAL_SIG = 0x02014b50;
+
+function declareUncompressedSize(bytes: Uint8Array, size: number): Uint8Array {
+  const out = bytes.slice();
+  const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  for (let i = 0; i + 28 <= out.length; i++) {
+    if (view.getUint32(i, true) === CENTRAL_SIG) view.setUint32(i + 24, size, true);
+  }
+  return out;
+}
+
+function countDeclared(bytes: Uint8Array, size: number): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let n = 0;
+  for (let i = 0; i + 28 <= bytes.length; i++) {
+    if (view.getUint32(i, true) === CENTRAL_SIG && view.getUint32(i + 24, true) === size) n++;
+  }
+  return n;
+}
+
 describe('readZip', () => {
   it('round-trips entries', () => {
     const bytes = zipSync({ 'a.txt': enc('hello'), 'dir/b.xml': enc('<x/>') });
@@ -31,10 +51,12 @@ describe('readZip', () => {
   });
 
   it('rejects total uncompressed size over 256 MiB', () => {
-    const chunk = new Uint8Array(60 * 1024 * 1024);
     const files: Record<string, Uint8Array> = {};
-    for (let i = 0; i < 5; i++) files[`c${i}`] = chunk;
-    expect(() => readZip(zipSync(files, { level: 9 }))).toThrowError(
+    for (let i = 0; i < 5; i++) files[`c${i}`] = new Uint8Array(1);
+    const size = 60 * 1024 * 1024;
+    const patched = declareUncompressedSize(zipSync(files), size);
+    expect(countDeclared(patched, size)).toBe(5);
+    expect(() => readZip(patched)).toThrowError(
       expect.objectContaining({ code: 'parse_failed', message: 'Document archive is too large to read safely' }),
     );
   });
