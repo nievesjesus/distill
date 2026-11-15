@@ -1,6 +1,6 @@
 import { posix } from 'node:path';
 import { DistillError } from '../errors';
-import { gfmTable, type OfficeResult } from './markdown';
+import { escapeText, gfmTable, type OfficeResult } from './markdown';
 import { attr, children, parseXml, textOf } from './xml';
 import { readZip, zipText } from './zip';
 
@@ -56,13 +56,6 @@ function readRels(entries: Map<string, Uint8Array>, partPath: string): { type: s
     out.push({ id, type: attr(rel, 'Type') ?? '', target: resolveTarget(dir, target) });
   }
   return out;
-}
-
-function escapeText(text: string): string {
-  return text
-    .replace(/^(\s*)#/, '$1\\#')
-    .replace(/\*/g, '\\*')
-    .replace(/(^|\W)_|_(?=\W|$)/g, (m) => m.replace('_', '\\_'));
 }
 
 function placeholderType(shape: unknown): string | undefined {

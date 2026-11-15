@@ -19,3 +19,10 @@ export function gfmTable(rows: string[][]): string {
   const separator = `| ${Array.from({ length: width }, () => '---').join(' | ')} |`;
   return [line(rows[0]), separator, ...rows.slice(1).map(line)].join('\n');
 }
+
+export function escapeText(text: string): string {
+  return text
+    .replace(/^(\s*)#/, '$1\\#')
+    .replace(/\*/g, '\\*')
+    .replace(/(^|\W)_|_(?=\W|$)/g, (m) => m.replace('_', '\\_'));
+}
