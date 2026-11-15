@@ -72,7 +72,7 @@ function columnName(index: number): string {
 }
 
 export function makeXlsx(
-  sheets: { name: string; rows: (string | number | boolean | null)[][] }[],
+  sheets: { name: string; rows: (string | number | boolean | null)[][]; hidden?: boolean; rawRows?: string }[],
   opts: { sharedStrings?: boolean } = {},
 ): Uint8Array {
   const useShared = opts.sharedStrings !== false;
@@ -95,7 +95,9 @@ export function makeXlsx(
 
   sheets.forEach((sheet, i) => {
     const n = i + 1;
-    const rowsXml = sheet.rows
+    const rowsXml =
+      sheet.rawRows ??
+      sheet.rows
       .map((row, r) => {
         const cells = row
           .map((value, c) => {
@@ -114,7 +116,7 @@ export function makeXlsx(
       `${XML}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml}</sheetData></worksheet>`;
     overrides.push([`/xl/worksheets/sheet${n}.xml`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml']);
     wbRels.push({ id: `rId${n}`, type: `${OD_REL}/worksheet`, target: `worksheets/sheet${n}.xml` });
-    sheetEntries.push(`<sheet name="${esc(sheet.name)}" sheetId="${n}" r:id="rId${n}"/>`);
+    sheetEntries.push(`<sheet name="${esc(sheet.name)}" sheetId="${n}"${sheet.hidden ? ' state="hidden"' : ''} r:id="rId${n}"/>`);
   });
 
   if (useShared && shared.length > 0) {
