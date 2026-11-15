@@ -47,7 +47,7 @@ On top of that, distill's lossless boosters trim another 10% from LiteParse's Ma
 ## Features
 
 - **One engine, many doors.** The same local pipeline behind a web app, a desktop app, a Docker image, a CLI, an MCP server and hooks for Claude Code and OpenCode.
-- **Real parsing.** [LiteParse](https://github.com/run-llama/liteparse) by LlamaIndex reads PDFs, DOCX, PPTX, XLSX, ODF and images (with OCR).
+- **Real parsing.** [LiteParse](https://github.com/run-llama/liteparse) by LlamaIndex reads PDFs and images (with OCR). DOCX, PPTX, XLSX and CSV use a built-in reader, or LiteParse through LibreOffice when it is installed; legacy Office and ODF go through LibreOffice.
 - **Lossless boosters.** Small, deterministic passes drop repeated boilerplate, image paths and link targets, table padding and extra whitespace. Content words stay.
 - **Optional LLMLingua-2.** A local model for when you want to go further and accept a lossy result. Off by default, installed on demand.
 - **Honest numbers.** Every file's before and after token counts come from a real tokenizer, live in the UI.
@@ -160,10 +160,10 @@ Each file prints a summary such as `report.pdf → report.md  5.7k → 4.6k toke
 - **"The app is damaged":** run `xattr -dr com.apple.quarantine /Applications/distill.app` and open it again.
 - **Windows:** in the SmartScreen dialog click **More info**, then **Run anyway**.
 
-Release builds are signed when the signing certificates are configured; if your installer is unsigned, the steps above apply. The desktop app checks GitHub Releases for a newer version at most once a day (same toggle and `DISTILL_NO_UPDATE_CHECK` as above), 5 seconds after launch, and shows a banner. It downloads and installs only when you click **Download and install**, then offers **Restart to update** (or installs on the next quit). Updates stay within your variant (lite or full) and never downgrade. OCR data is bundled; Office files still need LibreOffice installed.
+Release builds are signed when the signing certificates are configured; if your installer is unsigned, the steps above apply. The desktop app checks GitHub Releases for a newer version at most once a day (same toggle and `DISTILL_NO_UPDATE_CHECK` as above), 5 seconds after launch, and shows a banner. It downloads and installs only when you click **Download and install**, then offers **Restart to update** (or installs on the next quit). Updates stay within your variant (lite or full) and never downgrade. OCR data is bundled; DOCX, XLSX, PPTX and CSV work out of the box, while .doc, .xls, .ppt and OpenDocument files need LibreOffice installed.
 </details>
 
-**Docker:** LibreOffice and the English OCR data are included, so every format works out of the box.
+**Docker:** LibreOffice and the English OCR data are included, so every format works out of the box, including .doc, .xls, .ppt and OpenDocument.
 
 ```bash
 docker run --rm -p 4321:4321 -v distill-cache:/home/node/.cache ghcr.io/nievesjesus/distill
@@ -204,7 +204,8 @@ LLMLingua-2 is optional and experimental. It needs Apple Silicon, Windows x64 or
 |---|---|
 | PDF | nothing else |
 | PNG, JPG, TIFF, WebP | nothing else (OCR built in; English data is downloaded once, about 15 MB) |
-| DOCX, PPTX, XLSX, ODF | [LibreOffice](https://www.libreoffice.org/download/) on your `PATH` (`soffice`); included in Docker |
+| DOCX, PPTX, XLSX, CSV | nothing else (built-in reader); with [LibreOffice](https://www.libreoffice.org/download/) on your `PATH` distill uses it instead, for higher fidelity on layout-heavy files |
+| DOC, XLS, PPT, ODT, ODS, ODP | [LibreOffice](https://www.libreoffice.org/download/) on your `PATH` (`soffice`); included in Docker |
 
 Password-protected PDFs are reported as an error. Parsing quality is whatever LiteParse gives you: it varies on dense tables and complex scans, and distill does not try to hide that.
 

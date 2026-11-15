@@ -14,7 +14,7 @@ describe('error messages', () => {
   it('uses the actionable copy', () => {
     expect(ERROR_MESSAGES).toMatchObject({
       unsupported_type: 'Unsupported file type',
-      needs_libreoffice: 'Office files need LibreOffice — install it and restart distill',
+      needs_libreoffice: 'Legacy Office (.doc, .xls, .ppt) and OpenDocument files need LibreOffice — install it and restart distill',
       too_large: 'File is larger than the size limit',
       password_protected: 'Password-protected file',
       timeout: 'Took too long to parse',
@@ -28,7 +28,7 @@ describe('error messages', () => {
     expect(link).toHaveAttribute('href', 'https://www.libreoffice.org/download/');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(document.querySelector('.file-error')).toHaveTextContent('Office files need LibreOffice — install it and restart distill');
+    expect(document.querySelector('.file-error')).toHaveTextContent('Legacy Office (.doc, .xls, .ppt) and OpenDocument files need LibreOffice — install it and restart distill');
   });
 
   it('does not show the link for other errors', () => {
