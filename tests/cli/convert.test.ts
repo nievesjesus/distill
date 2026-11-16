@@ -122,6 +122,29 @@ describe('convert', () => {
     expect(existsSync(join(dir, 'report.md'))).toBe(false);
   });
 
+  it('prints the savings note on stderr with --stdout', async () => {
+    const h = harness();
+    const [pdf] = touch('report.pdf');
+    await run(['convert', pdf, '--stdout'], h.deps);
+    expect(h.stderr).toHaveLength(1);
+    expect(h.stderr[0]).toMatch(/^\[distill\] tokens saved ≈ /);
+    expect(h.stdout).toEqual(['# report.pdf\n']);
+  });
+
+  it('omits the savings note with DISTILL_NO_SAVINGS_NOTE=1', async () => {
+    const h = harness();
+    const [pdf] = touch('report.pdf');
+    await run(['convert', pdf, '--stdout'], { ...h.deps, env: { ...h.deps.env, DISTILL_NO_SAVINGS_NOTE: '1' } });
+    expect(h.stderr).toEqual([]);
+  });
+
+  it('prints no savings note without --stdout', async () => {
+    const h = harness();
+    const [pdf] = touch('report.pdf');
+    await run(['convert', pdf], h.deps);
+    expect(h.stderr).toEqual([]);
+  });
+
   it('rejects --stdout with several files', async () => {
     const h = harness();
     const [a, b] = touch('a.pdf', 'b.pdf');

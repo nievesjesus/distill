@@ -1,6 +1,8 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { type SavingsEstimate, savingsNote } from '../core/savings';
 import { isInside } from '../node/inside';
+import { isOwnCommand } from './install-claude';
 import { type MatchContext, type ReadRule, parseReadRule, ruleMayMatch } from './read-rules';
 import { isHookConvertible } from './supported';
 
@@ -9,6 +11,8 @@ export interface ClaudeHookDeps {
   projectDir?: string;
   managedSettingsPaths?: string[];
   platform?: NodeJS.Platform;
+  plugin?: boolean;
+  savingsNote?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -83,6 +87,23 @@ async function anyReadRestriction(files: SettingsFile[], paths: string[], ctx: M
   return (await Promise.all(files.map((file) => hasReadRestriction(file, paths, ctx)))).some(Boolean);
 }
 
+async function hasOwnHook(file: SettingsFile): Promise<boolean> {
+  try {
+    const settings: unknown = JSON.parse(await readFile(file.path, 'utf8'));
+    if (!isRecord(settings) || !isRecord(settings.hooks) || !Array.isArray(settings.hooks.PreToolUse)) return false;
+    return settings.hooks.PreToolUse.some(
+      (entry) =>
+        isRecord(entry) && Array.isArray(entry.hooks) && entry.hooks.some((hook) => isRecord(hook) && isOwnCommand(hook.command)),
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function anyOwnHook(files: SettingsFile[]): Promise<boolean> {
+  return (await Promise.all(files.map(hasOwnHook))).some(Boolean);
+}
+
 async function realpathOrNull(path: string | undefined): Promise<string | null> {
   if (path === undefined || path === '') return null;
   try {
@@ -94,7 +115,7 @@ async function realpathOrNull(path: string | undefined): Promise<string | null> 
 
 export async function handleClaudePreToolUse(
   payload: unknown,
-  convert: (absPath: string) => Promise<string>,
+  convert: (absPath: string) => Promise<{ path: string; savings?: SavingsEstimate }>,
   deps: ClaudeHookDeps,
 ): Promise<object | null> {
   try {
@@ -108,13 +129,18 @@ export async function handleClaudePreToolUse(
     if (!isInside(realOriginal, realCwd) && !(realProject !== null && isInside(realOriginal, realProject))) return null;
     const ctx: MatchContext = { cwd: realCwd, home: deps.homeDir, platform: deps.platform ?? process.platform };
     const candidates = [original, realOriginal, join(deps.homeDir, '.cache', 'distill-llm', 'out', 'probe.md')];
-    if (await anyReadRestriction(settingsFiles(realCwd, realProject, deps), candidates, ctx)) return null;
-    const mdPath = await convert(realOriginal);
+    const files = settingsFiles(realCwd, realProject, deps);
+    if (await anyReadRestriction(files, candidates, ctx)) return null;
+    if (deps.plugin === true && (await anyOwnHook(files))) return null;
+    const converted = await convert(realOriginal);
+    const note = converted.savings !== undefined && deps.savingsNote !== false ? `\n${savingsNote(converted.savings)}` : '';
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        updatedInput: { ...toolInput, file_path: mdPath },
-        additionalContext: `distill converted ${basename(original)} to Markdown to save tokens. Original file: ${original}.`,
+        updatedInput: { ...toolInput, file_path: converted.path },
+        permissionDecision: 'allow',
+        permissionDecisionReason: 'distill: converted copy in its cache',
+        additionalContext: `distill converted ${basename(original)} to Markdown to save tokens. Original file: ${original}.${note}`,
       },
     };
   } catch {

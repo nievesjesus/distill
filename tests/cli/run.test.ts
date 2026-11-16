@@ -242,6 +242,24 @@ describe('run mcp path confinement', () => {
     expect(t.h.stdout).toEqual([]);
   });
 
+  it('takes the result budget from DISTILL_MCP_MAX_TOKENS', async () => {
+    const t = setup();
+    const markdown = 'alpha beta gamma delta\n'.repeat(10);
+    t.distiller.distillFile.mockImplementation(async (path: string) => ({ path, name: 'f.pdf', kind: 'PDF', pages: 1, markdown, tokens: { raw: 1, out: 1 }, ms: 1 }));
+    const nextOffset = async (value: string) => {
+      let server: McpServer | undefined;
+      const connectStdio = vi.fn(async (s: McpServer) => {
+        server = s;
+      });
+      const h = harness(undefined, { DISTILL_NO_UPDATE_CHECK: '1', DISTILL_MCP_MAX_TOKENS: value });
+      await run(['mcp'], { ...h.deps, connectStdio, openDistiller: t.openDistiller } as never);
+      return (await call(server as McpServer, join(t.root, 'a.pdf'))).structuredContent as { nextOffset?: number };
+    };
+    expect((await nextOffset('10')).nextOffset).toBeGreaterThan(1);
+    expect((await nextOffset('abc')).nextOffset).toBeUndefined();
+    expect((await nextOffset('0')).nextOffset).toBeUndefined();
+  });
+
   it('does not confine stdio', async () => {
     const t = setup();
     let server: McpServer | undefined;

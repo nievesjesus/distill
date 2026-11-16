@@ -3,6 +3,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import { InvalidArgumentError } from 'commander';
 import { parseBoosterList } from '../core/booster-list';
 import { savedPercent, shortCount } from '../core/format';
+import { estimateSavings, savingsNote } from '../core/savings';
 import type { LocalBoosterId } from '../core/types';
 import type { Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
@@ -23,6 +24,7 @@ export interface ConvertOptions {
 export interface ConvertIo {
   stdout: (line: string) => void;
   stderr: (line: string) => void;
+  savingsNote?: boolean;
   openDistiller: (maxBytes: number) => Promise<Distiller>;
 }
 
@@ -98,6 +100,7 @@ export async function runConvert(files: string[], options: ConvertOptions, io: C
       const result = await distiller.distillFile(input, { boosters, lingua: options.lingua ?? false, rate: options.rate });
       if (options.stdout) {
         io.stdout(result.markdown);
+        if (io.savingsNote !== false) io.stderr(savingsNote(estimateSavings(result)));
         outcomes[index] = { input, tokens: result.tokens, pages: result.pages, ms: result.ms, ...(result.engine ? { engine: result.engine } : {}) };
         return;
       }

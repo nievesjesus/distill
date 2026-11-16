@@ -38,7 +38,7 @@ Keep them focused, include tests, and make sure `npm test`, `npm run typecheck` 
 
 ## Releasing
 
-A release is one PR that bumps the version with `npm version X.Y.Z --no-git-tag-version`. Commit `package.json` and `package-lock.json`. Optionally add `release-notes/vX.Y.Z.md`; without it, GitHub generates the notes from the merged PRs.
+A release is one PR that bumps the version with `npm version X.Y.Z --no-git-tag-version`. Commit `package.json` and `package-lock.json`. `npm version` also syncs `server.json` and the plugin version, so commit those too. Optionally add `release-notes/vX.Y.Z.md`; without it, GitHub generates the notes from the merged PRs.
 
 After that PR merges into `main`, everything runs on its own:
 
@@ -47,6 +47,8 @@ After that PR merges into `main`, everything runs on its own:
 3. `Publish` stages `distill-llm` on npm and pushes the multi-arch image to `ghcr.io/nievesjesus/distill`. It fails if `package.json` does not match the tag.
 
 The only manual step: a maintainer approves the staged version with 2FA on npmjs.com > `distill-llm` > Staged Packages, or with `npm stage list distill-llm` then `npm stage approve <stage-id>`. Only then does it become public, with provenance.
+
+Within the hour after the npm approval, the `MCP registry` workflow (`mcp-registry.yml`) lists the version in the official MCP registry; you can also run it by hand.
 
 If a build or the verification fails, the release stays a draft and nothing reaches npm. Re-run the failed jobs, or fix and publish the draft by hand; publishing a draft by hand also starts `Publish`.
 

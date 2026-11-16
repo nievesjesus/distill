@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.nievesjesus/distill",
+  "title": "distill",
+  "description": "Local PDF and Office to token-lean Markdown for LLMs. No uploads, no API keys.",
+  "repository": {
+    "url": "https://github.com/nievesjesus/distill",
+    "source": "github"
+  },
+  "websiteUrl": "https://nievesjesus.github.io/distill/",
+  "version": "0.3.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "distill-llm",
+      "version": "0.3.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}

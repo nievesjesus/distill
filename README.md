@@ -71,7 +71,9 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 
 ### MCP server
 
-Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`.
+Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`. From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`. Results end with a `[distill] tokens saved ≈ …` line telling the model how many tokens distill saved (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
+
+Results are capped at 10,000 tokens (`DISTILL_MCP_MAX_TOKENS` changes it) so they fit an agent's tool-result limit. A larger document comes back one page at a time: pass the `nextOffset` from the previous `distill_file` result as `offset` to continue, and `distill_files` returns what fits and tells the model which files to request on their own.
 
 ```bash
 claude mcp add distill -- npx -y distill-llm mcp
@@ -107,6 +109,15 @@ distill-llm mcp --http --root ~/shared-docs --allowed-hosts distill.example.com
 4. Add `https://distill.example.com/mcp` as the connector URL in your client.
 </details>
 
+### Claude Code plugin
+
+```bash
+claude plugin marketplace add nievesjesus/distill
+claude plugin install distill@distill
+```
+
+The plugin adds the Read hook for PDF and Office files, the `distill` MCP server and the Office skill, with no other setup. It needs Node.js 22.12 or newer: it runs `npx distill-llm@<plugin version>`, so the first conversion downloads the package. Do not combine it with `hooks install --claude`: if both exist the plugin steps aside and the settings hook does the work. Remove one of them with `distill-llm hooks uninstall --claude`.
+
 ### Hooks: make your agent read Markdown instead of the binary
 
 ```bash
@@ -127,7 +138,7 @@ The hooks respect your permissions and never block a read:
 - Images and CSV files are left alone.
 - If anything fails (a missing file, a timeout, a password-protected PDF, a scan with no text), the agent reads the original file.
 
-Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session.
+Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session. Conversions, fresh or served from the cache, end the hook's context with a `[distill] tokens saved ≈ …` line (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), `distill-llm convert --stdout` prints the same line on stderr, and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
 
 ### CLI
 

@@ -313,7 +313,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--stdout', 'print the Markdown of a single file instead of writing it')
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
     .action(async (files: string[], options: ConvertOptions) => {
-      const code = await runConvert(files, options, { stdout, stderr, openDistiller });
+      const code = await runConvert(files, options, { stdout, stderr, openDistiller, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
       if (isTTY && !options.json && !options.stdout) await showNotice();
       if (code !== 0) exit(code);
     });
@@ -389,8 +389,15 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         return;
       }
       const { createMcpServer } = await import('../mcp/server');
+      const maxResultTokens = /^\d+$/.test(env.DISTILL_MCP_MAX_TOKENS ?? '') && Number(env.DISTILL_MCP_MAX_TOKENS) > 0 ? Number(env.DISTILL_MCP_MAX_TOKENS) : undefined;
       const build = (resolvePath: (path: string) => Promise<string>) => () =>
-        createMcpServer({ distiller, health: () => distiller.health(), resolvePath });
+        createMcpServer({
+          distiller,
+          health: () => distiller.health(),
+          resolvePath,
+          savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
+          ...(maxResultTokens === undefined ? {} : { maxResultTokens }),
+        });
 
       if (!options.http) {
         await connectStdio(build(cwdResolver(cwd))(), () => {
@@ -461,20 +468,21 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         ? error.message
         : String(error);
 
-  const convertViaCache = async (getDistiller: () => Promise<Distiller>, absPath: string): Promise<string> =>
-    (await convertCached(absPath, {
+  const convertViaCache = (getDistiller: () => Promise<Distiller>, absPath: string) =>
+    convertCached(absPath, {
       getDistiller,
       cacheDir,
       version: readVersion(),
       liteparseVersion: readLiteparseVersion(),
-    })).mdPath;
+    });
 
   hook
     .command('claude')
     .description('Claude Code PreToolUse hook: reads JSON on stdin')
+    .option('--plugin', 'running from the Claude Code plugin')
     .allowExcessArguments()
     .allowUnknownOption()
-    .action(async () => {
+    .action(async (options: { plugin?: boolean }) => {
       let distiller: Distiller | null = null;
       const getDistiller = async (): Promise<Distiller> => (distiller ??= await openDistiller());
       try {
@@ -492,12 +500,13 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         }
         const result = await handleClaudePreToolUse(payload, async (absPath) => {
           try {
-            return await convertViaCache(getDistiller, absPath);
+            const converted = await convertViaCache(getDistiller, absPath);
+            return converted.savings === null ? { path: converted.mdPath } : { path: converted.mdPath, savings: converted.savings };
           } catch (error) {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR });
+        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
@@ -520,7 +529,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       const getDistiller = async (): Promise<Distiller> => (distiller ??= await openDistiller());
       try {
         const absPath = isAbsolute(file) ? file : resolve(cwd, file);
-        const path = await convertViaCache(getDistiller, absPath);
+        const { mdPath: path } = await convertViaCache(getDistiller, absPath);
         stdout(JSON.stringify({ path }));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);

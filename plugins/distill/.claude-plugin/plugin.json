@@ -1,0 +1,20 @@
+{
+  "name": "distill",
+  "version": "0.3.0",
+  "description": "Reads PDF and Office files as token-lean Markdown, adds the distill MCP server and an Office skill",
+  "author": {
+    "name": "Jesus Nieves"
+  },
+  "homepage": "https://nievesjesus.github.io/distill/",
+  "repository": "https://github.com/nievesjesus/distill",
+  "license": "Apache-2.0",
+  "keywords": [
+    "pdf",
+    "docx",
+    "xlsx",
+    "pptx",
+    "markdown",
+    "tokens",
+    "mcp"
+  ]
+}

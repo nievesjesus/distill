@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../../src/cli/run';
+import { estimateSavings, savingsNote } from '../../src/core/savings';
 import { handleClaudePreToolUse } from '../../src/hooks/claude';
 
 let base: string;
@@ -42,33 +43,58 @@ const deps = (extra: Record<string, unknown> = {}) => ({ homeDir: home, managedS
 describe('handleClaudePreToolUse', () => {
   it('rewrites a pdf read and keeps offset and limit', async () => {
     const file = pdf();
-    const convert = vi.fn(async () => '/cache/out.md');
+    const convert = vi.fn(async () => ({ path: '/cache/out.md' }));
     const result = await handleClaudePreToolUse(payload({ file_path: file, offset: 3, limit: 10 }), convert, deps());
     expect(convert).toHaveBeenCalledWith(file);
     expect(result).toEqual({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         updatedInput: { file_path: '/cache/out.md', offset: 3, limit: 10 },
+        permissionDecision: 'allow',
+        permissionDecisionReason: 'distill: converted copy in its cache',
         additionalContext: `distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`,
       },
     });
   });
 
-  it('never sets a permission decision', async () => {
-    const result = (await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => '/c.md', deps())) as {
+  describe('savings note', () => {
+    const savings = estimateSavings({ kind: 'PDF', pages: 7, tokens: { raw: 1813, out: 1731 } });
+    const context = (result: unknown): string => (result as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+
+    it('appends the note on its own line', async () => {
+      const file = pdf();
+      const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', savings }), deps());
+      expect(context(result)).toBe(`distill converted b.pdf to Markdown to save tokens. Original file: ${file}.\n${savingsNote(savings)}`);
+    });
+
+    it('omits the note when disabled', async () => {
+      const file = pdf();
+      const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', savings }), deps({ savingsNote: false }));
+      expect(context(result)).toBe(`distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`);
+    });
+
+    it('omits the note when convert reports no savings', async () => {
+      const result = await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => ({ path: '/c.md' }), deps());
+      expect(context(result)).not.toContain('[distill]');
+    });
+  });
+
+  it('approves only together with a rewrite', async () => {
+    const result = (await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => ({ path: '/c.md' }), deps())) as {
       hookSpecificOutput: Record<string, unknown>;
     };
-    expect(result.hookSpecificOutput).not.toHaveProperty('permissionDecision');
+    expect(result.hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'b.png') }), async () => ({ path: '/c.md' }), deps())).toBeNull();
   });
 
   it('passes through reads with pages', async () => {
-    const convert = vi.fn(async () => '/c.md');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
     expect(await handleClaudePreToolUse(payload({ file_path: pdf(), pages: '1-3' }), convert, deps())).toBeNull();
     expect(convert).not.toHaveBeenCalled();
   });
 
   it('passes through images and other tools', async () => {
-    const convert = vi.fn(async () => '/c.md');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
     expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'b.png') }), convert, deps())).toBeNull();
     expect(await handleClaudePreToolUse(payload({ file_path: pdf() }, { tool_name: 'Bash' }), convert, deps())).toBeNull();
     expect(convert).not.toHaveBeenCalled();
@@ -76,7 +102,7 @@ describe('handleClaudePreToolUse', () => {
 
   it('resolves relative paths against cwd', async () => {
     const file = pdf('x.pdf');
-    const convert = vi.fn(async () => '/c.md');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
     await handleClaudePreToolUse(payload({ file_path: 'x.pdf' }), convert, deps());
     expect(convert).toHaveBeenCalledWith(file);
   });
@@ -89,7 +115,7 @@ describe('handleClaudePreToolUse', () => {
   });
 
   it('passes through garbage payloads', async () => {
-    const convert = vi.fn(async () => '/c.md');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
     for (const bad of [null, 'x', 42, {}, { tool_name: 'Read' }, { tool_name: 'Read', tool_input: { file_path: 3 } }]) {
       expect(await handleClaudePreToolUse(bad, convert, deps())).toBeNull();
     }
@@ -99,7 +125,7 @@ describe('handleClaudePreToolUse', () => {
   it('passes through a path outside the cwd', async () => {
     const outside = join(base, 'outside');
     mkdirSync(outside);
-    const convert = vi.fn(async () => '/c.md');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
     expect(await handleClaudePreToolUse(payload({ file_path: pdf('o.pdf', outside) }), convert, deps())).toBeNull();
     expect(await handleClaudePreToolUse(payload({ file_path: `${proj}/../outside/o.pdf` }), convert, deps())).toBeNull();
     expect(convert).not.toHaveBeenCalled();
@@ -108,7 +134,7 @@ describe('handleClaudePreToolUse', () => {
   it('does not treat a sibling with the cwd as a prefix as inside', async () => {
     const sibling = `${proj}-evil`;
     mkdirSync(sibling);
-    const convert = vi.fn(async () => '/c.md');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
     expect(await handleClaudePreToolUse(payload({ file_path: pdf('s.pdf', sibling) }), convert, deps())).toBeNull();
     expect(convert).not.toHaveBeenCalled();
   });
@@ -119,14 +145,14 @@ describe('handleClaudePreToolUse', () => {
     const target = pdf('o.pdf', outside);
     symlinkSync(target, join(proj, 'link.pdf'));
     symlinkSync(outside, join(proj, 'dir'));
-    const convert = vi.fn(async () => '/c.md');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
     expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'link.pdf') }), convert, deps())).toBeNull();
     expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'dir', 'o.pdf') }), convert, deps())).toBeNull();
     expect(convert).not.toHaveBeenCalled();
   });
 
   it('passes through a missing file', async () => {
-    const convert = vi.fn(async () => '/c.md');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
     expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'nope.pdf') }), convert, deps())).toBeNull();
     expect(convert).not.toHaveBeenCalled();
   });
@@ -142,7 +168,7 @@ describe('handleClaudePreToolUse', () => {
       const file = settingsFiles()[index];
       mkdirSync(join(file, '..'), { recursive: true });
       writeFileSync(file, JSON.stringify({ permissions: { deny: ['Bash(rm:*)', 'Read(./secrets/**)'] } }));
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
       expect(convert).toHaveBeenCalledTimes(1);
     });
@@ -154,7 +180,7 @@ describe('handleClaudePreToolUse', () => {
 
     it('converts when an unrelated deny rule exists', async () => {
       writeSettings(join(proj, '.claude', 'settings.json'), { deny: ['Read(./.env)'] });
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       const result = (await handleClaudePreToolUse(payload({ file_path: pdf('b.pdf') }), convert, deps())) as {
         hookSpecificOutput: { updatedInput: { file_path: string } };
       };
@@ -163,7 +189,7 @@ describe('handleClaudePreToolUse', () => {
 
     it('steps aside when a deny rule matches the file', async () => {
       writeSettings(join(proj, '.claude', 'settings.json'), { deny: ['Read(./secret.pdf)'] });
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf('secret.pdf') }), convert, deps())).toBeNull();
       expect(convert).not.toHaveBeenCalled();
     });
@@ -171,7 +197,7 @@ describe('handleClaudePreToolUse', () => {
     it('steps aside when an ask rule matches the file', async () => {
       writeSettings(join(proj, '.claude', 'settings.json'), { ask: ['Read(./secrets/**)'] });
       mkdirSync(join(proj, 'secrets'));
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf('a.pdf', join(proj, 'secrets')) }), convert, deps())).toBeNull();
       expect(convert).not.toHaveBeenCalled();
     });
@@ -181,21 +207,21 @@ describe('handleClaudePreToolUse', () => {
       mkdirSync(join(proj, 'secrets'));
       const real = pdf('real.pdf', join(proj, 'secrets'));
       symlinkSync(real, join(proj, 'link.pdf'));
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'link.pdf') }), convert, deps())).toBeNull();
       expect(convert).not.toHaveBeenCalled();
     });
 
     it('steps aside when the cache is denied', async () => {
       writeSettings(join(home, '.claude', 'settings.json'), { deny: ['Read(~/.cache/**)'] });
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
       expect(convert).not.toHaveBeenCalled();
     });
 
     it('steps aside on a user-level /-relative rule', async () => {
       writeSettings(join(home, '.claude', 'settings.json'), { deny: ['Read(/docs/**)'] });
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
       expect(convert).not.toHaveBeenCalled();
     });
@@ -204,7 +230,7 @@ describe('handleClaudePreToolUse', () => {
       const file = settingsFiles()[1];
       mkdirSync(join(file, '..'), { recursive: true });
       writeFileSync(file, '{ nope');
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).toBeNull();
     });
 
@@ -212,7 +238,7 @@ describe('handleClaudePreToolUse', () => {
       const file = settingsFiles()[0];
       mkdirSync(join(file, '..'), { recursive: true });
       writeFileSync(file, JSON.stringify({ permissions: { deny: ['Bash(rm:*)'] } }));
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
       expect(convert).toHaveBeenCalledTimes(1);
     });
@@ -222,7 +248,7 @@ describe('handleClaudePreToolUse', () => {
       mkdirSync(join(sub, 'private'), { recursive: true });
       mkdirSync(join(proj, '.claude'));
       writeFileSync(join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(./sub/private/**)'] } }));
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       const file = pdf('x.pdf', join(sub, 'private'));
       expect(await handleClaudePreToolUse(payload({ file_path: file }, { cwd: sub }), convert, deps())).toBeNull();
       expect(convert).not.toHaveBeenCalled();
@@ -231,7 +257,7 @@ describe('handleClaudePreToolUse', () => {
     it('converts when a Read ask rule does not cover the file', async () => {
       mkdirSync(join(proj, '.claude'));
       writeFileSync(join(proj, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { ask: ['Read(./docs/**)'] } }));
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
       expect(convert).toHaveBeenCalledTimes(1);
     });
@@ -239,7 +265,7 @@ describe('handleClaudePreToolUse', () => {
     it('passes through when a managed settings file denies Read', async () => {
       const managed = join(base, 'managed-settings.json');
       writeFileSync(managed, JSON.stringify({ permissions: { deny: ['Read(**/*.pdf)'] } }));
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ managedSettingsPaths: [managed] }))).toBeNull();
       expect(convert).not.toHaveBeenCalled();
     });
@@ -249,7 +275,7 @@ describe('handleClaudePreToolUse', () => {
       mkdirSync(sub);
       mkdirSync(join(proj, '.claude'));
       writeFileSync(join(proj, '.claude', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(./x/**)'] } }));
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf('y.pdf', sub) }, { cwd: sub }), convert, deps({ projectDir: proj }))).not.toBeNull();
     });
   });
@@ -261,7 +287,7 @@ describe('handleClaudePreToolUse', () => {
       mkdirSync(a);
       mkdirSync(b);
       const file = pdf('s.pdf', b);
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: file }, { cwd: a }), convert, deps({ projectDir: proj }))).not.toBeNull();
       expect(convert).toHaveBeenCalledWith(file);
     });
@@ -271,9 +297,53 @@ describe('handleClaudePreToolUse', () => {
       const outside = join(base, 'outside');
       mkdirSync(a);
       mkdirSync(outside);
-      const convert = vi.fn(async () => '/c.md');
+      const convert = vi.fn(async () => ({ path: '/c.md' }));
       expect(await handleClaudePreToolUse(payload({ file_path: pdf('o.pdf', outside) }, { cwd: a }), convert, deps({ projectDir: proj }))).toBeNull();
     });
+  });
+});
+
+describe('plugin mode', () => {
+  const ownHook = (command = 'distill-llm hook claude') => ({
+    hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command, timeout: 120 }] }] },
+  });
+  const write = (path: string, value: unknown) => {
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value));
+  };
+
+  it('defers when the user settings have the own hook', async () => {
+    write(join(home, '.claude', 'settings.json'), ownHook());
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ plugin: true }))).toBeNull();
+    expect(convert).not.toHaveBeenCalled();
+  });
+
+  it('defers when the project local settings have the own hook', async () => {
+    write(join(proj, '.claude', 'settings.local.json'), ownHook('npx -y distill-llm@0.3.0 hook claude'));
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ plugin: true }))).toBeNull();
+    expect(convert).not.toHaveBeenCalled();
+  });
+
+  it('converts when only unrelated hooks exist', async () => {
+    write(join(home, '.claude', 'settings.json'), ownHook('other-tool hook claude'));
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ plugin: true }))).not.toBeNull();
+    expect(convert).toHaveBeenCalled();
+  });
+
+  it('converts when the hooks section is malformed', async () => {
+    write(join(home, '.claude', 'settings.json'), { hooks: { PreToolUse: [null, 'x', { hooks: 'y' }, { hooks: [null, { command: 5 }] }] } });
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ plugin: true }))).not.toBeNull();
+  });
+
+  it('ignores settings hooks when not in plugin mode', async () => {
+    write(join(home, '.claude', 'settings.json'), ownHook());
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
+    expect(convert).toHaveBeenCalled();
   });
 });
 
