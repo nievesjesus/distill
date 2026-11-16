@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { claudeSkillMarkdown } from '../../src/hooks/claude-skill';
@@ -83,7 +83,7 @@ describe('launch.mjs', () => {
     const no = () => false;
     expect(npxCommand('/opt/node/bin/node', 'darwin', yes)).toEqual({
       command: '/opt/node/bin/node',
-      prefix: [join(dirname('/opt/node/bin/node'), '..', 'lib', 'node_modules', 'npm', 'bin', 'npx-cli.js')],
+      prefix: ['/opt/node/lib/node_modules/npm/bin/npx-cli.js'],
     });
     expect(npxCommand('/usr/bin/node', 'linux', yes).prefix[0]).toContain('npx-cli.js');
     const win = npxCommand('C:\\node\\node.exe', 'win32', yes);
