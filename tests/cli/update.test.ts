@@ -128,7 +128,8 @@ describe('update notice in convert', () => {
     const h = harness({ isTTY: true });
     await run(['convert', '--stdout', 'a.pdf'], convertDeps(h, fakeChecker(info())));
     expect(h.stdout).toEqual(['# a\n']);
-    expect(h.stderr).toEqual([]);
+    expect(h.stderr).toHaveLength(1);
+    expect(h.stderr[0]).toMatch(/^\[distill\] tokens saved/);
   });
 
   it('prints the notice on a TTY', async () => {

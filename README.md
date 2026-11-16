@@ -136,7 +136,7 @@ The hooks respect your permissions and never block a read:
 - Images and CSV files are left alone.
 - If anything fails (a missing file, a timeout, a password-protected PDF, a scan with no text), the agent reads the original file.
 
-Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session. Fresh conversions end the hook's context with a `[distill] tokens saved ≈ …` line (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
+Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session. Conversions, fresh or served from the cache, end the hook's context with a `[distill] tokens saved ≈ …` line (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), `distill-llm convert --stdout` prints the same line on stderr, and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
 
 ### CLI
 

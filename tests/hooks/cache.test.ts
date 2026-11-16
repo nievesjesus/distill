@@ -124,7 +124,55 @@ describe('convertCached', () => {
 
     expect(a.mdPath).toBe(b.mdPath);
     const entries = await readdir(join(cacheDir, 'out'));
-    expect(entries).toEqual([basename(a.mdPath)]);
+    expect(entries.sort()).toEqual([basename(a.mdPath), basename(a.mdPath).replace(/\.md$/, '.savings.json')]);
+  });
+
+  it('returns the stored savings on a cache hit', async () => {
+    const distiller = fakeDistiller(async () => ({ name: 'report.pdf', kind: 'PDF', pages: 2, markdown: '# T', tokens: { raw: 100, out: 40 } }) as never);
+    const first = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    const second = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+
+    expect(second.cached).toBe(true);
+    expect(first.savings).not.toBeNull();
+    expect(second.savings).toEqual(first.savings);
+  });
+
+  it('returns null savings on a hit when the sidecar is missing', async () => {
+    const distiller = fakeDistiller();
+    const first = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    await rm(first.mdPath.replace(/\.md$/, '.savings.json'));
+    const second = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+
+    expect(second.cached).toBe(true);
+    expect(second.savings).toBeNull();
+  });
+
+  it.each([
+    ['not json', '{nope'],
+    ['wrong shape', JSON.stringify({ baseline: 1, out: 1, saved: 0, percent: 0, basis: 'other' })],
+    ['non-numeric field', JSON.stringify({ baseline: '1', out: 1, saved: 0, percent: 0, basis: 'raw-text' })],
+  ])('returns null savings on a hit when the sidecar is %s', async (_label, content) => {
+    const distiller = fakeDistiller();
+    const first = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    await writeFile(first.mdPath.replace(/\.md$/, '.savings.json'), content);
+    const second = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+
+    expect(second.cached).toBe(true);
+    expect(second.savings).toBeNull();
+  });
+
+  it('still converts when the sidecar cannot be written', async () => {
+    const distiller = fakeDistiller();
+    const probe = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    const sidecar = probe.mdPath.replace(/\.md$/, '.savings.json');
+    await rm(probe.mdPath);
+    await rm(sidecar);
+    await mkdir(join(sidecar, 'blocker'), { recursive: true });
+    const result = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+
+    expect(result.cached).toBe(false);
+    expect(result.savings).not.toBeNull();
+    expect((await readdir(join(cacheDir, 'out'))).filter((entry) => entry.includes('.tmp-'))).toEqual([]);
   });
 
   it('does not call getDistiller on a cache hit', async () => {

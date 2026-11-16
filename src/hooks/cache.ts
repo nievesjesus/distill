@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { chmod, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BOOSTER_ORDER, DEFAULT_ACTIVE } from '../core/boosters/pipeline';
 import { type SavingsEstimate, estimateSavings } from '../core/savings';
@@ -39,6 +39,37 @@ async function cacheKey(version: string, liteparseVersion: string, path: string)
   return hash.digest('hex').slice(0, KEY_LENGTH);
 }
 
+function isSavingsEstimate(value: unknown): value is SavingsEstimate {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.baseline === 'number' &&
+    typeof v.out === 'number' &&
+    typeof v.saved === 'number' &&
+    typeof v.percent === 'number' &&
+    (v.basis === 'pdf-pages' || v.basis === 'raw-text')
+  );
+}
+
+async function readSavings(path: string): Promise<SavingsEstimate | null> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
+    return isSavingsEstimate(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSavings(path: string, savings: SavingsEstimate): Promise<void> {
+  const tmpPath = `${path}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`;
+  try {
+    await writeFile(tmpPath, JSON.stringify(savings), { mode: 0o600 });
+    await rename(tmpPath, path);
+  } catch {
+    await rm(tmpPath, { force: true }).catch(() => {});
+  }
+}
+
 async function isFile(path: string): Promise<boolean> {
   try {
     return (await stat(path)).isFile();
@@ -56,8 +87,9 @@ export async function convertCached(path: string, deps: CacheDeps): Promise<Cach
   const key = await cacheKey(deps.version, deps.liteparseVersion, path);
   const mdPath = join(outDir, `${key}.md`);
   const emptyPath = join(outDir, `${key}.empty`);
+  const savingsPath = join(outDir, `${key}.savings.json`);
 
-  if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true, savings: null };
+  if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true, savings: await readSavings(savingsPath) };
   if (await isFile(emptyPath)) throw new DistillError('parse_failed', EMPTY_MESSAGE);
 
   const distiller = await deps.getDistiller();
@@ -78,9 +110,11 @@ export async function convertCached(path: string, deps: CacheDeps): Promise<Cach
     await rename(tmpPath, mdPath);
   } catch (error) {
     await rm(tmpPath, { force: true });
-    if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true, savings: null };
+    if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true, savings: await readSavings(savingsPath) };
     throw error;
   }
 
-  return { mdPath, tokens: { raw: result.tokens.raw, out: result.tokens.out }, cached: false, savings: estimateSavings(result) };
+  const savings = estimateSavings(result);
+  await writeSavings(savingsPath, savings);
+  return { mdPath, tokens: { raw: result.tokens.raw, out: result.tokens.out }, cached: false, savings };
 }

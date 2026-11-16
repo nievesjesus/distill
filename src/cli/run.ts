@@ -313,7 +313,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--stdout', 'print the Markdown of a single file instead of writing it')
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
     .action(async (files: string[], options: ConvertOptions) => {
-      const code = await runConvert(files, options, { stdout, stderr, openDistiller });
+      const code = await runConvert(files, options, { stdout, stderr, openDistiller, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
       if (isTTY && !options.json && !options.stdout) await showNotice();
       if (code !== 0) exit(code);
     });
