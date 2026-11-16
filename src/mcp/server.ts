@@ -10,7 +10,7 @@ import { DistillError } from '../node/errors';
 
 const MAX_PATHS = 20;
 const SERVER_NAME = 'distill-llm';
-const DEFAULT_MAX_RESULT_TOKENS = 20000;
+const DEFAULT_MAX_RESULT_TOKENS = 10000;
 const CACHE_SIZE = 8;
 const CHARS_PER_TOKEN = 4;
 const PATH_HINT = "Absolute path, or relative to the server's working directory";
