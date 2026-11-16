@@ -472,9 +472,10 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   hook
     .command('claude')
     .description('Claude Code PreToolUse hook: reads JSON on stdin')
+    .option('--plugin', 'running from the Claude Code plugin')
     .allowExcessArguments()
     .allowUnknownOption()
-    .action(async () => {
+    .action(async (options: { plugin?: boolean }) => {
       let distiller: Distiller | null = null;
       const getDistiller = async (): Promise<Distiller> => (distiller ??= await openDistiller());
       try {
@@ -497,7 +498,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR });
+        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);

@@ -49,16 +49,19 @@ describe('handleClaudePreToolUse', () => {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         updatedInput: { file_path: '/cache/out.md', offset: 3, limit: 10 },
+        permissionDecision: 'allow',
+        permissionDecisionReason: 'distill: converted copy in its cache',
         additionalContext: `distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`,
       },
     });
   });
 
-  it('never sets a permission decision', async () => {
+  it('approves only together with a rewrite', async () => {
     const result = (await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => '/c.md', deps())) as {
       hookSpecificOutput: Record<string, unknown>;
     };
-    expect(result.hookSpecificOutput).not.toHaveProperty('permissionDecision');
+    expect(result.hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'b.png') }), async () => '/c.md', deps())).toBeNull();
   });
 
   it('passes through reads with pages', async () => {
@@ -274,6 +277,50 @@ describe('handleClaudePreToolUse', () => {
       const convert = vi.fn(async () => '/c.md');
       expect(await handleClaudePreToolUse(payload({ file_path: pdf('o.pdf', outside) }, { cwd: a }), convert, deps({ projectDir: proj }))).toBeNull();
     });
+  });
+});
+
+describe('plugin mode', () => {
+  const ownHook = (command = 'distill-llm hook claude') => ({
+    hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command, timeout: 120 }] }] },
+  });
+  const write = (path: string, value: unknown) => {
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value));
+  };
+
+  it('defers when the user settings have the own hook', async () => {
+    write(join(home, '.claude', 'settings.json'), ownHook());
+    const convert = vi.fn(async () => '/c.md');
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ plugin: true }))).toBeNull();
+    expect(convert).not.toHaveBeenCalled();
+  });
+
+  it('defers when the project local settings have the own hook', async () => {
+    write(join(proj, '.claude', 'settings.local.json'), ownHook('npx -y distill-llm@0.3.0 hook claude'));
+    const convert = vi.fn(async () => '/c.md');
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ plugin: true }))).toBeNull();
+    expect(convert).not.toHaveBeenCalled();
+  });
+
+  it('converts when only unrelated hooks exist', async () => {
+    write(join(home, '.claude', 'settings.json'), ownHook('other-tool hook claude'));
+    const convert = vi.fn(async () => '/c.md');
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ plugin: true }))).not.toBeNull();
+    expect(convert).toHaveBeenCalled();
+  });
+
+  it('converts when the hooks section is malformed', async () => {
+    write(join(home, '.claude', 'settings.json'), { hooks: { PreToolUse: [null, 'x', { hooks: 'y' }, { hooks: [null, { command: 5 }] }] } });
+    const convert = vi.fn(async () => '/c.md');
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ plugin: true }))).not.toBeNull();
+  });
+
+  it('ignores settings hooks when not in plugin mode', async () => {
+    write(join(home, '.claude', 'settings.json'), ownHook());
+    const convert = vi.fn(async () => '/c.md');
+    expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
+    expect(convert).toHaveBeenCalled();
   });
 });
 

@@ -23,7 +23,7 @@ function serialize(settings: Json): string {
   return `${JSON.stringify(settings, null, 2)}\n`;
 }
 
-function isOwnCommand(command: unknown): boolean {
+export function isOwnCommand(command: unknown): boolean {
   return typeof command === 'string' && command.includes('distill-llm') && /hook claude\s*$/.test(command);
 }
 
