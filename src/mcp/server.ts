@@ -66,7 +66,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       description: 'Convert a document (PDF, DOCX, PPTX, XLSX, ODF, image) to token-lean Markdown',
       inputSchema: { path: z.string().min(1).describe('Path of the file to convert'), boosters: boostersSchema, lingua: linguaSchema },
-      outputSchema: { markdown: z.string(), tokens: tokensSchema, pages: z.number(), kind: z.string(), savings: savingsSchema },
+      outputSchema: { markdown: z.string(), tokens: tokensSchema, pages: z.number(), kind: z.string(), savings: savingsSchema, note: z.string().optional() },
     },
     async (args) => {
       try {
@@ -76,7 +76,14 @@ export function createMcpServer(deps: McpDeps): McpServer {
         if (withNote) content.push({ type: 'text' as const, text: savingsNote(savings) });
         return {
           content,
-          structuredContent: { markdown: result.markdown, tokens: result.tokens, pages: result.pages, kind: result.kind, savings },
+          structuredContent: {
+            markdown: result.markdown,
+            tokens: result.tokens,
+            pages: result.pages,
+            kind: result.kind,
+            savings,
+            ...(withNote ? { note: savingsNote(savings) } : {}),
+          },
         };
       } catch (error) {
         const { code, message } = describeError(error);
@@ -102,6 +109,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
           ]),
         ),
         total: savingsSchema.nullable(),
+        note: z.string().optional(),
       },
     },
     async (args) => {
@@ -124,7 +132,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       const total = estimates.length > 0 ? sumSavings(estimates) : null;
       const content = [{ type: 'text' as const, text: sections.join('\n\n') }];
       if (withNote && total !== null) content.push({ type: 'text' as const, text: savingsNote(total) });
-      return { content, structuredContent: { results, total } };
+      return { content, structuredContent: { results, total, ...(withNote && total !== null ? { note: savingsNote(total) } : {}) } };
     },
   );
 

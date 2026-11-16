@@ -74,6 +74,7 @@ describe('createMcpServer', () => {
       pages: 2,
       kind: 'PDF',
       savings: SAVINGS,
+      note: savingsNote(SAVINGS),
     });
     expect(calls[0]?.path).toBe('/x/doc.pdf');
     expect(calls[0]?.opts).toEqual({ boosters: new Set(['dedupe', 'ws']), lingua: false });
@@ -116,6 +117,7 @@ describe('createMcpServer', () => {
         { path: '/x/good.pdf', markdown: '# good.pdf\n', tokens: { raw: 100, out: 60 }, savings: SAVINGS },
       ],
       total: SAVINGS,
+      note: savingsNote(SAVINGS),
     });
     const blocks = result.content as { text: string }[];
     expect(blocks).toHaveLength(2);
@@ -129,6 +131,7 @@ describe('createMcpServer', () => {
     const result = await client.callTool({ name: 'distill_file', arguments: { path: '/x/doc.pdf' } });
     expect(result.content).toEqual([{ type: 'text', text: '# doc.pdf\n' }]);
     expect((result.structuredContent as { savings: unknown }).savings).toEqual(SAVINGS);
+    expect(result.structuredContent).not.toHaveProperty('note');
   });
 
   it('distill_files sums the total in one note and respects the switch', async () => {
@@ -139,12 +142,15 @@ describe('createMcpServer', () => {
     expect((result.content as { text: string }[])[1]?.text).toBe(savingsNote(total));
     const quiet = await (await connect({ savingsNote: false })).callTool({ name: 'distill_files', arguments: { paths: ['/x/a.pdf'] } });
     expect(quiet.content as unknown[]).toHaveLength(1);
+    expect(quiet.structuredContent).not.toHaveProperty('note');
+    expect((result.structuredContent as { note: unknown }).note).toBe(savingsNote(total));
   });
 
   it('distill_files has a null total and no note when every file fails', async () => {
     const client = await connect();
     const result = await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/bad.pdf'] } });
     expect((result.structuredContent as { total: unknown }).total).toBeNull();
+    expect(result.structuredContent).not.toHaveProperty('note');
     expect(result.content as unknown[]).toHaveLength(1);
   });
 
