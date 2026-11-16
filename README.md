@@ -71,7 +71,7 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 
 ### MCP server
 
-Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`.
+Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`. It is listed in the official MCP registry as `io.github.nievesjesus/distill`.
 
 ```bash
 claude mcp add distill -- npx -y distill-llm mcp
@@ -106,6 +106,15 @@ distill-llm mcp --http --root ~/shared-docs --allowed-hosts distill.example.com
 
 4. Add `https://distill.example.com/mcp` as the connector URL in your client.
 </details>
+
+### Claude Code plugin
+
+```bash
+claude plugin marketplace add nievesjesus/distill
+claude plugin install distill@distill
+```
+
+The plugin adds the Read hook for PDF and Office files, the `distill` MCP server and the Office skill, with no other setup. It needs Node.js 22.12 or newer: it runs `npx distill-llm@<plugin version>`, so the first conversion downloads the package. Do not combine it with `hooks install --claude`: if both exist the plugin steps aside and the settings hook does the work. Remove one of them with `distill-llm hooks uninstall --claude`.
 
 ### Hooks: make your agent read Markdown instead of the binary
 
