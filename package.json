@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "description": "Turn documents into token-lean Markdown using LiteParse",
   "author": "Jesus Nieves <yo@nievesjesus.com>",
+  "mcpName": "io.github.nievesjesus/distill",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -39,6 +40,7 @@
   ],
   "scripts": {
     "test": "vitest run",
+    "version": "node scripts/sync-versions.mjs",
     "typecheck": "tsc --noEmit",
     "build": "vite build --config web/vite.config.ts && tsup",
     "prepack": "npm run build",

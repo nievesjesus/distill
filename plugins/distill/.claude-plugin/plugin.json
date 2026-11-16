@@ -8,5 +8,13 @@
   "homepage": "https://nievesjesus.github.io/distill/",
   "repository": "https://github.com/nievesjesus/distill",
   "license": "Apache-2.0",
-  "keywords": ["pdf", "docx", "xlsx", "pptx", "markdown", "tokens", "mcp"]
+  "keywords": [
+    "pdf",
+    "docx",
+    "xlsx",
+    "pptx",
+    "markdown",
+    "tokens",
+    "mcp"
+  ]
 }

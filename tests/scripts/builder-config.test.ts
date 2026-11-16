@@ -134,3 +134,53 @@ describe("release automation workflows", () => {
     expect(text.match(/\^v\[0-9\]\+/g)).toHaveLength(2);
   });
 });
+
+describe("mcp registry workflow", () => {
+  const wf = () => read(".github/workflows/mcp-registry.yml");
+  const COSIGN = "756fe2d284c7292c4e9b62c8a28f1e5629c59532";
+
+  it("runs hourly and on demand without overlapping runs", () => {
+    const text = wf();
+    expect(text).toContain("workflow_dispatch:");
+    expect(text).toContain("cron: '17 * * * *'");
+    expect(text).toContain("group: mcp-registry");
+    expect(text).toContain("cancel-in-progress: false");
+  });
+
+  it("asks for the OIDC token and nothing else", () => {
+    const text = wf();
+    expect(text).toMatch(/permissions:\n\s+contents: read\n\s+id-token: write/);
+    expect(text).not.toMatch(/write-all|contents: write/);
+  });
+
+  it("pins cosign and verifies the publisher before logging in", () => {
+    const text = wf();
+    expect(text).toContain(`sigstore/cosign-installer@${COSIGN}`);
+    const verify = text.indexOf("cosign verify-blob");
+    expect(verify).toBeGreaterThan(-1);
+    expect(verify).toBeLessThan(text.indexOf("login github-oidc"));
+    expect(text).toContain("--certificate-oidc-issuer https://token.actions.githubusercontent.com");
+    expect(text).toContain("v1.8.9");
+  });
+
+  it("waits for npm and skips versions already listed before publishing", () => {
+    const text = wf();
+    const npmView = text.indexOf("npm view");
+    const lookup = text.indexOf("registry.modelcontextprotocol.io/v0.1/servers/");
+    const publish = text.indexOf("./mcp-publisher publish");
+    expect(npmView).toBeGreaterThan(-1);
+    expect(npmView).toBeLessThan(lookup);
+    expect(lookup).toBeLessThan(publish);
+    expect(text).toContain("mcpName");
+    expect(text).toContain("waiting for npm");
+    expect(text).toContain("already listed");
+  });
+
+  it("never interpolates expressions inside run scripts", () => {
+    const interpolated = wf()
+      .split(/\n\s+- name:/)
+      .map((step) => (step.includes("run: |") ? step.split("run: |")[1] : ""))
+      .filter((script) => script.includes("${{"));
+    expect(interpolated).toEqual([]);
+  });
+});

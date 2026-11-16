@@ -1,0 +1,82 @@
+name: MCP registry
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+concurrency:
+  group: mcp-registry
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PUBLISHER_VERSION: v1.8.9
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Read the release to list
+        id: release
+        run: |
+          {
+            echo "version=$(node -p "require('./package.json').version")"
+            echo "name=$(node -p "require('./server.json').name")"
+          } >> "$GITHUB_OUTPUT"
+      - name: Check that npm carries mcpName for this version
+        id: npm
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          NAME: ${{ steps.release.outputs.name }}
+        run: |
+          published=$(npm view "distill-llm@$VERSION" mcpName 2>/dev/null || true)
+          if [ "$published" = "$NAME" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "waiting for npm: distill-llm@$VERSION is not public with mcpName $NAME yet" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Check whether the registry already lists this version
+        id: registry
+        if: steps.npm.outputs.ready == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          NAME: ${{ steps.release.outputs.name }}
+        run: |
+          encoded=$(printf '%s' "$NAME" | sed 's#/#%2F#g')
+          status=$(curl -s -o /dev/null -w '%{http_code}' "https://registry.modelcontextprotocol.io/v0.1/servers/$encoded/versions/$VERSION")
+          if [ "$status" = "200" ]; then
+            echo "listed=true" >> "$GITHUB_OUTPUT"
+            echo "already listed: $NAME $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "listed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: cosign-installer v4.1.3
+        if: steps.npm.outputs.ready == 'true' && steps.registry.outputs.listed == 'false'
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532
+      - name: Download and verify mcp-publisher
+        if: steps.npm.outputs.ready == 'true' && steps.registry.outputs.listed == 'false'
+        run: |
+          base="https://github.com/modelcontextprotocol/registry/releases/download/$PUBLISHER_VERSION"
+          curl -fsSL -o mcp-publisher_linux_amd64.tar.gz "$base/mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSL -o mcp-publisher_linux_amd64.tar.gz.sigstore.json "$base/mcp-publisher_linux_amd64.tar.gz.sigstore.json"
+          cosign verify-blob mcp-publisher_linux_amd64.tar.gz \
+            --bundle mcp-publisher_linux_amd64.tar.gz.sigstore.json \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/$PUBLISHER_VERSION" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          tar -xzf mcp-publisher_linux_amd64.tar.gz mcp-publisher
+      - name: Publish to the MCP registry
+        if: steps.npm.outputs.ready == 'true' && steps.registry.outputs.listed == 'false'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          NAME: ${{ steps.release.outputs.name }}
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+          echo "published $NAME $VERSION" >> "$GITHUB_STEP_SUMMARY"
