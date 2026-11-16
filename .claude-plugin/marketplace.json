@@ -1,0 +1,16 @@
+{
+  "name": "distill",
+  "owner": {
+    "name": "Jesus Nieves"
+  },
+  "metadata": {
+    "description": "distill for Claude Code: PDF and Office files as token-lean Markdown"
+  },
+  "plugins": [
+    {
+      "name": "distill",
+      "source": "./plugins/distill",
+      "description": "Reads PDF and Office files as Markdown, adds the distill MCP server and an Office skill"
+    }
+  ]
+}
