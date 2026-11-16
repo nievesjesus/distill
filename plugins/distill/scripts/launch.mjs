@@ -21,6 +21,10 @@ export function npxCommand(execPath, platform, exists) {
   return windows ? { command: 'npx.cmd', prefix: [], unsupported: true } : { command: 'npx', prefix: [] };
 }
 
+export function npxArgs(prefix, spec, args) {
+  return [...prefix, '-y', '--package', spec, 'distill-llm', ...args];
+}
+
 export function nodeTooOld(version) {
   const [major, minor] = version.split('.').map(Number);
   return major < 22 || (major === 22 && minor < 12);
@@ -37,7 +41,7 @@ export function launch(args, { stdio, onSpawn } = {}) {
     return Promise.resolve(1);
   }
   return new Promise((resolve) => {
-    const child = spawn(npx.command, [...npx.prefix, '-y', packageSpec(process.env, pluginRoot), ...args], { stdio, windowsHide: true });
+    const child = spawn(npx.command, npxArgs(npx.prefix, packageSpec(process.env, pluginRoot), args), { stdio, windowsHide: true });
     child.on('error', (error) => {
       process.stderr.write(`distill failed to start: ${error.message}\n`);
       resolve(1);

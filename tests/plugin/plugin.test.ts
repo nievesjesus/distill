@@ -93,6 +93,18 @@ describe('launch.mjs', () => {
     expect(npxCommand('C:\\node\\node.exe', 'win32', no)).toEqual({ command: 'npx.cmd', prefix: [], unsupported: true });
   });
 
+  it('npxArgs installs the spec and runs the distill-llm bin', async () => {
+    const { npxArgs } = await load('launch.mjs');
+    expect(npxArgs([], 'distill-llm@1.2.3', ['mcp', '--x'])).toEqual(['-y', '--package', 'distill-llm@1.2.3', 'distill-llm', 'mcp', '--x']);
+    expect(npxArgs(['/n/npx-cli.js'], '/tmp/distill-llm-1.2.3.tgz', [])).toEqual([
+      '/n/npx-cli.js',
+      '-y',
+      '--package',
+      '/tmp/distill-llm-1.2.3.tgz',
+      'distill-llm',
+    ]);
+  });
+
   it('nodeTooOld compares against 22.12.0', async () => {
     const { nodeTooOld } = await load('launch.mjs');
     expect(nodeTooOld('22.11.9')).toBe(true);

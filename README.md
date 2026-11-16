@@ -71,7 +71,7 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 
 ### MCP server
 
-Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`. It is listed in the official MCP registry as `io.github.nievesjesus/distill`.
+Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`. From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`.
 
 ```bash
 claude mcp add distill -- npx -y distill-llm mcp
