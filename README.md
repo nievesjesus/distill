@@ -73,6 +73,8 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 
 Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`. From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`. Results end with a `[distill] tokens saved ≈ …` line telling the model how many tokens distill saved (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
 
+Results are capped at 20,000 tokens (`DISTILL_MCP_MAX_TOKENS` changes it) so they fit an agent's tool-result limit. A larger document comes back one page at a time: pass the `nextOffset` from the previous `distill_file` result as `offset` to continue, and `distill_files` returns what fits and tells the model which files to request on their own.
+
 ```bash
 claude mcp add distill -- npx -y distill-llm mcp
 ```

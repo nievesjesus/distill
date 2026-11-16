@@ -389,8 +389,15 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         return;
       }
       const { createMcpServer } = await import('../mcp/server');
+      const maxResultTokens = /^\d+$/.test(env.DISTILL_MCP_MAX_TOKENS ?? '') && Number(env.DISTILL_MCP_MAX_TOKENS) > 0 ? Number(env.DISTILL_MCP_MAX_TOKENS) : undefined;
       const build = (resolvePath: (path: string) => Promise<string>) => () =>
-        createMcpServer({ distiller, health: () => distiller.health(), resolvePath, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
+        createMcpServer({
+          distiller,
+          health: () => distiller.health(),
+          resolvePath,
+          savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
+          ...(maxResultTokens === undefined ? {} : { maxResultTokens }),
+        });
 
       if (!options.http) {
         await connectStdio(build(cwdResolver(cwd))(), () => {
