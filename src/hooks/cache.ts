@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { chmod, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BOOSTER_ORDER, DEFAULT_ACTIVE } from '../core/boosters/pipeline';
+import { type SavingsEstimate, estimateSavings } from '../core/savings';
 import type { Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
 import { DEFAULT_MAX_BYTES } from '../node/limits';
@@ -19,6 +20,7 @@ export interface CachedConversion {
   mdPath: string;
   tokens: { raw: number; out: number } | null;
   cached: boolean;
+  savings: SavingsEstimate | null;
 }
 
 const KEY_LENGTH = 32;
@@ -55,7 +57,7 @@ export async function convertCached(path: string, deps: CacheDeps): Promise<Cach
   const mdPath = join(outDir, `${key}.md`);
   const emptyPath = join(outDir, `${key}.empty`);
 
-  if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true };
+  if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true, savings: null };
   if (await isFile(emptyPath)) throw new DistillError('parse_failed', EMPTY_MESSAGE);
 
   const distiller = await deps.getDistiller();
@@ -76,9 +78,9 @@ export async function convertCached(path: string, deps: CacheDeps): Promise<Cach
     await rename(tmpPath, mdPath);
   } catch (error) {
     await rm(tmpPath, { force: true });
-    if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true };
+    if (await isFile(mdPath)) return { mdPath, tokens: null, cached: true, savings: null };
     throw error;
   }
 
-  return { mdPath, tokens: { raw: result.tokens.raw, out: result.tokens.out }, cached: false };
+  return { mdPath, tokens: { raw: result.tokens.raw, out: result.tokens.out }, cached: false, savings: estimateSavings(result) };
 }

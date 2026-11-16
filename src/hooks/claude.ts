@@ -1,5 +1,6 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { type SavingsEstimate, savingsNote } from '../core/savings';
 import { isInside } from '../node/inside';
 import { isOwnCommand } from './install-claude';
 import { type MatchContext, type ReadRule, parseReadRule, ruleMayMatch } from './read-rules';
@@ -11,6 +12,7 @@ export interface ClaudeHookDeps {
   managedSettingsPaths?: string[];
   platform?: NodeJS.Platform;
   plugin?: boolean;
+  savingsNote?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -113,7 +115,7 @@ async function realpathOrNull(path: string | undefined): Promise<string | null> 
 
 export async function handleClaudePreToolUse(
   payload: unknown,
-  convert: (absPath: string) => Promise<string>,
+  convert: (absPath: string) => Promise<{ path: string; savings?: SavingsEstimate }>,
   deps: ClaudeHookDeps,
 ): Promise<object | null> {
   try {
@@ -130,14 +132,15 @@ export async function handleClaudePreToolUse(
     const files = settingsFiles(realCwd, realProject, deps);
     if (await anyReadRestriction(files, candidates, ctx)) return null;
     if (deps.plugin === true && (await anyOwnHook(files))) return null;
-    const mdPath = await convert(realOriginal);
+    const converted = await convert(realOriginal);
+    const note = converted.savings !== undefined && deps.savingsNote !== false ? `\n${savingsNote(converted.savings)}` : '';
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        updatedInput: { ...toolInput, file_path: mdPath },
+        updatedInput: { ...toolInput, file_path: converted.path },
         permissionDecision: 'allow',
         permissionDecisionReason: 'distill: converted copy in its cache',
-        additionalContext: `distill converted ${basename(original)} to Markdown to save tokens. Original file: ${original}.`,
+        additionalContext: `distill converted ${basename(original)} to Markdown to save tokens. Original file: ${original}.${note}`,
       },
     };
   } catch {

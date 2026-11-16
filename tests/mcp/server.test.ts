@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Health } from '../../src/core/types';
 import type { Distiller } from '../../src/node/distill';
 import { DistillError } from '../../src/node/errors';
+import { estimateSavings, savingsNote } from '../../src/core/savings';
 import { createMcpServer } from '../../src/mcp/server';
 
 const HEALTH: Health = {
@@ -27,13 +28,15 @@ function fakeDistiller(calls: { path: string; opts: unknown }[] = []): Distiller
   };
 }
 
+const SAVINGS = estimateSavings({ kind: 'PDF', pages: 2, tokens: { raw: 100, out: 60 } });
 const clients: Client[] = [];
 
-async function connect(deps: { distiller?: Distiller; resolvePath?: (p: string) => Promise<string> } = {}) {
+async function connect(deps: { distiller?: Distiller; resolvePath?: (p: string) => Promise<string>; savingsNote?: boolean } = {}) {
   const server = createMcpServer({
     distiller: deps.distiller ?? fakeDistiller(),
     health: () => HEALTH,
     resolvePath: deps.resolvePath ?? (async (p) => p),
+    ...(deps.savingsNote === undefined ? {} : { savingsNote: deps.savingsNote }),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test', version: '0.0.0' });
@@ -61,12 +64,16 @@ describe('createMcpServer', () => {
       arguments: { path: '/x/doc.pdf', boosters: ['dedupe', 'ws'], lingua: false },
     });
     expect(result.isError).toBeFalsy();
-    expect(result.content).toEqual([{ type: 'text', text: '# doc.pdf\n' }]);
+    expect(result.content).toEqual([
+      { type: 'text', text: '# doc.pdf\n' },
+      { type: 'text', text: savingsNote(SAVINGS) },
+    ]);
     expect(result.structuredContent).toEqual({
       markdown: '# doc.pdf\n',
       tokens: { raw: 100, out: 60 },
       pages: 2,
       kind: 'PDF',
+      savings: SAVINGS,
     });
     expect(calls[0]?.path).toBe('/x/doc.pdf');
     expect(calls[0]?.opts).toEqual({ boosters: new Set(['dedupe', 'ws']), lingua: false });
@@ -106,12 +113,39 @@ describe('createMcpServer', () => {
     expect(result.structuredContent).toEqual({
       results: [
         { path: '/x/bad.pdf', error: { code: 'parse_failed', message: 'broken file' } },
-        { path: '/x/good.pdf', markdown: '# good.pdf\n', tokens: { raw: 100, out: 60 } },
+        { path: '/x/good.pdf', markdown: '# good.pdf\n', tokens: { raw: 100, out: 60 }, savings: SAVINGS },
       ],
+      total: SAVINGS,
     });
-    const text = (result.content as { text: string }[])[0]?.text ?? '';
-    expect(text).toContain('# good.pdf');
-    expect(text).toContain('parse_failed: broken file');
+    const blocks = result.content as { text: string }[];
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]?.text).toContain('# good.pdf');
+    expect(blocks[0]?.text).toContain('parse_failed: broken file');
+    expect(blocks[1]?.text).toBe(savingsNote(SAVINGS));
+  });
+
+  it('distill_file omits the note when disabled but keeps structured savings', async () => {
+    const client = await connect({ savingsNote: false });
+    const result = await client.callTool({ name: 'distill_file', arguments: { path: '/x/doc.pdf' } });
+    expect(result.content).toEqual([{ type: 'text', text: '# doc.pdf\n' }]);
+    expect((result.structuredContent as { savings: unknown }).savings).toEqual(SAVINGS);
+  });
+
+  it('distill_files sums the total in one note and respects the switch', async () => {
+    const client = await connect();
+    const result = await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/a.pdf', '/x/b.pdf'] } });
+    const total = estimateSavings({ kind: 'PDF', pages: 4, tokens: { raw: 200, out: 120 } });
+    expect((result.structuredContent as { total: unknown }).total).toEqual(total);
+    expect((result.content as { text: string }[])[1]?.text).toBe(savingsNote(total));
+    const quiet = await (await connect({ savingsNote: false })).callTool({ name: 'distill_files', arguments: { paths: ['/x/a.pdf'] } });
+    expect(quiet.content as unknown[]).toHaveLength(1);
+  });
+
+  it('distill_files has a null total and no note when every file fails', async () => {
+    const client = await connect();
+    const result = await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/bad.pdf'] } });
+    expect((result.structuredContent as { total: unknown }).total).toBeNull();
+    expect(result.content as unknown[]).toHaveLength(1);
   });
 
   it('distill_files caps the number of paths at 20', async () => {

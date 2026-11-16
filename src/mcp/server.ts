@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { BOOSTER_ORDER } from '../core/boosters/pipeline';
+import { type SavingsEstimate, estimateSavings, savingsNote, sumSavings } from '../core/savings';
 import type { Health, LocalBoosterId } from '../core/types';
 import type { DistillOptions, Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
@@ -12,6 +13,13 @@ const boostersSchema = z.array(z.enum(BOOSTER_ORDER as [LocalBoosterId, ...Local
 const linguaSchema = z.boolean().optional().describe('Compress further with LLMLingua-2 when installed');
 
 const tokensSchema = z.object({ raw: z.number(), out: z.number() });
+const savingsSchema = z.object({
+  baseline: z.number(),
+  out: z.number(),
+  saved: z.number(),
+  percent: z.number(),
+  basis: z.enum(['pdf-pages', 'raw-text']),
+});
 const errorSchema = z.object({ code: z.string(), message: z.string() });
 
 const linguaStatusSchema = z.object({
@@ -29,6 +37,7 @@ export interface McpDeps {
   distiller: Distiller;
   health: () => Health;
   resolvePath: (path: string) => Promise<string>;
+  savingsNote?: boolean;
 }
 
 function toOptions(args: { boosters?: LocalBoosterId[]; lingua?: boolean }): DistillOptions {
@@ -45,6 +54,7 @@ function describeError(error: unknown): { code: string; message: string } {
 
 export function createMcpServer(deps: McpDeps): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: deps.health().version });
+  const withNote = deps.savingsNote !== false;
 
   async function distillOne(path: string, args: { boosters?: LocalBoosterId[]; lingua?: boolean }) {
     const resolved = await deps.resolvePath(path);
@@ -56,14 +66,17 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       description: 'Convert a document (PDF, DOCX, PPTX, XLSX, ODF, image) to token-lean Markdown',
       inputSchema: { path: z.string().min(1).describe('Path of the file to convert'), boosters: boostersSchema, lingua: linguaSchema },
-      outputSchema: { markdown: z.string(), tokens: tokensSchema, pages: z.number(), kind: z.string() },
+      outputSchema: { markdown: z.string(), tokens: tokensSchema, pages: z.number(), kind: z.string(), savings: savingsSchema },
     },
     async (args) => {
       try {
         const result = await distillOne(args.path, args);
+        const savings = estimateSavings(result);
+        const content = [{ type: 'text' as const, text: result.markdown }];
+        if (withNote) content.push({ type: 'text' as const, text: savingsNote(savings) });
         return {
-          content: [{ type: 'text' as const, text: result.markdown }],
-          structuredContent: { markdown: result.markdown, tokens: result.tokens, pages: result.pages, kind: result.kind },
+          content,
+          structuredContent: { markdown: result.markdown, tokens: result.tokens, pages: result.pages, kind: result.kind, savings },
         };
       } catch (error) {
         const { code, message } = describeError(error);
@@ -84,19 +97,23 @@ export function createMcpServer(deps: McpDeps): McpServer {
       outputSchema: {
         results: z.array(
           z.union([
-            z.object({ path: z.string(), markdown: z.string(), tokens: tokensSchema }),
+            z.object({ path: z.string(), markdown: z.string(), tokens: tokensSchema, savings: savingsSchema }),
             z.object({ path: z.string(), error: errorSchema }),
           ]),
         ),
+        total: savingsSchema.nullable(),
       },
     },
     async (args) => {
-      const results: ({ path: string; markdown: string; tokens: { raw: number; out: number } } | { path: string; error: { code: string; message: string } })[] = [];
+      const results: ({ path: string; markdown: string; tokens: { raw: number; out: number }; savings: SavingsEstimate } | { path: string; error: { code: string; message: string } })[] = [];
       const sections: string[] = [];
+      const estimates: SavingsEstimate[] = [];
       for (const path of args.paths) {
         try {
           const result = await distillOne(path, args);
-          results.push({ path, markdown: result.markdown, tokens: result.tokens });
+          const savings = estimateSavings(result);
+          estimates.push(savings);
+          results.push({ path, markdown: result.markdown, tokens: result.tokens, savings });
           sections.push(`# ${result.name}\n\n${result.markdown}`);
         } catch (error) {
           const failure = describeError(error);
@@ -104,7 +121,10 @@ export function createMcpServer(deps: McpDeps): McpServer {
           sections.push(`# ${path.split(/[\\/]/).pop() ?? path}\n\n${failure.code}: ${failure.message}`);
         }
       }
-      return { content: [{ type: 'text' as const, text: sections.join('\n\n') }], structuredContent: { results } };
+      const total = estimates.length > 0 ? sumSavings(estimates) : null;
+      const content = [{ type: 'text' as const, text: sections.join('\n\n') }];
+      if (withNote && total !== null) content.push({ type: 'text' as const, text: savingsNote(total) });
+      return { content, structuredContent: { results, total } };
     },
   );
 

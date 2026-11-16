@@ -390,7 +390,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       }
       const { createMcpServer } = await import('../mcp/server');
       const build = (resolvePath: (path: string) => Promise<string>) => () =>
-        createMcpServer({ distiller, health: () => distiller.health(), resolvePath });
+        createMcpServer({ distiller, health: () => distiller.health(), resolvePath, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
 
       if (!options.http) {
         await connectStdio(build(cwdResolver(cwd))(), () => {
@@ -461,13 +461,13 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         ? error.message
         : String(error);
 
-  const convertViaCache = async (getDistiller: () => Promise<Distiller>, absPath: string): Promise<string> =>
-    (await convertCached(absPath, {
+  const convertViaCache = (getDistiller: () => Promise<Distiller>, absPath: string) =>
+    convertCached(absPath, {
       getDistiller,
       cacheDir,
       version: readVersion(),
       liteparseVersion: readLiteparseVersion(),
-    })).mdPath;
+    });
 
   hook
     .command('claude')
@@ -493,12 +493,13 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         }
         const result = await handleClaudePreToolUse(payload, async (absPath) => {
           try {
-            return await convertViaCache(getDistiller, absPath);
+            const converted = await convertViaCache(getDistiller, absPath);
+            return converted.savings === null ? { path: converted.mdPath } : { path: converted.mdPath, savings: converted.savings };
           } catch (error) {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true });
+        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
@@ -521,7 +522,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       const getDistiller = async (): Promise<Distiller> => (distiller ??= await openDistiller());
       try {
         const absPath = isAbsolute(file) ? file : resolve(cwd, file);
-        const path = await convertViaCache(getDistiller, absPath);
+        const { mdPath: path } = await convertViaCache(getDistiller, absPath);
         stdout(JSON.stringify({ path }));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);

@@ -71,7 +71,7 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 
 ### MCP server
 
-Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`. From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`.
+Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`. From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`. Results end with a `[distill] tokens saved ≈ …` line telling the model how many tokens distill saved (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
 
 ```bash
 claude mcp add distill -- npx -y distill-llm mcp
@@ -136,7 +136,7 @@ The hooks respect your permissions and never block a read:
 - Images and CSV files are left alone.
 - If anything fails (a missing file, a timeout, a password-protected PDF, a scan with no text), the agent reads the original file.
 
-Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session.
+Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session. Fresh conversions end the hook's context with a `[distill] tokens saved ≈ …` line (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
 
 ### CLI
 
