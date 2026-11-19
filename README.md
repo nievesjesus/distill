@@ -159,7 +159,7 @@ distill-llm agents uninstall --codex --cursor
 | Agent | What `agents install` sets up | Read hook |
 |---|---|---|
 | `--codex` (Codex CLI, also the ChatGPT desktop app) | `codex mcp add distill -- distill-llm mcp`, plus the skill | no: Codex has no Read tool |
-| `--gemini` | `gemini mcp add -s user --timeout 60000 distill distill-llm mcp` (`-s project` with `--project`), plus the skill | no |
+| `--gemini` (configuration only, not run) | `gemini mcp add -s user --timeout 60000 distill distill-llm mcp` (`-s project` with `--project`), plus the skill | no |
 | `--cursor` | `mcpServers.distill` in `~/.cursor/mcp.json` (`.cursor/mcp.json` with `--project`), plus the skill | no |
 | `--opencode` | `mcp.distill` in `~/.config/opencode/opencode.json` on OpenCode 1.x, the read plugin from `hooks install --opencode`, plus the skill; on 2.x it prints the config to add by hand | yes (plugin) |
 | `--claude-desktop` | `mcpServers.distill` in `claude_desktop_config.json`; restart Claude Desktop afterwards | no |
@@ -190,6 +190,16 @@ When an agent's CLI is not installed, or a config file is not plain JSON, the co
 - **ChatGPT on the web** only talks to remote MCP servers. OpenAI's Secure MCP Tunnel (`tunnel-client`, needs a Platform organization) can reach a local one: start it with `--mcp-command "distill-llm mcp"`. Paths then resolve on the machine that runs the tunnel, not on your laptop, so keep the documents there. See also the HTTP notes in [MCP server](#mcp-server).
 
 Hermes and OpenClaw support is configuration only: the commands above (including `hermes mcp remove` and `openclaw mcp unset`) match their CLI documentation but have not been run against those agents. On Windows, an agent CLI that is a `.cmd` shim (or fails to start) is not run for you: the installer prints the exact command to run yourself.
+
+#### Verified
+
+Each run was headless, in a fresh project, after `distill-llm agents install --project`, with one PDF and one DOCX (2026-11-19).
+
+- **OpenCode 1.2.27:** answered from both files through the distill MCP server (`distill_files`), savings note included. The read plugin was verified separately on OpenCode 1.2.27, 1.19.6 and 2.3.2.
+- **Codex CLI 0.162:** answered from both files through the `distill-documents` skill (`distill-llm convert --stdout`), inside its workspace-write sandbox.
+- **Gemini CLI 0.67:** configuration written, not run. Google no longer serves Gemini CLI to individual accounts (it asks to move to Antigravity).
+- **Antigravity CLI (`agy`) 1.2:** not supported yet. It does not load the project skill, so it read the files another way.
+- **Cursor, Hermes Agent and OpenClaw:** configuration only, not run yet.
 
 ### CLI
 
