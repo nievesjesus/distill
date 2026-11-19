@@ -76,6 +76,14 @@ describe('fillers in English', () => {
     expect(one('We left, um.', 'en')).toBe('We left.');
   });
 
+  it('never leaves orphan punctuation behind', () => {
+    expect(one('Ah! Great news.', 'en')).toBe('Ah! Great news.');
+    expect(one('Yes. Ah! Great.', 'en')).toBe('Yes. Ah! Great.');
+    expect(one('Oh, ah well; ah.', 'en')).toBe('Oh, well; ah.');
+    expect(one('What? Ah?', 'en')).toBe('What? Ah?');
+    expect(one('Fine; um. Then', 'en')).toBe('Fine; um. Then');
+  });
+
   it('keeps you know and I mean unless they sit between commas', () => {
     expect(one('It was, you know, fine', 'en')).toBe('It was, fine');
     expect(one('It was, I mean, fine', 'en')).toBe('It was, fine');

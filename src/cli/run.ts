@@ -30,6 +30,8 @@ import { readLiteparseVersion } from '../node/versions';
 import { findPackageRoot } from '../node/lingua';
 import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
 import type { UpdateChecker } from '../node/update-check';
+import { detectKind } from '../core/kind';
+import { createMediaGate } from '../node/asr/gate';
 import { cacheDirFromEnv } from '../node/cache-dir';
 import { ASR_MODELS_BYTES, ASR_RUNTIME_APPROX_BYTES, createAsrInstaller, getAsrStatus } from '../node/asr-install';
 import type { AsrInstaller, AsrProgress } from '../node/asr-install';
@@ -706,7 +708,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, cacheDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), asrInstalled: () => getAsrStatus({ cacheDir, env }).installed, recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
+        }, { homeDir, cacheDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), asrInstalled: () => getAsrStatus({ cacheDir, env }).installed, mediaGate: createMediaGate({ cacheDir, env }), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
@@ -729,6 +731,11 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       const getDistiller = async (): Promise<Distiller> => (distiller ??= await openDistiller());
       try {
         const absPath = isAbsolute(file) ? file : resolve(cwd, file);
+        const mediaKind = detectKind(absPath);
+        if ((mediaKind === 'AUDIO' || mediaKind === 'VIDEO') && (await createMediaGate({ cacheDir, env })(absPath)) !== 'convert') {
+          exit(1);
+          return;
+        }
         const { mdPath: path } = await convertViaCache(getDistiller, absPath);
         stdout(JSON.stringify({ path }));
       } catch (error) {

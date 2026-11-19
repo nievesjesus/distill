@@ -107,7 +107,7 @@ function probeDuration(ffmpeg: string, input: string, platform: NodeJS.Platform)
   });
 }
 
-async function knownDuration(input: string, ffmpeg: string | null): Promise<number | undefined> {
+export async function knownDuration(input: string, ffmpeg: string | null): Promise<number | undefined> {
   const wav = await readWavInfo(input).catch(() => undefined);
   if (wav) return wavDuration(wav);
   return ffmpeg ? probeDuration(ffmpeg, input, process.platform) : undefined;
@@ -214,8 +214,13 @@ function runWorker(
       const how = killSignal ? `was killed by ${killSignal}` : `exited with code ${code}`;
       reject(new AsrError('asr_failed', `The speech worker ${how}${duration === undefined && code === 0 ? ' without finishing' : ''}${detail ? `: ${detail}` : ''}`));
     });
-    child.stdin.end(JSON.stringify(request));
+    child.stdin.write(`${JSON.stringify(request)}\n`);
+    child.once('close', () => child.stdin.destroy());
   });
+}
+
+export async function cachedTranscript(input: string, cacheDir: string): Promise<{ segments: AsrSegment[]; duration: number } | undefined> {
+  return readCache(cachePath(cacheDir, await sha256Of(input)));
 }
 
 export async function transcribe(input: string, options: TranscribeOptions): Promise<TranscribeResult> {

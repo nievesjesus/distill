@@ -20,7 +20,10 @@ export interface ClaudeHookDeps {
   recordUsage?: (path: string, savings: SavingsEstimate) => void;
   indexMinTokens?: number;
   asrInstalled?: () => boolean;
+  mediaGate?: (absPath: string) => Promise<'convert' | { defer: string }>;
 }
+
+const SPEECH_ERROR_CODES: ReadonlySet<string> = new Set(['asr_unavailable', 'ffmpeg_missing', 'no_audio', 'asr_failed', 'timeout', 'aborted']);
 
 const DEFAULT_INDEX_MIN_TOKENS = 8000;
 const FIRST_PART_TOKENS = 2000;
@@ -213,7 +216,21 @@ export async function handleClaudePreToolUse(
     if ((mediaKind === 'AUDIO' || mediaKind === 'VIDEO') && deps.asrInstalled?.() === false) {
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: asrMissingContext(basename(original), original) } };
     }
-    const converted = await convert(realOriginal);
+    const isMedia = mediaKind === 'AUDIO' || mediaKind === 'VIDEO';
+    if (isMedia && deps.mediaGate !== undefined) {
+      const plan = await deps.mediaGate(realOriginal);
+      if (plan !== 'convert') return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: plan.defer } };
+    }
+    let converted: Awaited<ReturnType<typeof convert>>;
+    try {
+      converted = await convert(realOriginal);
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      if (isMedia && typeof code === 'string' && SPEECH_ERROR_CODES.has(code) && error instanceof Error) {
+        return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `distill could not transcribe ${basename(original)}, so this read was not converted: ${error.message}` } };
+      }
+      throw error;
+    }
     if (pageLabels !== null) {
       if (converted.markdown === undefined) return null;
       const slice = sliceOfPages(converted.markdown, pageLabels);

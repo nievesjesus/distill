@@ -7,7 +7,7 @@ import { type SavingsEstimate, estimateSavings } from '../core/savings';
 import { wrapLongLines } from '../core/wrap';
 import type { Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
-import { DEFAULT_MAX_BYTES } from '../node/limits';
+import { DEFAULT_MAX_BYTES, maxBytesFor } from '../node/limits';
 
 export interface CacheDeps {
   getDistiller: () => Promise<Distiller>;
@@ -81,7 +81,7 @@ async function isFile(path: string): Promise<boolean> {
 }
 
 export async function convertCached(path: string, deps: CacheDeps): Promise<CachedConversion> {
-  const maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
+  const maxBytes = maxBytesFor(path, deps.maxBytes ?? DEFAULT_MAX_BYTES);
   const info = await stat(path);
   if (info.size > maxBytes) throw new DistillError('too_large', `File exceeds the ${maxBytes} byte limit`);
 

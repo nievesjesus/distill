@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pcmStream } from './node/asr/decode';
 import { AsrError } from './node/asr/errors';
+import { bindToParent, readRequest } from './node/asr/lifecycle';
 import { runPipeline } from './node/asr/pipeline';
 import type { PipelineEvent } from './node/asr/pipeline';
 
@@ -20,13 +21,6 @@ function write(event: unknown): Promise<void> {
   });
 }
 
-async function readRequest(): Promise<WorkerRequest> {
-  let raw = '';
-  process.stdin.setEncoding('utf8');
-  for await (const chunk of process.stdin) raw += chunk;
-  return JSON.parse(raw) as WorkerRequest;
-}
-
 function loadSherpa(runtimeRoot: string): any {
   try {
     return createRequire(join(runtimeRoot, 'package.json'))('sherpa-onnx-node');
@@ -41,7 +35,8 @@ async function main(): Promise<void> {
     controller.abort();
     process.exit(143);
   });
-  const req = await readRequest();
+  const { request: req, closed } = await readRequest<WorkerRequest>(process.stdin);
+  bindToParent(closed, controller);
   const sherpa = loadSherpa(req.runtimeRoot);
   const recognizer = new sherpa.OfflineRecognizer({
     featConfig: { sampleRate: 16000, featureDim: 80 },

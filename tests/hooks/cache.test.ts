@@ -147,6 +147,19 @@ describe('convertCached', () => {
     expect(second.savings).toEqual(first.savings);
   });
 
+  it('lets a 150 MB recording through the default limit without reading it into memory', async () => {
+    const media = join(dir, 'long.mp3');
+    await writeFile(media, '');
+    const { truncate } = await import('node:fs/promises');
+    await truncate(media, 150 * 1024 * 1024);
+    const distiller = fakeDistiller(async () => ({ name: 'long.mp3', kind: 'AUDIO', pages: 1, markdown: '[00:00] hi', tokens: { raw: 10, out: 5 } }) as never);
+    const before = process.memoryUsage().arrayBuffers;
+    const result = await convertCached(media, { distiller, cacheDir, version: '1.0.0' });
+    expect(result.cached).toBe(false);
+    expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(64 * 1024 * 1024);
+    await expect(convertCached(file, { distiller, cacheDir, version: '1.0.0', maxBytes: 5 })).rejects.toMatchObject({ code: 'too_large' });
+  });
+
   it('keeps an SRT-based savings estimate for a transcript across a cache hit', async () => {
     const distiller = fakeDistiller(async () => ({ name: 'call.mp3', kind: 'AUDIO', pages: 1, markdown: '[00:00] hi', tokens: { raw: 100, out: 60 } }) as never);
     const first = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });

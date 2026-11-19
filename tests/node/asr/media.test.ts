@@ -95,6 +95,39 @@ describe('withMedia', () => {
     expect(out.rawTokens).toBe(0);
   });
 
+  describe('video without an audio track', () => {
+    const silent = (extra: Record<string, unknown> = {}) =>
+      deps({
+        transcribe: vi.fn(async () => {
+          throw new AsrError('no_audio', 'This file has no audio track to transcribe.');
+        }),
+        duration: vi.fn(async () => 30),
+        ...extra,
+      });
+
+    it('keeps the slides and says there is no speech', async () => {
+      const d = silent();
+      const out = await withMedia(innerParser(), d).toMarkdown('/a/screen.mp4');
+      expect(out.markdown).toBe('<!-- distill: transcript of screen.mp4, 00:30, local ASR (Parakeet TDT 0.6B v3) -->\n\n_No audio track._\n\n> [slide 00:10]\n> Hiring plan');
+      expect(d.collectSlides).toHaveBeenCalledWith('/a/screen.mp4', expect.objectContaining({ duration: 30 }));
+      expect(out.rawTokens).toBe(0);
+    });
+
+    it('still fails when frames are off or the file is audio', async () => {
+      await expect(withMedia(innerParser(), silent()).toMarkdown('/a/screen.mp4', { frames: 'none' })).rejects.toMatchObject({ code: 'no_audio' });
+      await expect(withMedia(innerParser(), silent()).toMarkdown('/a/x.mp3')).rejects.toMatchObject({ code: 'no_audio' });
+    });
+
+    it('still fails when there is no ffmpeg to read frames', async () => {
+      await expect(withMedia(innerParser(), silent({ resolveFfmpeg: () => null })).toMarkdown('/a/screen.mp4')).rejects.toMatchObject({ code: 'no_audio' });
+    });
+
+    it('omits the duration when it cannot be probed', async () => {
+      const out = await withMedia(innerParser(), silent({ duration: vi.fn(async () => undefined) })).toMarkdown('/a/screen.mp4');
+      expect(out.markdown.split('\n')[0]).toBe('<!-- distill: transcript of screen.mp4, local ASR (Parakeet TDT 0.6B v3) -->');
+    });
+  });
+
   it('forwards the abort signal', async () => {
     const d = deps();
     const controller = new AbortController();

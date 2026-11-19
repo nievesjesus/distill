@@ -31,7 +31,7 @@ function worker(body: string): string {
   const path = join(root, `worker-${Math.random().toString(36).slice(2)}.mjs`);
   writeFileSync(
     path,
-    `let raw='';process.stdin.setEncoding('utf8');process.stdin.on('data',d=>raw+=d);process.stdin.on('end',async()=>{const req=JSON.parse(raw);const out=(o)=>process.stdout.write(JSON.stringify(o)+'\\n');${body}});`,
+    `let raw='';process.stdin.setEncoding('utf8');let started=false;process.stdin.on('data',d=>{raw+=d;const at=raw.indexOf('\\n');if(started||at<0)return;started=true;(async()=>{const req=JSON.parse(raw.slice(0,at));const out=(o)=>process.stdout.write(JSON.stringify(o)+'\\n');${body}if(!process.__hang)process.exit(0);})();});`,
   );
   return path;
 }
@@ -74,7 +74,7 @@ const { writeFileSync } = await import('node:fs');
 const g = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
 writeFileSync(${JSON.stringify(pidFile)}, String(g.pid));
 ${handleTerm ? "process.on('SIGTERM', () => { g.kill('SIGKILL'); process.exit(0); });" : "process.on('SIGTERM', () => {});"}
-setInterval(()=>{},1000);
+setInterval(()=>{},1000);process.__hang=1;
 `;
 
 describe('transcribe', () => {
@@ -152,13 +152,13 @@ describe('transcribe', () => {
 
   it('kills the worker and raises timeout', async () => {
     const started = Date.now();
-    await expect(transcribe(wav, { cacheDir, workerPath: worker('setInterval(()=>{},1000);'), env: {}, timeoutMs: 300 })).rejects.toMatchObject({ code: 'timeout' });
+    await expect(transcribe(wav, { cacheDir, workerPath: worker('setInterval(()=>{},1000);process.__hang=1;'), env: {}, timeoutMs: 300 })).rejects.toMatchObject({ code: 'timeout' });
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
   it('kills the worker and raises aborted', async () => {
     const controller = new AbortController();
-    const run = transcribe(wav, { cacheDir, workerPath: worker('setInterval(()=>{},1000);'), env: {}, signal: controller.signal });
+    const run = transcribe(wav, { cacheDir, workerPath: worker('setInterval(()=>{},1000);process.__hang=1;'), env: {}, signal: controller.signal });
     setTimeout(() => controller.abort(), 200);
     await expect(run).rejects.toMatchObject({ code: 'aborted' });
   });

@@ -64,8 +64,8 @@ function fixSpacing(text: string): string {
 
 function dropFillers(text: string, lang: TranscriptLang): string {
   const phrases = new RegExp(`,\\s*(?:${FILLER_PHRASES[lang]})\\s*,`, 'giu');
-  const opening = new RegExp(`(^|[.!?]\\s+)(${FILLER_WORDS[lang]})${WORD_EDGE_AFTER}[,.]?\\s*(\\p{L})?`, 'giu');
-  const inside = new RegExp(`(,?)\\s+(?:${FILLER_WORDS[lang]})${WORD_EDGE_AFTER}(,?)`, 'giu');
+  const opening = new RegExp(`(^|[.!?]\\s+)(${FILLER_WORDS[lang]})${WORD_EDGE_AFTER}(?=[,.]?\\s*(?:[\\p{L}\\p{N}$€£¥¿¡(]|$))[,.]?\\s*(\\p{L})?`, 'giu');
+  const inside = new RegExp(`(?<=[\\p{L}\\p{N}'’"”)])(,?)\\s+(?:${FILLER_WORDS[lang]})${WORD_EDGE_AFTER}(,?)(?=\\.|\\s+[\\p{L}\\p{N}$€£¥¿¡(]|$)`, 'giu');
   return text
     .replace(phrases, ',')
     .replace(opening, (_all, lead: string, word: string, next: string | undefined) => {
@@ -74,7 +74,7 @@ function dropFillers(text: string, lang: TranscriptLang): string {
     })
     .replace(inside, (all: string, before: string, after: string, offset: number, whole: string) => {
       const following = whole.charAt(offset + all.length);
-      if (/[.!?;:]/.test(following)) return '';
+      if (following === '.') return '';
       return before !== '' || after !== '' ? ',' : '';
     });
 }
@@ -178,7 +178,7 @@ export function detectLang(segments: readonly TranscriptSegment[]): TranscriptLa
   return winner;
 }
 
-export function transcriptHeader(info: { name: string; duration: number; lang?: TranscriptLang }): string {
-  const parts = [`transcript of ${info.name}`, formatClock(info.duration), ...(info.lang ? [info.lang] : []), TRANSCRIPT_ENGINE];
+export function transcriptHeader(info: { name: string; duration?: number; lang?: TranscriptLang }): string {
+  const parts = [`transcript of ${info.name}`, ...(info.duration === undefined ? [] : [formatClock(info.duration)]), ...(info.lang ? [info.lang] : []), TRANSCRIPT_ENGINE];
   return `<!-- distill: ${parts.join(', ')} -->`;
 }

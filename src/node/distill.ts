@@ -11,7 +11,7 @@ import type { AsrStatus, DistillResult, Health, LinguaStatus, LocalBoosterId } f
 import { exposeLibreOffice } from './capabilities';
 import { DistillError } from './errors';
 import { cacheDirFromEnv } from './cache-dir';
-import { DEFAULT_MAX_BYTES } from './limits';
+import { DEFAULT_MAX_BYTES, maxBytesFor } from './limits';
 import { createLingua, findPackageRoot } from './lingua';
 import type { Lingua } from './lingua';
 import { getAsrStatus } from './asr-install';
@@ -116,7 +116,8 @@ export function createDistiller(deps: {
       const name = basename(path);
       const kind = detectKind(name);
       if (!kind) throw new DistillError('unsupported_type', 'Unsupported file type');
-      if (size > maxBytes) throw new DistillError('too_large', `File exceeds the ${maxBytes} byte limit`);
+      const limit = maxBytesFor(name, maxBytes);
+      if (size > limit) throw new DistillError('too_large', `File exceeds the ${limit} byte limit`);
       if (needsLibreOfficeFor(name) && !deps.libreoffice) {
         throw new DistillError('needs_libreoffice', 'LibreOffice is required to read this file type');
       }

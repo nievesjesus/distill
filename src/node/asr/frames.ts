@@ -11,7 +11,7 @@ export const MIN_SCENE_FRAMES = 3;
 export const SCENE_THRESHOLD = 0.3;
 export const INTERVAL_SECONDS = 10;
 export const HASH_DISTANCE = 6;
-export const PIXEL_GUARD = 8;
+export const PIXEL_GUARD = 3;
 
 const THUMB_WIDTH = 9;
 const THUMB_HEIGHT = 8;

@@ -7,7 +7,7 @@ import { DistillError } from '../errors';
 import type { Parser } from '../parse';
 import { AsrError } from './errors';
 import { collectSlides as defaultCollectSlides } from './frames';
-import { transcribe as defaultTranscribe } from './transcribe';
+import { knownDuration, transcribe as defaultTranscribe } from './transcribe';
 
 export interface MediaDeps {
   cacheDir: string;
@@ -15,33 +15,43 @@ export interface MediaDeps {
   transcribe?: typeof defaultTranscribe;
   collectSlides?: typeof defaultCollectSlides;
   resolveFfmpeg?: (env: NodeJS.ProcessEnv) => string | null;
+  duration?: (input: string, ffmpeg: string | null) => Promise<number | undefined>;
 }
 
 const NO_SPEECH = '_No speech detected._';
+const NO_AUDIO = '_No audio track._';
 
 export function withMedia(parser: Parser, deps: MediaDeps): Parser {
   const env = deps.env ?? process.env;
   const transcribe = deps.transcribe ?? defaultTranscribe;
   const collectSlides = deps.collectSlides ?? defaultCollectSlides;
   const findFfmpeg = deps.resolveFfmpeg ?? defaultResolveFfmpeg;
+  const probe = deps.duration ?? knownDuration;
 
   async function build(path: string, opts: Parameters<Parser['toMarkdown']>[1]) {
     const kind = detectKind(path);
-    let result: Awaited<ReturnType<typeof transcribe>>;
+    const wantFrames = kind === 'VIDEO' && (opts?.frames ?? 'ocr') === 'ocr';
+    const ffmpeg = findFfmpeg(env);
+    let result: { segments: Awaited<ReturnType<typeof transcribe>>['segments']; duration: number | undefined; silent?: boolean };
     try {
       result = await transcribe(path, { cacheDir: deps.cacheDir, env, ...(opts?.signal ? { signal: opts.signal } : {}) });
     } catch (error) {
-      if (error instanceof AsrError) throw new DistillError(error.code, error.message, { cause: error });
-      throw error;
+      if (error instanceof AsrError && error.code === 'no_audio' && wantFrames && ffmpeg !== null) {
+        const probed = await probe(path, ffmpeg).catch(() => undefined);
+        result = { segments: [], duration: probed, silent: true };
+      } else if (error instanceof AsrError) {
+        throw new DistillError(error.code, error.message, { cause: error });
+      } else {
+        throw error;
+      }
     }
     const lang = detectLang(result.segments);
     let slides: Slide[] = [];
-    if (kind === 'VIDEO' && (opts?.frames ?? 'ocr') === 'ocr') {
-      const ffmpeg = findFfmpeg(env);
+    if (wantFrames) {
       if (ffmpeg !== null) {
         slides = await collectSlides(path, {
           ffmpeg,
-          duration: result.duration,
+          duration: result.duration ?? 0,
           ocr: async (png) => (await parser.toMarkdown(png)).markdown,
           ...(opts?.signal ? { signal: opts.signal } : {}),
         }).catch((error) => {
@@ -51,8 +61,9 @@ export function withMedia(parser: Parser, deps: MediaDeps): Parser {
       }
     }
     const body = formatTranscript(result.segments, { timestamps: opts?.timestamps ?? 'coarse', ...(lang ? { lang } : {}), slides });
-    const header = transcriptHeader({ name: basename(path), duration: result.duration, ...(lang ? { lang } : {}) });
-    const markdown = `${header}\n\n${body === '' ? NO_SPEECH : body}`;
+    const header = transcriptHeader({ name: basename(path), ...(result.duration === undefined ? {} : { duration: result.duration }), ...(lang ? { lang } : {}) });
+    const text = result.silent ? `${NO_AUDIO}${body === '' ? '' : `\n\n${body}`}` : body === '' ? NO_SPEECH : body;
+    const markdown = `${header}\n\n${text}`;
     return { markdown, segments: result.segments, rawTokens: result.segments.length === 0 ? 0 : countTokens(renderSrt(result.segments)) };
   }
 

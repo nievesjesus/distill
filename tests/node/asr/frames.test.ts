@@ -39,6 +39,11 @@ describe('sameFrame', () => {
     expect(sameFrame(a, b)).toBe(false);
   });
 
+  it('keeps a single added bullet apart from the previous frame', () => {
+    expect(sameFrame(Uint8Array.from(flat(255)), Uint8Array.from(withCell(255, 20, 250)))).toBe(false);
+    expect(sameFrame(Uint8Array.from(flat(255)), Uint8Array.from(withCell(255, 20, 253)))).toBe(true);
+  });
+
   it('separates frames whose hashes are far apart', () => {
     const a = Uint8Array.from({ length: 72 }, (_, i) => 255 - (i % 9) * 10);
     const b = Uint8Array.from({ length: 72 }, (_, i) => (i % 9) * 10);
