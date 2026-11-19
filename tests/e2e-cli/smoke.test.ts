@@ -96,7 +96,7 @@ describe('distill-llm mcp', () => {
         stderr += String(chunk);
       });
       const { tools } = await client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files']);
+      expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline']);
       const result = await client.callTool({ name: 'distill_file', arguments: { path: pdf } });
       expect(result.isError).toBeFalsy();
       const structured = result.structuredContent as { tokens: { raw: number; out: number } };

@@ -16,7 +16,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
-function fakeDistiller(fail: Set<string> = new Set()) {
+function fakeDistiller(fail: Set<string> = new Set(), markdown?: string) {
   const calls: { path: string; opts: unknown }[] = [];
   const close = vi.fn();
   const distiller: Distiller = {
@@ -24,7 +24,7 @@ function fakeDistiller(fail: Set<string> = new Set()) {
       calls.push({ path, opts });
       const name = basename(path);
       if (fail.has(name)) throw new DistillError('parse_failed', 'broken file');
-      return { path, name, kind: 'PDF', pages: 3, markdown: `# ${name}\n`, tokens: { raw: 38900, out: 27100 }, ms: 12 };
+      return { path, name, kind: 'PDF', pages: 3, markdown: markdown ?? `# ${name}\n`, tokens: { raw: 38900, out: 27100 }, ms: 12 };
     },
     health: () => ({ version: '0.0.0', liteparseVersion: '0.0.0', libreoffice: false, lingua: { installed: false, installable: false, model: 'tinybert', state: 'idle', progress: 0 }, maxBytes: 1 }),
     close,
@@ -32,11 +32,11 @@ function fakeDistiller(fail: Set<string> = new Set()) {
   return { distiller, calls, close };
 }
 
-function harness(fail?: Set<string>) {
+function harness(fail?: Set<string>, markdown?: string) {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const exit = vi.fn();
-  const fake = fakeDistiller(fail);
+  const fake = fakeDistiller(fail, markdown);
   const openDistiller = vi.fn(async (_maxBytes?: number) => fake.distiller);
   const deps = {
     openDistiller,
@@ -44,7 +44,7 @@ function harness(fail?: Set<string>) {
     stdout: (line: string) => stdout.push(line),
     stderr: (line: string) => stderr.push(line),
     handleSignals: false,
-    env: { DISTILL_NO_UPDATE_CHECK: '1' },
+    env: { DISTILL_NO_UPDATE_CHECK: '1', DISTILL_NO_STATS: '1' },
   };
   return { deps, stdout, stderr, exit, openDistiller, ...fake };
 }
@@ -238,5 +238,117 @@ describe('convert', () => {
     const [a, b] = touch('Report.pdf', 'report.docx');
     await run(['convert', a, b, '--out', join(dir, 'out')], h.deps);
     expect(readdirSync(join(dir, 'out')).sort()).toEqual(['Report.md', 'report-2.md']);
+  });
+});
+
+const LARGE = Array.from({ length: 40 }, (_, i) => (i % 10 === 0 ? `# Section ${i / 10}` : `Line ${i} with some words in it`)).join('\n');
+
+describe('convert --offset, --limit and --max-tokens', () => {
+  it('prints a slice with --offset and --limit', async () => {
+    const h = harness(undefined, LARGE);
+    const [pdf] = touch('big.pdf');
+    await run(['convert', pdf, '--stdout', '--offset', '2', '--limit', '3'], h.deps);
+    expect(h.stdout).toEqual([LARGE.split('\n').slice(1, 4).join('\n')]);
+    expect(h.stderr).toHaveLength(1);
+    expect(h.stderr[0]).toContain('tokens saved');
+  });
+
+  it('prints from --offset to the end without --limit', async () => {
+    const h = harness(undefined, LARGE);
+    const [pdf] = touch('big.pdf');
+    await run(['convert', pdf, '--stdout', '--offset', '39'], h.deps);
+    expect(h.stdout).toEqual([LARGE.split('\n').slice(38).join('\n')]);
+  });
+
+  it('prints the index, the first lines and a hint with --max-tokens on a large document', async () => {
+    const h = harness(undefined, LARGE);
+    const [pdf] = touch('big.pdf');
+    await run(['convert', pdf, '--stdout', '--max-tokens', '60'], h.deps);
+    expect(h.stdout).toHaveLength(1);
+    const out = h.stdout[0];
+    expect(out.startsWith('Index of big.pdf: 40 lines')).toBe(true);
+    expect(out).toContain('L1-10 ·');
+    expect(out).toContain('# Section 0');
+    expect(out).toMatch(/\n\n# Section 0\nLine 1/);
+    expect(out).toMatch(/\n\[distill\] Showing lines 1-\d+ of 40\. Read more with: distill-llm convert --stdout --offset <line> --limit <lines> "[^"]*big\.pdf"$/);
+    expect(h.stderr.filter((line) => line.includes('tokens saved'))).toHaveLength(1);
+  });
+
+  it('prints small documents unchanged under --max-tokens', async () => {
+    const h = harness(undefined, LARGE);
+    const [pdf] = touch('big.pdf');
+    await run(['convert', pdf, '--stdout', '--max-tokens', '50000'], h.deps);
+    expect(h.stdout).toEqual([LARGE]);
+  });
+
+  it.each([
+    [['--offset', '2']],
+    [['--limit', '2']],
+    [['--max-tokens', '100']],
+  ])('requires --stdout for %j', async (extra) => {
+    const h = harness();
+    const [pdf] = touch('a.pdf');
+    await run(['convert', pdf, ...extra], h.deps);
+    expect(h.exit).toHaveBeenCalledWith(2);
+    expect(h.stderr[0]).toContain('--stdout');
+    expect(h.openDistiller).not.toHaveBeenCalled();
+  });
+
+  it('rejects --max-tokens with --offset', async () => {
+    const h = harness();
+    const [pdf] = touch('a.pdf');
+    await run(['convert', pdf, '--stdout', '--max-tokens', '100', '--offset', '2'], h.deps);
+    expect(h.exit).toHaveBeenCalledWith(2);
+    expect(h.stderr[0]).toContain('--max-tokens');
+  });
+
+  it.each(['0', '-1', 'abc', '1.5'])('rejects an invalid --offset %s', async (value) => {
+    const h = harness();
+    const [pdf] = touch('a.pdf');
+    await run(['convert', pdf, '--stdout', '--offset', value], h.deps);
+    expect(h.exit).toHaveBeenCalledWith(2);
+    expect(h.openDistiller).not.toHaveBeenCalled();
+  });
+});
+
+describe('outline', () => {
+  it('prints the rendered index with the file name', async () => {
+    const h = harness(undefined, LARGE);
+    const [pdf] = touch('big.pdf');
+    await run(['outline', pdf], h.deps);
+    expect(h.stdout).toHaveLength(1);
+    expect(h.stdout[0].startsWith('Index of big.pdf: 40 lines')).toBe(true);
+    expect(h.stdout[0]).toContain('# Section 3');
+    expect(h.close).toHaveBeenCalledOnce();
+    expect(h.exit).not.toHaveBeenCalled();
+  });
+
+  it('prints JSON with --json', async () => {
+    const h = harness(undefined, LARGE);
+    const [pdf] = touch('big.pdf');
+    await run(['outline', pdf, '--json'], h.deps);
+    expect(h.stdout).toHaveLength(1);
+    const json = JSON.parse(h.stdout[0]);
+    expect(Object.keys(json)).toEqual(['kind', 'pages', 'lines', 'tokens', 'entries']);
+    expect(json).toMatchObject({ kind: 'PDF', pages: 3, lines: 40 });
+    expect(json.entries).toHaveLength(4);
+    expect(json.entries[0]).toMatchObject({ kind: 'heading', line: 1, endLine: 10 });
+  });
+
+  it('reports a failure on stderr and exits 1', async () => {
+    const h = harness(new Set(['bad.pdf']));
+    const [pdf] = touch('bad.pdf');
+    await run(['outline', pdf], h.deps);
+    expect(h.stdout).toEqual([]);
+    expect(h.stderr[0]).toContain('parse_failed');
+    expect(h.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('uses the default boosters', async () => {
+    const h = harness();
+    const [pdf] = touch('a.pdf');
+    await run(['outline', pdf], h.deps);
+    expect(h.calls[0].opts).toMatchObject({ lingua: false });
+    expect((h.calls[0].opts as { boosters?: unknown }).boosters).toBeUndefined();
   });
 });

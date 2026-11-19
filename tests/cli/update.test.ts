@@ -35,7 +35,7 @@ function harness(extra: Record<string, unknown> = {}) {
     stdout: (line: string) => stdout.push(line),
     stderr: (line: string) => stderr.push(line),
     handleSignals: false,
-    env: { DISTILL_NO_UPDATE_CHECK: '1' },
+    env: { DISTILL_NO_UPDATE_CHECK: '1', DISTILL_NO_STATS: '1' },
     isTTY: false,
     ...extra,
   };

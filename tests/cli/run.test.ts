@@ -9,7 +9,7 @@ import { openCommand, run } from '../../src/cli/run';
 
 function harness(
   startImpl?: (opts: unknown) => Promise<{ url: string; close(): Promise<void> }>,
-  env: Record<string, string | undefined> = { DISTILL_NO_UPDATE_CHECK: '1' },
+  env: Record<string, string | undefined> = { DISTILL_NO_UPDATE_CHECK: '1', DISTILL_NO_STATS: '1' },
 ) {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -251,7 +251,7 @@ describe('run mcp path confinement', () => {
       const connectStdio = vi.fn(async (s: McpServer) => {
         server = s;
       });
-      const h = harness(undefined, { DISTILL_NO_UPDATE_CHECK: '1', DISTILL_MCP_MAX_TOKENS: value });
+      const h = harness(undefined, { DISTILL_NO_UPDATE_CHECK: '1', DISTILL_NO_STATS: '1', DISTILL_MCP_MAX_TOKENS: value });
       await run(['mcp'], { ...h.deps, connectStdio, openDistiller: t.openDistiller } as never);
       return (await call(server as McpServer, join(t.root, 'a.pdf'))).structuredContent as { nextOffset?: number };
     };

@@ -64,6 +64,16 @@ describe('convertCached', () => {
     expect(await readFile(mdPath, 'utf8')).toBe('<!-- distill: report.pdf · 120 → 40 tokens -->\n\n# Title\n\nbody');
   });
 
+  it('wraps long lines in the cached markdown but not table rows', async () => {
+    const long = Array.from({ length: 200 }, (_, i) => `Sentence ${i} is here.`).join(' ');
+    const row = `| ${'cell '.repeat(600)}|`;
+    const distiller = fakeDistiller(async () => ({ name: 'report.pdf', markdown: `${long}\n\n${row}`, tokens: { raw: 1, out: 1 } }) as never);
+    const { mdPath } = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    const lines = (await readFile(mdPath, 'utf8')).split('\n');
+    expect(lines.filter((line) => !line.startsWith('|')).every((line) => line.length <= 1500)).toBe(true);
+    expect(lines).toContain(row);
+  });
+
   it('uses another key when one byte changes', async () => {
     const distiller = fakeDistiller();
     const a = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });

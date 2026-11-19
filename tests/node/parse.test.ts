@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createParser } from '../../src/node/parse';
+import { createParser, joinPages } from '../../src/node/parse';
 import { hasLibreOffice } from '../../src/node/capabilities';
 import { makeSamplePdf } from '../fixtures/make-pdf';
 
@@ -58,5 +58,22 @@ describe('createParser', () => {
 describe('hasLibreOffice', () => {
   it('returns a boolean', async () => {
     expect(typeof (await hasLibreOffice())).toBe('boolean');
+  });
+});
+
+describe('joinPages', () => {
+  const page = (pageNum: number, markdown: string, pageLabel?: string) => ({ pageNum, markdown, ...(pageLabel ? { pageLabel } : {}) });
+
+  it('keeps the original text for a single page', () => {
+    expect(joinPages([page(1, 'only')], 'original')).toBe('original');
+    expect(joinPages([], 'empty')).toBe('empty');
+  });
+
+  it('prefixes each page with a marker when there are several', () => {
+    expect(joinPages([page(1, 'one'), page(2, 'two')], 'ignored')).toBe('<!-- page 1 -->\n\none\n\n<!-- page 2 -->\n\ntwo');
+  });
+
+  it('prefers the page label over the page number', () => {
+    expect(joinPages([page(1, 'one', 'i'), page(2, 'two', 'ii')], '')).toBe('<!-- page i -->\n\none\n\n<!-- page ii -->\n\ntwo');
   });
 });

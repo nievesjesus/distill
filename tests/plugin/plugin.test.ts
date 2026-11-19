@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -37,6 +38,13 @@ describe('plugin files', () => {
   it('skill is identical to the one the installer writes', () => {
     const skill = readFileSync(join(pluginDir, 'skills', 'distill-office-documents', 'SKILL.md'), 'utf8');
     expect(skill).toBe(claudeSkillMarkdown('distill-llm'));
+  });
+
+  it('skill asks for a bounded read and explains the index', () => {
+    const skill = claudeSkillMarkdown('distill-llm');
+    expect(skill).toContain('distill-llm convert --stdout --max-tokens 8000 "<path>"');
+    expect(skill).toContain('--offset');
+    expect(skill).toContain('--limit');
   });
 
   it('bin/distill-llm is executable in git', () => {
@@ -111,6 +119,86 @@ describe('launch.mjs', () => {
     expect(nodeTooOld('22.12.0')).toBe(false);
     expect(nodeTooOld('24.1.0')).toBe(false);
     expect(nodeTooOld('20.0.0')).toBe(true);
+  });
+});
+
+describe('launch fallback', () => {
+  const NOT_FOUND = 'npm error code ETARGET\nnpm error notarget No matching version found for distill-llm@9.9.9.\n';
+
+  it('shouldFallback needs a failure, no override and a not-found error', async () => {
+    const { shouldFallback } = await load('launch.mjs');
+    expect(shouldFallback(1, NOT_FOUND, false)).toBe(true);
+    expect(shouldFallback(1, 'npm error code E404', false)).toBe(true);
+    expect(shouldFallback(0, NOT_FOUND, false)).toBe(false);
+    expect(shouldFallback(1, NOT_FOUND, true)).toBe(false);
+    expect(shouldFallback(1, 'something else broke', false)).toBe(false);
+    expect(shouldFallback(1, '', false)).toBe(false);
+  });
+
+  function fakeSpawn(outcomes: { code: number; stderr?: string }[]) {
+    const calls: { args: string[]; stdio: unknown }[] = [];
+    const spawnFn = (_command: string, args: string[], options: { stdio: unknown }) => {
+      const outcome = outcomes[calls.length] as { code: number; stderr?: string };
+      calls.push({ args, stdio: options.stdio });
+      const child = new EventEmitter() as EventEmitter & { stderr: EventEmitter };
+      child.stderr = new EventEmitter();
+      setImmediate(() => {
+        if (outcome.stderr) child.stderr.emit('data', Buffer.from(outcome.stderr));
+        child.emit('close', outcome.code);
+      });
+      return child;
+    };
+    return { spawnFn, calls };
+  }
+
+  async function run(outcomes: { code: number; stderr?: string }[], options: Record<string, unknown> = {}) {
+    const { launch } = await load('launch.mjs');
+    const fake = fakeSpawn(outcomes);
+    const written: string[] = [];
+    const spawned: unknown[] = [];
+    const code = await launch(['hook', 'claude'], {
+      stdio: 'inherit',
+      spawnFn: fake.spawnFn,
+      env: {},
+      writeStderr: (text: string) => written.push(text),
+      onSpawn: (child: unknown) => spawned.push(child),
+      ...options,
+    });
+    return { code, written, spawned, calls: fake.calls };
+  }
+
+  it('relaunches once with the latest release when the pinned version is not on npm', async () => {
+    const result = await run([{ code: 1, stderr: NOT_FOUND }, { code: 0 }]);
+    expect(result.code).toBe(0);
+    expect(result.calls).toHaveLength(2);
+    expect(result.calls[0]?.args).toContain('distill-llm@' + readJson(join(pluginDir, '.claude-plugin', 'plugin.json')).version);
+    expect(result.calls[1]?.args).toContain('distill-llm@latest');
+    expect(result.spawned).toHaveLength(2);
+    expect(result.written.join('')).toContain('is not on npm yet; using the latest release');
+  });
+
+  it('does not relaunch when the package is overridden or the error is something else', async () => {
+    const overridden = await run([{ code: 1, stderr: NOT_FOUND }], { env: { DISTILL_PLUGIN_PACKAGE: '/tmp/d.tgz' } });
+    expect(overridden.code).toBe(1);
+    expect(overridden.calls).toHaveLength(1);
+    const other = await run([{ code: 3, stderr: 'boom' }]);
+    expect(other.code).toBe(3);
+    expect(other.calls).toHaveLength(1);
+  });
+
+  it('relaunches at most once', async () => {
+    const result = await run([{ code: 1, stderr: NOT_FOUND }, { code: 1, stderr: NOT_FOUND }]);
+    expect(result.code).toBe(1);
+    expect(result.calls).toHaveLength(2);
+  });
+
+  it('pipes stderr, forwarding it only when the caller inherits it', async () => {
+    const inherit = await run([{ code: 0, stderr: 'progress' }]);
+    expect(inherit.calls[0]?.stdio).toEqual(['inherit', 'inherit', 'pipe']);
+    expect(inherit.written.join('')).toBe('progress');
+    const ignored = await run([{ code: 0, stderr: 'progress' }], { stdio: ['pipe', 'inherit', 'ignore'] });
+    expect(ignored.calls[0]?.stdio).toEqual(['pipe', 'inherit', 'pipe']);
+    expect(ignored.written).toEqual([]);
   });
 });
 

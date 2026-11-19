@@ -13,6 +13,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-C8F53C?labelColor=0B0B10" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522.12-C8F53C?labelColor=0B0B10" alt="Node 22.12+">
   <img src="https://img.shields.io/badge/runs-100%25%20local-C8F53C?labelColor=0B0B10" alt="Runs 100% local">
+  <a href="https://glama.ai/mcp/servers/nievesjesus/distill"><img src="https://glama.ai/mcp/servers/nievesjesus/distill/badges/score.svg" alt="distill MCP server"></a>
+  <a href="https://mcprush.com/to/nievesjesus-distill-mcp?ref=badge"><img src="https://mcprush.com/badge/nievesjesus-distill-mcp/card.svg" alt="distill MCP server"></a>
 </p>
 
 <p align="center">
@@ -71,9 +73,11 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 
 ### MCP server
 
-Give any MCP client three tools: `distill_file`, `distill_files` and `distill_capabilities`. From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`. Results end with a `[distill] tokens saved ≈ …` line telling the model how many tokens distill saved (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
+Give any MCP client four tools: `distill_file`, `distill_files`, `distill_outline` and `distill_capabilities`. All of them are read-only and say so in their annotations. From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`. Results end with a `[distill] tokens saved ≈ …` line telling the model how many tokens distill saved (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
 
 Results are capped at 10,000 tokens (`DISTILL_MCP_MAX_TOKENS` changes it) so they fit an agent's tool-result limit. A larger document comes back one page at a time: pass the `nextOffset` from the previous `distill_file` result as `offset` to continue, and `distill_files` returns what fits and tells the model which files to request on their own.
+
+For long documents, call `distill_outline({ path })` first. It returns an index: one line per section with its line range, page and token count. Then read only what you need with `distill_file({ path, section })` (a title from the index, case-insensitive) or `distill_file({ path, offset, limit })`. When a first read is cut short, `distill_file` adds the same index to the result so the model can jump.
 
 ```bash
 claude mcp add distill -- npx -y distill-llm mcp
@@ -89,7 +93,7 @@ Any other client:
 }
 ```
 
-`distill_file({ path, boosters?, lingua? })` returns the Markdown plus `{ tokens: { raw, out }, pages, kind }`. `distill_files` takes up to 20 paths and reports a per-file error instead of failing the whole call.
+`distill_file({ path, offset?, limit?, section?, boosters?, lingua? })` returns the Markdown plus `{ tokens: { raw, out }, pages, kind }`. `distill_files` takes up to 20 paths and reports a per-file error instead of failing the whole call.
 
 For clients that speak HTTP, `distill-llm mcp --http` serves Streamable HTTP at `http://127.0.0.1:4322/mcp`. Over HTTP the server only reads files inside the directories you pass with `--root` (repeatable, default: the current directory) and compares real paths, so symlinks cannot escape. It rejects cross-site requests and answers only to loopback names, IP addresses and the hostnames you list with `--allowed-hosts`, which blocks DNS rebinding.
 
@@ -116,7 +120,7 @@ claude plugin marketplace add nievesjesus/distill
 claude plugin install distill@distill
 ```
 
-The plugin adds the Read hook for PDF and Office files, the `distill` MCP server and the Office skill, with no other setup. It needs Node.js 22.12 or newer: it runs `npx distill-llm@<plugin version>`, so the first conversion downloads the package. Do not combine it with `hooks install --claude`: if both exist the plugin steps aside and the settings hook does the work. Remove one of them with `distill-llm hooks uninstall --claude`.
+The plugin adds the Read hook for PDF and Office files, the `distill` MCP server and the Office skill, with no other setup. It needs Node.js 22.12 or newer: it runs `npx distill-llm@<plugin version>`, so the first conversion downloads the package. If that version is not on npm yet (a release waiting for approval), it falls back to the latest published release. Do not combine it with `hooks install --claude`: if both exist the plugin steps aside and the settings hook does the work. Remove one of them with `distill-llm hooks uninstall --claude`.
 
 ### Hooks: make your agent read Markdown instead of the binary
 
@@ -127,6 +131,7 @@ distill-llm hooks install --opencode   # OpenCode
 ```
 
 - **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or your personal `.claude/settings.local.json` with `--project`). When Claude reads a PDF inside the project it is working in, the hook converts it once, caches it by content hash in `~/.cache/distill-llm/out/` (private to your user) and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distill-llm/out/**)` so those reads do not prompt. Claude Code refuses Office files before any hook runs (checked on Claude Code 2.1.296), so the installer also writes the skill `distill-office-documents` to `~/.claude/skills/` (or `.claude/skills/` with `--project`). It has Claude run `distill-llm convert --stdout` through Bash for `.docx`, `.doc`, `.xlsx`, `.xls`, `.pptx`, `.ppt`, `.odt`, `.ods` and `.odp` files. Claude Code asks before each of those Bash calls unless you allow it; distill does not add that permission, because Bash is not subject to `Read` deny rules. A `SKILL.md` you wrote yourself is left alone.
+- **Large documents:** when the Markdown is over 8,000 tokens and the read has no `offset` or `limit`, the hook loads the first part (about 2,000 tokens) and adds an index of the whole document to the context: line ranges, pages and tokens per section. Claude then reads the sections it needs with `offset` and `limit`. `DISTILL_INDEX_MIN_TOKENS` changes the threshold; `0` turns the index off. LiteParse can emit a whole page as one very long line, which Claude Code's Read truncates, so the cached Markdown wraps lines longer than 1,500 characters (never table rows or code).
 - **OpenCode** (experimental): writes a plugin to `~/.config/opencode/plugins/distill.js` (or `.opencode/plugins/` with `--project`) that does the same on `tool.execute.before` for `read`. OpenCode's plugin API is changing; if the plugin does not apply, OpenCode simply reads the original file.
 
 The installer shows the exact change and asks before writing (`--yes` skips the question). It keeps your other settings, follows symlinked dotfiles, keeps the file mode, and masks existing values in the diff it prints. `distill-llm hooks uninstall --claude|--opencode` removes only what it added, including the skill. Install it globally first: a command written from a temporary `npx` run would disappear.
@@ -154,6 +159,14 @@ npx distill-llm convert report.pdf deck.pptx --out md/
 | `--lingua [--rate 0.5]` | Add LLMLingua-2 (must be installed from the web app first) |
 | `--json` | Print a JSON array with tokens, pages and timings per file |
 | `--stdout` | Print the Markdown of a single file instead of writing it |
+| `--offset <n>` `--limit <n>` | With `--stdout`: print only these lines (1-based) |
+| `--max-tokens <n>` | With `--stdout`: if the document is larger than this, print an index and the first lines instead of everything |
+
+Multi-page PDFs carry a `<!-- page N -->` marker before each page (it uses the page label when the PDF has one), so an agent can cite pages and the index can list them.
+
+`distill-llm outline <file> [--json]` prints the index without the content: one line per heading (levels 1 to 3), or per page when the document has no headings, with its line range, page and token count. Line numbers refer to the converted Markdown. With `--json` you get `{ kind, pages, lines, tokens, entries }`.
+
+`distill-llm stats [--json] [--price <usd>]` shows how many tokens distill has saved on this machine: all time, last 30 days and last 7 days, by source (hook, MCP, CLI) and by kind. `--price` values the saved tokens at that many dollars per million input tokens. There is no built-in price table.
 
 `distill-llm update [--yes]` checks for a newer version right away. A global npm install updates after a y/N question (or straight away with `--yes`); other installs print the command to run. After `convert` on a terminal, and when the web app starts, a one-line notice goes to stderr if a newer version exists (never with `--json` or `--stdout`).
 
@@ -226,7 +239,9 @@ Files are parsed locally and never leave your machine. There is no telemetry, no
 
 Once a day distill also asks `registry.npmjs.org` for the latest `distill-llm` version, sending only its own version in the User-Agent, and caches the answer in `~/.cache/distill-llm/update-check.json`. Turn it off with `DISTILL_NO_UPDATE_CHECK=1` or in the web app (click the version in the header, then "Check for updates daily"). The desktop app does not ask `registry.npmjs.org`; it asks `github.com` for its release manifest instead, with the same toggle. The hooks and the MCP server never check.
 
-Uploaded files go to a temporary directory and are deleted after parsing. Results stay in a small in-memory cache so the JSON view can be requested later. The hooks write converted Markdown to `~/.cache/distill-llm/out/`. API responses are sent with `Cache-Control: no-store`.
+Uploaded files go to a temporary directory and are deleted after parsing. Results stay in a small in-memory cache so the JSON view can be requested later. The hooks write converted Markdown to `~/.cache/distill-llm/out/`.
+
+distill keeps a local record of how many tokens it saved, in `~/.cache/distill-llm/stats.jsonl`. Each line holds a date, the source (hook, MCP or CLI), the kind of file (PDF, DOCX and so on) and three token counts. It never holds paths, file names or content, and nothing is sent anywhere. The file rotates at 5 MB. `distill-llm stats` reads it; delete the file to reset it, or set `DISTILL_NO_STATS=1` to stop recording. API responses are sent with `Cache-Control: no-store`.
 
 <details>
 <summary>Network exposure</summary>
@@ -258,6 +273,9 @@ The app and the CLI count with `o200k_base` (via `gpt-tokenizer`). Claude and Ge
 - [x] CLI (`distill-llm convert`)
 - [x] MCP server (stdio and HTTP)
 - [x] Hooks for Claude Code and OpenCode
+- [x] Claude Code plugin
+- [x] Large documents: page markers, outline, sliced reads, index in the hook
+- [x] Local token savings stats
 - [ ] Signed and notarized desktop builds
 - [ ] Hooks for more agents as their hook APIs settle (Codex, Gemini CLI)
 - [ ] Password-protected PDFs

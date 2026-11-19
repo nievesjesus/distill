@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, rmdirSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
@@ -19,6 +19,7 @@ import type { Distiller } from '../node/distill';
 import { cwdResolver, resolveRoots, rootResolver } from '../mcp/roots';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isInside } from '../node/inside';
+import { readStats, recordUsage, renderStats, summarize } from '../node/stats';
 import { readLiteparseVersion } from '../node/versions';
 import { findPackageRoot } from '../node/lingua';
 import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
@@ -26,8 +27,8 @@ import type { UpdateChecker } from '../node/update-check';
 import { createGlobalUpdater } from '../node/update-install';
 import type { GlobalUpdater } from '../node/update-install';
 import type { InstallMethod, UpdateCheck } from '../core/types';
-import { parseBoosters, parseRate, runConvert } from './convert';
-import type { ConvertOptions } from './convert';
+import { parseBoosters, parsePositiveInt, parseRate, runConvert, runOutline } from './convert';
+import type { ConvertOptions, OutlineOptions } from './convert';
 
 type Server = { url: string; close(): Promise<void> };
 
@@ -62,6 +63,12 @@ function gitCheckIgnore(cwd: string, file: string): boolean | null {
 }
 
 const BYTES_PER_MB = 1024 * 1024;
+
+function parsePrice(value: string): number {
+  const price = Number(value);
+  if (value.trim() === '' || !Number.isFinite(price) || price < 0) throw new InvalidArgumentError('must be a non-negative number');
+  return price;
+}
 
 async function defaultReadStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -311,11 +318,41 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--rate <n>', 'LLMLingua-2 keep rate (0..1)', parseRate)
     .option('--json', 'print a JSON array with the results')
     .option('--stdout', 'print the Markdown of a single file instead of writing it')
+    .option('--offset <n>', 'with --stdout: first line to print (1-based)', parsePositiveInt)
+    .option('--limit <n>', 'with --stdout: number of lines to print', parsePositiveInt)
+    .option('--max-tokens <n>', 'with --stdout: print an index and the first lines when the document is larger than this', parsePositiveInt)
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
     .action(async (files: string[], options: ConvertOptions) => {
-      const code = await runConvert(files, options, { stdout, stderr, openDistiller, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
+      const code = await runConvert(files, options, {
+        stdout,
+        stderr,
+        openDistiller,
+        savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
+        recordUsage: (kind, savings) => recordUsage({ source: 'cli', kind, savings }, { cacheDir, env }),
+      });
       if (isTTY && !options.json && !options.stdout) await showNotice();
       if (code !== 0) exit(code);
+    });
+
+  program
+    .command('outline')
+    .description('Print an index of a document with line ranges and token counts')
+    .argument('<file>', 'file to index')
+    .option('--json', 'print the index as JSON')
+    .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
+    .action(async (file: string, options: OutlineOptions) => {
+      const code = await runOutline(file, options, { stdout, stderr, openDistiller });
+      if (code !== 0) exit(code);
+    });
+
+  program
+    .command('stats')
+    .description('Show how many tokens distill has saved on this machine')
+    .option('--json', 'print the summary as JSON')
+    .option('--price <usd>', 'value saved tokens at this price in USD per million input tokens', parsePrice)
+    .action((options: { json?: boolean; price?: number }) => {
+      const summary = summarize(readStats(cacheDir), new Date());
+      stdout(options.json ? JSON.stringify(summary) : renderStats(summary, options.price === undefined ? {} : { price: options.price }));
     });
 
   program
@@ -396,6 +433,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           health: () => distiller.health(),
           resolvePath,
           savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
+          recordUsage: (kind, savings) => recordUsage({ source: 'mcp', kind, savings }, { cacheDir, env }),
           ...(maxResultTokens === undefined ? {} : { maxResultTokens }),
         });
 
@@ -468,6 +506,11 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         ? error.message
         : String(error);
 
+  const indexMinTokens = (raw: string | undefined): number | undefined => {
+    if (raw === undefined || !/^\d+$/.test(raw.trim())) return undefined;
+    return Number(raw.trim());
+  };
+
   const convertViaCache = (getDistiller: () => Promise<Distiller>, absPath: string) =>
     convertCached(absPath, {
       getDistiller,
@@ -501,12 +544,13 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         const result = await handleClaudePreToolUse(payload, async (absPath) => {
           try {
             const converted = await convertViaCache(getDistiller, absPath);
-            return converted.savings === null ? { path: converted.mdPath } : { path: converted.mdPath, savings: converted.savings };
+            const markdown = readFileSync(converted.mdPath, 'utf8');
+            return converted.savings === null ? { path: converted.mdPath, markdown } : { path: converted.mdPath, savings: converted.savings, markdown };
           } catch (error) {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
+        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
