@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from './lib/args.mjs';
 import { acquireLock } from './lib/lock.mjs';
-import { buildPlan, budgetReached, finishedKeys, nightCost, unitKey } from './lib/plan.mjs';
+import { buildPlan, budgetReached, finishedKeys, limitPaired, nightCost, unitKey } from './lib/plan.mjs';
 import { corpusDir, demoDir, repoRoot, resultsDir } from './lib/paths.mjs';
 import { runWithRetry } from './lib/runner.mjs';
 import { docFileName, loadCorpus, loadTasks, selectTasks, validate } from './lib/tasks.mjs';
@@ -59,7 +59,9 @@ async function main() {
 
   const scenarios = args.scenario === 'both' ? ['dev', 'clean'] : [args.scenario];
   let plan = buildPlan({ tasks, arms: args.arms, repeats: args.repeats, seed, scenarios });
+  const pairUp = (units) => (args.paired ? limitPaired(units, args['max-runs']) : units);
   if (args['dry-run']) {
+    plan = pairUp(plan);
     for (const unit of plan) console.log(`${unit.task.id} ${unit.arm} ${unit.scenario} #${unit.repeat}`);
     console.log(`${plan.length} runs planned for ${night}`);
     return;
@@ -82,6 +84,7 @@ async function main() {
       plan = plan.filter((unit) => !done.has(unitKey(night, unit.task.id, unit.arm, unit.repeat, args.model, unit.scenario)));
       console.log(`Resume: ${before - plan.length} of ${before} runs already done for ${night}`);
     }
+    plan = pairUp(plan);
     const spent = Object.fromEntries(scenarios.map((scenario) => [scenario, nightCost(existing, night, scenario)]));
     const limit = args['max-cost-usd'] / scenarios.length;
     const exhausted = new Set();

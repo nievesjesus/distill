@@ -48,6 +48,7 @@ export function buildEnv({ baseEnv, arm, packageSpec, cacheDir, scenario = 'dev'
   delete env.DISTILL_PLUGIN_PACKAGE;
   delete env.DISTILL_CACHE_DIR;
   env.DISTILL_CACHE_DIR = cacheDir;
+  if (scenario === 'clean') env.PYTHONNOUSERSITE = '1';
   if (arm === 'distill') env.DISTILL_PLUGIN_PACKAGE = packageSpec;
   return env;
 }

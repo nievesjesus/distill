@@ -13,7 +13,7 @@ const change = (summary) => (summary.median === null ? 'n/a' : `${summary.median
 const SCENARIO_TEXT = {
   dev: 'dev: the agent keeps its normal tools, including any PDF command line tools installed on the machine.',
   clean:
-    'clean: pdftotext, pdfinfo, pdftoppm, pdfimages, pdftohtml, mutool, qpdf, gs and textutil are replaced by stubs that exit 127 (command not found). Python PDF libraries, if installed, are not hidden; runs that used them show up under bash-python.',
+    'clean: pdftotext, pdfinfo, pdftoppm, pdfimages, pdftohtml, mutool, qpdf, gs and textutil are replaced by stubs that exit 127 (command not found). PYTHONNOUSERSITE=1 is set, which hides pip --user packages only. Python libraries from the system interpreter\'s site-packages are not hidden; runs that used them show up under bash-python.',
 };
 
 function table(headers, rows) {

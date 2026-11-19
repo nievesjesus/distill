@@ -22,6 +22,21 @@ export function buildPlan({ tasks, arms, repeats, seed, scenarios = ['dev'] }) {
   return units;
 }
 
+export function limitPaired(units, maxRuns) {
+  const groups = new Map();
+  for (const unit of units) {
+    const key = [unit.task.id, unit.scenario, unit.repeat].join('|');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(unit);
+  }
+  const selected = [];
+  for (const group of groups.values()) {
+    if (selected.length + group.length > maxRuns) break;
+    selected.push(...group);
+  }
+  return selected;
+}
+
 export function unitKey(night, taskId, arm, repeat, model, scenario = 'dev') {
   return [night, taskId, arm, repeat, model, scenario].join('|');
 }

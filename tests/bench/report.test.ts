@@ -217,7 +217,7 @@ describe('renderReport', () => {
     expect(md.slice(clean, dev)).not.toContain('0.50x');
     expect(md.slice(dev)).toContain('0.50x');
     expect(md.slice(dev)).not.toContain('2.00x');
-    expect(md).toContain('Python PDF libraries, if installed, are not hidden');
+    expect(md).toContain("Python libraries from the system interpreter's site-packages are not hidden");
   });
 
   it('says so when there are no runs', async () => {

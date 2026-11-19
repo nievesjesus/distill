@@ -32,6 +32,7 @@ appendFileSync(
     pluginPackage: process.env.DISTILL_PLUGIN_PACKAGE ?? null,
     pid: process.pid,
     shims: probeShims(),
+    pythonNoUserSite: process.env.PYTHONNOUSERSITE ?? null,
     pathHead: (process.env.PATH ?? '').split(':')[0],
   })}\n`,
 );

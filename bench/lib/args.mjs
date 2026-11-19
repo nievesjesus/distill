@@ -19,6 +19,7 @@ const SPEC = {
   'corpus-file': { type: 'string', default: '' },
   keep: { type: 'bool', default: false },
   'dry-run': { type: 'bool', default: false },
+  paired: { type: 'bool', default: false },
 };
 
 export function parseArgs(argv) {

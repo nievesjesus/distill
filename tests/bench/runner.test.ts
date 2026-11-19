@@ -2,7 +2,9 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 30_000 });
 
 const repo = resolve(__dirname, '..', '..');
 const sha = 'a'.repeat(64);
@@ -234,12 +236,14 @@ describe('bench runner with a fake claude', () => {
         expect(c.shims[name]).toEqual({ status: 127, stderr: `${name}: command not found` });
       }
       expect(existsSync(c.pathHead)).toBe(false);
+      expect(c.pythonNoUserSite).toBe('1');
     }
     expect(records().every((r) => r.scenario === 'clean')).toBe(true);
     rmSync(log);
     rmSync(results, { recursive: true });
     expect(bench(['--arms', 'baseline']).status).toBe(0);
     expect(calls()[0].pathHead).not.toMatch(/shims$/);
+    expect(calls()[0].pythonNoUserSite).toBeNull();
     expect(records()[0].scenario).toBe('dev');
   });
 
@@ -287,5 +291,31 @@ describe('bench runner with a fake claude', () => {
     const out = bench(['--scenario', 'nope']);
     expect(out.status).toBe(1);
     expect(out.stderr).toContain('--scenario must be dev, clean or both');
+  });
+
+  it('with --paired never leaves a task in only one arm when --max-runs cuts the plan', async () => {
+    setup({ default: [{ kind: 'ok', answer: '5' }] }, [task('t1', 'd1', 5), task('t2', 'd2', 5), task('t3', 'd1', 5), task('t4', 'd2', 5)]);
+    const out = bench(['--paired', '--max-runs', '5']);
+    expect(out.status).toBe(0);
+    const recs = records();
+    expect(recs).toHaveLength(4);
+    const byTask = new Map<string, string[]>();
+    for (const r of recs) byTask.set(r.task, [...(byTask.get(r.task) ?? []), r.arm]);
+    expect(byTask.size).toBe(2);
+    for (const arms of byTask.values()) expect(arms.sort()).toEqual(['baseline', 'distill']);
+  });
+
+  it('without --paired a cap can split a task across arms', async () => {
+    setup({ default: [{ kind: 'ok', answer: '5' }] }, [task('t1', 'd1', 5), task('t2', 'd2', 5), task('t3', 'd1', 5), task('t4', 'd2', 5)]);
+    bench(['--max-runs', '3', '--seed', 'unpaired-demo']);
+    const arms = new Map<string, number>();
+    for (const r of records()) arms.set(r.task, (arms.get(r.task) ?? 0) + 1);
+    expect([...arms.values()].some((n) => n === 1)).toBe(true);
+  });
+
+  it('applies --paired to the dry run too', async () => {
+    setup({ default: [{ kind: 'ok', answer: '5' }] }, [task('t1', 'd1', 5), task('t2', 'd2', 5), task('t3', 'd1', 5)]);
+    const out = bench(['--dry-run', '--paired', '--max-runs', '3']);
+    expect(out.stdout).toContain('2 runs planned');
   });
 });

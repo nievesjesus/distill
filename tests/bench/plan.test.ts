@@ -41,6 +41,30 @@ describe('buildPlan', () => {
   });
 });
 
+describe('limitPaired', () => {
+  const units = (ids: string[], arms = ['baseline', 'distill'], scenario = 'dev') => ids.flatMap((id) => arms.map((arm) => ({ task: { id }, arm, repeat: 1, scenario })));
+
+  it('keeps whole groups in plan order and never splits one', async () => {
+    const { limitPaired } = await load('plan.mjs');
+    const shuffled = [units(['a'])[0], units(['b'])[0], units(['a'])[1], units(['b'])[1], units(['c'])[0], units(['c'])[1]];
+    const picked = limitPaired(shuffled, 5);
+    expect(picked.map((u: { task: { id: string }; arm: string }) => `${u.task.id}${u.arm[0]}`)).toEqual(['ab', 'aa'.replace('aa', 'ad'), 'bb', 'bd']);
+  });
+
+  it('treats scenarios and repeats as separate groups', async () => {
+    const { limitPaired } = await load('plan.mjs');
+    const both = [...units(['a'], ['baseline', 'distill'], 'dev'), ...units(['a'], ['baseline', 'distill'], 'clean')];
+    expect(limitPaired(both, 2)).toHaveLength(2);
+    expect(limitPaired(both, 4)).toHaveLength(4);
+    expect(limitPaired(both, 1)).toHaveLength(0);
+  });
+
+  it('keeps everything when the cap is large', async () => {
+    const { limitPaired } = await load('plan.mjs');
+    expect(limitPaired(units(['a', 'b']), Number.POSITIVE_INFINITY)).toHaveLength(4);
+  });
+});
+
 describe('resume and budget helpers', () => {
   it('treats ok records and second attempts as finished', async () => {
     const { finishedKeys, unitKey } = await load('plan.mjs');
