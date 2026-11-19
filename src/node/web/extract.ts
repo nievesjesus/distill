@@ -26,6 +26,8 @@ export interface DefuddleLike {
 export interface ExtractDeps {
   defuddle?: DefuddleLike;
   now?: () => Date;
+  verb?: 'fetched' | 'converted';
+  label?: string;
 }
 
 interface Prepared {
@@ -157,8 +159,13 @@ function wholePage(html: string, url: string): Extracted {
   return { markdown: withTitle(title, body), title, engine: 'turndown' };
 }
 
-export function sourceHeader(url: string, when: Date): string {
-  return `<!-- distill: ${url.replace(/>/g, '%3E')} fetched ${when.toISOString()}; untrusted web content -->`;
+export function sourceHeader(url: string, when: Date, verb: 'fetched' | 'converted' = 'fetched', kind = 'web'): string {
+  return `<!-- distill: ${url.replace(/>/g, '%3E')} ${verb} ${when.toISOString()}; untrusted ${kind} content -->`;
+}
+
+export function htmlFragmentToMarkdown(html: string): string {
+  const { document } = prepare(/<body[\s>]/i.test(html) ? html : `<html><body>${html}</body></html>`, 'about:blank');
+  return turndown().turndown(document.body?.innerHTML ?? '').trim();
 }
 
 export async function extractWeb(html: string, url: string, deps: ExtractDeps = {}): Promise<Extracted> {
@@ -172,7 +179,7 @@ export async function extractWeb(html: string, url: string, deps: ExtractDeps = 
   }
   picked ??= wholePage(html, url);
   if (picked.markdown.trim() === '') throw new DistillError('parse_failed', 'The page has no readable text');
-  return { ...picked, markdown: `${sourceHeader(url, (deps.now ?? (() => new Date()))())}\n\n${picked.markdown}\n` };
+  return { ...picked, markdown: `${sourceHeader(deps.label ?? url, (deps.now ?? (() => new Date()))(), deps.verb)}\n\n${picked.markdown}\n` };
 }
 
 export async function htmlToMarkdown(html: string, url: string, deps: ExtractDeps = {}): Promise<string> {

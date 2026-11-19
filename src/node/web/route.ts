@@ -18,6 +18,14 @@ const DOCUMENT_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
   'image/tiff': 'tiff',
+  'application/epub+zip': 'epub',
+  'message/rfc822': 'eml',
+  'application/vnd.ms-outlook': 'msg',
+  'application/rss+xml': 'xml',
+  'application/atom+xml': 'xml',
+  'application/rdf+xml': 'xml',
+  'application/xml': 'xml',
+  'text/xml': 'xml',
 };
 
 const HTML_TYPES: ReadonlySet<string> = new Set(['text/html', 'application/xhtml+xml']);

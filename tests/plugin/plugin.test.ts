@@ -54,7 +54,7 @@ describe('plugin files', () => {
 });
 
 describe('hook.mjs', () => {
-  const extensions = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'webp', 'txt', 'md'];
+  const extensions = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'webp', 'txt', 'md', 'html', 'htm', 'xhtml', 'mhtml', 'mht', 'epub', 'eml', 'msg', 'xml', 'rss', 'atom'];
 
   it('convertible extensions match the TypeScript list', async () => {
     const { CONVERTIBLE_EXTENSIONS } = await load('hook.mjs');

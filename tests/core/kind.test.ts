@@ -19,6 +19,14 @@ describe('detectKind', () => {
     }
   });
 
+  it('detects saved web pages, books, mail and feeds', () => {
+    for (const name of ['a.html', 'a.HTM', 'a.xhtml', 'a.mhtml', 'a.MHT']) expect(detectKind(name)).toBe('HTML');
+    expect(detectKind('a.epub')).toBe('EPUB');
+    expect(detectKind('a.eml')).toBe('EMAIL');
+    expect(detectKind('a.MSG')).toBe('EMAIL');
+    for (const name of ['a.xml', 'a.rss', 'a.atom']) expect(detectKind(name)).toBe('FEED');
+  });
+
   it('returns null for unknown or missing extensions', () => {
     expect(detectKind('a.tar.gz')).toBeNull();
     expect(detectKind('noext')).toBeNull();

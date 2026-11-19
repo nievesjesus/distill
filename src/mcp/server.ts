@@ -275,7 +275,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_file',
     {
       title: 'Read a document as Markdown',
-      description: `Read one local document (PDF, DOCX, PPTX, XLSX, ODT/ODS/ODP, CSV, PNG/JPG/TIFF/WebP) as token-lean Markdown. Read-only: never modifies or uploads the file. Use distill_files for several files at once and distill_outline first for long documents, then pass \`section\` or \`offset\`/\`limit\`. Output is capped at about ${budget} tokens per call; follow \`nextOffset\`. Fails with password_protected, needs_libreoffice (legacy .doc/.xls/.ppt and OpenDocument), forbidden (outside allowed roots), too_large (over ${maxSize}) or parse_failed. Tables and scans are only as faithful as the parser. ${VISUAL_HINT}`,
+      description: `Read one local document (PDF, DOCX, PPTX, XLSX, ODT/ODS/ODP, CSV, PNG/JPG/TIFF/WebP, saved web pages HTML/MHTML, EPUB, emails EML/MSG, RSS/Atom feeds) as token-lean Markdown. For a live web page use distill_url. Read-only: never modifies or uploads the file. Use distill_files for several files at once and distill_outline first for long documents, then pass \`section\` or \`offset\`/\`limit\`. Output is capped at about ${budget} tokens per call; follow \`nextOffset\`. Fails with password_protected, needs_libreoffice (legacy .doc/.xls/.ppt and OpenDocument), forbidden (outside allowed roots), too_large (over ${maxSize}) or parse_failed. Tables and scans are only as faithful as the parser. ${VISUAL_HINT}`,
       annotations: READ_ONLY,
       inputSchema: {
         path: z.string().min(1).describe(PATH_HINT),

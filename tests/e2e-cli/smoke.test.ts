@@ -10,6 +10,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeEpub } from '../fixtures/epub';
+import { makeMsg } from '../fixtures/make-msg';
 import { makeSamplePdf } from '../fixtures/make-pdf';
 
 const CLI = resolve('dist/cli.js');
@@ -122,6 +124,43 @@ describe('distill-llm convert <url>', () => {
     const entry = JSON.parse(result.stdout)[0];
     expect(entry.tokens.raw).toBeGreaterThan(entry.tokens.out);
     expect(entry.output.endsWith('widgets.md')).toBe(true);
+  });
+});
+
+describe('distill-llm convert saved formats', () => {
+  it('converts an epub, an eml and a feed with the bundled readers', () => {
+    const epub = join(work, 'book.epub');
+    writeFileSync(epub, makeEpub({ chapters: [{ id: 'a', file: 'a.xhtml', title: 'First chapter', body: '<p>Once upon a time in the smoke test.</p>' }] }));
+    const eml = join(work, 'note.eml');
+    writeFileSync(eml, 'From: ada@example.com\r\nTo: bob@example.com\r\nSubject: Smoke mail\r\n\r\nHello from the smoke test.\r\n');
+    const feed = join(work, 'feed.rss');
+    writeFileSync(feed, '<rss version="2.0"><channel><title>Smoke feed</title><item><title>Entry one</title><link>https://example.com/1</link></item></channel></rss>');
+    const book = runCli(['convert', '--stdout', epub]);
+    expect(book.status).toBe(0);
+    expect(book.stdout).toContain('## First chapter');
+    const mail = runCli(['convert', '--stdout', eml]);
+    expect(mail.status).toBe(0);
+    expect(mail.stdout).toContain('# Smoke mail');
+    const rss = runCli(['convert', '--stdout', feed]);
+    expect(rss.status).toBe(0);
+    expect(rss.stdout).toContain('- Link: https://example.com/1');
+  });
+
+  it('converts an Outlook message', () => {
+    const msg = join(work, 'real.msg');
+    writeFileSync(msg, makeMsg({ subject: 'Outlook smoke', senderName: 'Ada', senderEmail: 'ada@example.com', body: 'Body from msg.' }));
+    const result = runCli(['convert', '--stdout', msg]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('# Outlook smoke');
+    expect(result.stdout).toContain('Body from msg.');
+  });
+
+  it('reports a broken Outlook message instead of crashing', () => {
+    const msg = join(work, 'broken.msg');
+    writeFileSync(msg, 'not a compound file');
+    const result = runCli(['convert', '--stdout', msg]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('parse_failed');
   });
 });
 

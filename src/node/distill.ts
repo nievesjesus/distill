@@ -22,6 +22,7 @@ import { createUrlDistiller } from './web/distill-url';
 import type { UrlOptions } from './web/distill-url';
 import { fetchUrl } from './web/fetch';
 import type { FetchOptions, FetchResult } from './web/fetch';
+import { withSavedFormats } from './web/saved';
 
 const DEFAULT_RATE = 0.5;
 const PAGE_IMAGE_DPI = 100;
@@ -122,7 +123,7 @@ export function createDistiller(deps: {
         kind,
         pages: parsed.pages,
         markdown,
-        tokens: { raw: countTokens(parsed.markdown), out: countTokens(markdown) },
+        tokens: { raw: parsed.rawTokens ?? countTokens(parsed.markdown), out: countTokens(markdown) },
         ms: Math.round(performance.now() - started),
         ...(parsed.engine ? { engine: parsed.engine } : {}),
         ...(parsed.visualPages ? { visualPages: parsed.visualPages } : {}),
@@ -170,7 +171,7 @@ export async function openDistiller(maxBytes?: number): Promise<Distiller> {
   const version = readVersion(join(packageRoot, 'package.json'));
   const liteparseVersion = readVersion(require.resolve('@llamaindex/liteparse/package.json'));
   const libreoffice = await exposeLibreOffice();
-  const parser = withBuiltinOffice(createParser(), { libreoffice });
+  const parser = withSavedFormats(withBuiltinOffice(createParser(), { libreoffice }));
   try {
     const cacheDir = join(homedir(), '.cache', 'distill-llm');
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
