@@ -34,8 +34,8 @@ import { cacheDirFromEnv } from '../node/cache-dir';
 import { createGlobalUpdater } from '../node/update-install';
 import type { GlobalUpdater } from '../node/update-install';
 import type { InstallMethod, UpdateCheck } from '../core/types';
-import { parseBoosters, parsePositiveInt, parseRate, runConvert, runOutline } from './convert';
-import type { ConvertOptions, OutlineOptions } from './convert';
+import { parseBoosters, parseNonNegativeInt, parsePositiveInt, parseRate, runConvert, runGrep, runOutline } from './convert';
+import type { ConvertOptions, GrepOptions, OutlineOptions } from './convert';
 
 type Server = { url: string; close(): Promise<void> };
 
@@ -373,6 +373,29 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--allow-host <host>', 'allow this host even if it resolves to a private address (repeatable)', collectHost, [])
     .action(async (file: string, options: OutlineOptions) => {
       const code = await runOutline(file, options, { stdout, stderr, openDistiller });
+      if (code !== 0) exit(code);
+    });
+
+  program
+    .command('grep')
+    .description('Find where a word, number or phrase appears in a document or web page, with page and line')
+    .argument('<query>', 'text to find (case-insensitive, matches across line wraps)')
+    .argument('<file>', 'file or http(s) URL to search')
+    .option('--regex', 'treat the query as a regular expression')
+    .option('--context <n>', 'lines of context around each match (default 2)', parseNonNegativeInt)
+    .option('--max <n>', 'maximum number of hits (default 20)', parsePositiveInt)
+    .option('--json', 'print the hits as JSON')
+    .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
+    .option('--allow-private', 'allow URLs that resolve to private, loopback or link-local addresses')
+    .option('--allow-host <host>', 'allow this host even if it resolves to a private address (repeatable)', collectHost, [])
+    .action(async (query: string, file: string, options: GrepOptions) => {
+      const code = await runGrep(query, file, options, {
+        stdout,
+        stderr,
+        openDistiller,
+        savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
+        recordUsage: (kind, savings) => recordUsage({ source: 'cli', kind, savings }, { cacheDir, env }),
+      });
       if (code !== 0) exit(code);
     });
 

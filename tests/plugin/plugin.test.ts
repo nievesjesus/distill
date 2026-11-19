@@ -47,6 +47,13 @@ describe('plugin files', () => {
     expect(skill).toContain('--limit');
   });
 
+  it('skill points at search before reading a long document whole', () => {
+    const skill = claudeSkillMarkdown('distill-llm');
+    expect(skill).toContain('distill-llm grep "<query>" "<path>"');
+    expect(skill).toContain('p.<page> L<line>');
+    expect(skill).toContain('distill_search');
+  });
+
   it('bin/distill-llm is executable in git', () => {
     const out = spawnSync('git', ['ls-files', '-s', 'plugins/distill/bin/distill-llm'], { cwd: repo, encoding: 'utf8' }).stdout;
     expect(out.startsWith('100755')).toBe(true);

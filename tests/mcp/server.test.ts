@@ -85,12 +85,12 @@ afterEach(async () => {
 });
 
 describe('createMcpServer', () => {
-  it('lists the six tools, all read-only with a title', async () => {
+  it('lists the seven tools, all read-only with a title', async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image', 'distill_url']);
+    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image', 'distill_search', 'distill_url']);
     for (const tool of tools) {
-      expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: tool.name === 'distill_url' });
+      expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: tool.name === 'distill_url' || tool.name === 'distill_search' });
       expect(tool.title?.length).toBeGreaterThan(0);
     }
   });

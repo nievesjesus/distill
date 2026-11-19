@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { BOOSTER_ORDER } from '../core/boosters/pipeline';
 import { buildOutline, renderOutline } from '../core/outline';
 import { closestHeadings, findSection } from './sections';
-import { type SavingsEstimate, estimateSavings, savingsNote, sumSavings } from '../core/savings';
+import { type SavingsEstimate, estimateSavings, estimateSearchSavings, savingsNote, sumSavings } from '../core/savings';
+import { SearchQueryError, renderHits, searchMarkdown } from '../core/search';
 import { countTokens } from '../core/tokens';
 import type { DistillResult, Health, LocalBoosterId } from '../core/types';
 import type { DistillOptions, Distiller } from '../node/distill';
@@ -21,6 +22,7 @@ const SKIPPED_NOTE = 'Not included to stay under the size limit. Call distill_fi
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const READ_ONLY_WEB = { ...READ_ONLY, openWorldHint: true };
+const NO_MATCHES = 'No matches.';
 const URL_TTL_MS = 5 * 60 * 1000;
 
 const boostersSchema = z
@@ -55,7 +57,7 @@ const savingsSchema = z.object({
   out: z.number(),
   saved: z.number(),
   percent: z.number(),
-  basis: z.enum(['pdf-pages', 'raw-text', 'raw-html', 'served-markdown']),
+  basis: z.enum(['pdf-pages', 'raw-text', 'raw-html', 'served-markdown', 'search']),
 });
 const linesSchema = z.object({ from: z.number(), to: z.number(), total: z.number() });
 const errorSchema = z.object({ code: z.string(), message: z.string() });
@@ -419,6 +421,70 @@ export function createMcpServer(deps: McpDeps): McpServer {
             tokens: outline.tokens,
             entries: outline.entries,
             ...(result.visualPages && result.visualPages.length > 0 ? { visualPages: result.visualPages } : {}),
+          },
+        };
+      } catch (error) {
+        const { code, message } = describeError(error);
+        return { isError: true, content: [{ type: 'text' as const, text: `${code}: ${message}` }] };
+      }
+    },
+  );
+
+  server.registerTool(
+    'distill_search',
+    {
+      title: 'Search inside a document',
+      description: `Find where a word, number or phrase appears in one document without reading it: use it instead of reading a long document whole, and instead of shelling out to pdftotext or grep. Takes a local \`path\` (same formats as distill_file) or a \`url\` (same as distill_url); the document is converted once and the cached Markdown is searched. Matching is case-insensitive, ignores line wraps and extra whitespace, and finds numbers split across lines; set \`regex\` for a JavaScript regular expression (at most 200 characters). Each hit has the line, the physical page number (1-based position in the PDF, not the printed label; absent for documents without pages), the nearest heading above it and a few lines of context; neighbouring matches are merged into one hit. Next step after a hit: read around it with distill_file using \`section\` (the hit's heading) or \`offset\`/\`limit\` (from the hit's line), or look at the original page with distill_page_image. Read-only: never modifies or uploads anything. A \`path\` stays on this machine; only a \`url\` reaches the internet (public pages only, with the safety rules of distill_url), which is why the tool is marked as open-world. Fails like distill_file or distill_url (password_protected, needs_libreoffice, forbidden, too_large over ${maxSize}, parse_failed, fetch_failed) or with bad_request (neither or both of path and url, an invalid or over-long regex).`,
+      annotations: READ_ONLY_WEB,
+      inputSchema: {
+        path: z.string().min(1).optional().describe(`${PATH_HINT}. Pass either path or url`),
+        url: z.string().min(1).optional().describe('Absolute http or https URL of a page. Pass either path or url'),
+        query: z.string().min(1).describe('Text to find. Plain text by default: case-insensitive, whitespace-insensitive, matches across line wraps'),
+        regex: z.boolean().optional().describe('Treat query as a JavaScript regular expression (case-insensitive, at most 200 characters)'),
+        context: z.number().int().min(0).max(20).optional().describe('Lines of context before and after each match (default 2)'),
+        maxHits: z.number().int().min(1).max(200).optional().describe('Maximum number of hits to return (default 20); total says how many there are'),
+      },
+      outputSchema: {
+        note: z.string().optional(),
+        hits: z.array(z.object({ line: z.number(), page: z.number().optional(), section: z.string().optional(), text: z.string() })),
+        total: z.number(),
+        truncated: z.boolean(),
+        tokens: tokensSchema,
+      },
+    },
+    async (args) => {
+      try {
+        if (args.path !== undefined && args.url !== undefined) throw new DistillError('bad_request', 'Pass either path or url, not both');
+        if (args.path === undefined && args.url === undefined) throw new DistillError('bad_request', 'Pass path or url');
+        const { result, key } = args.url !== undefined ? await distillUrlOne(args.url, {}) : await distillOne(args.path as string, {});
+        let found: ReturnType<typeof searchMarkdown>;
+        try {
+          found = searchMarkdown(result.markdown, args.query, {
+            ...(args.regex === undefined ? {} : { regex: args.regex }),
+            ...(args.context === undefined ? {} : { context: args.context }),
+            ...(args.maxHits === undefined ? {} : { maxHits: args.maxHits }),
+          });
+        } catch (error) {
+          if (error instanceof SearchQueryError) throw new DistillError('bad_request', error.message);
+          throw error;
+        }
+        const body = found.hits.length === 0 ? NO_MATCHES : renderHits(found.hits);
+        const more = found.truncated ? `\n${found.total - found.hits.length} more not shown (${found.total} in total). Raise maxHits or narrow the query.` : '';
+        const text = `${body}${more}`;
+        const hitTokens = countTokens(text);
+        const savings = claimReport(key) ? estimateSearchSavings(result, hitTokens) : undefined;
+        if (savings) track(result.kind, savings);
+        const note = withNote && savings ? savingsNote(savings) : undefined;
+        const content: { type: 'text'; text: string }[] = [{ type: 'text', text }];
+        if (note) content.push({ type: 'text', text: note });
+        return {
+          content,
+          structuredContent: {
+            ...(note ? { note } : {}),
+            hits: found.hits,
+            total: found.total,
+            truncated: found.truncated,
+            tokens: { raw: result.tokens.out, out: hitTokens },
           },
         };
       } catch (error) {

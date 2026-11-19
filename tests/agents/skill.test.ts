@@ -34,6 +34,13 @@ describe('portable agents skill', () => {
     expect(text).toMatch(/never upload/i);
   });
 
+  it('points at search before reading a long document whole', () => {
+    expect(text).toContain('distill-llm grep "<query>" "<path>"');
+    expect(agentsSkillMarkdown('node /opt/d/cli.js')).toContain('node /opt/d/cli.js grep "<query>" "<path>"');
+    expect(text).toContain('p.<page> L<line>');
+    expect(text).toContain('distill_search');
+  });
+
   it('tells the agent about figure pages', () => {
     expect(text).toContain('figure');
   });

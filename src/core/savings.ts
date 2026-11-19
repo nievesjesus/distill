@@ -5,7 +5,7 @@ export interface SavingsEstimate {
   out: number;
   saved: number;
   percent: number;
-  basis: 'pdf-pages' | 'raw-text' | 'raw-html' | 'served-markdown';
+  basis: 'pdf-pages' | 'raw-text' | 'raw-html' | 'served-markdown' | 'search';
 }
 
 function build(baseline: number, out: number, basis: SavingsEstimate['basis']): SavingsEstimate {
@@ -22,6 +22,10 @@ function basisOf(r: { kind: string; markdownServed?: boolean }): SavingsEstimate
 export function estimateSavings(r: { kind: string; pages: number; tokens: { raw: number; out: number }; markdownServed?: boolean }): SavingsEstimate {
   const basis = basisOf(r);
   return build(basis === 'pdf-pages' ? r.tokens.raw + PDF_PAGE_TOKENS * r.pages : r.tokens.raw, r.tokens.out, basis);
+}
+
+export function estimateSearchSavings(r: { kind: string; pages: number; tokens: { raw: number; out: number }; markdownServed?: boolean }, hitTokens: number): SavingsEstimate {
+  return build(estimateSavings(r).baseline, hitTokens, 'search');
 }
 
 export function sumSavings(items: SavingsEstimate[]): SavingsEstimate {
@@ -43,6 +47,8 @@ function versus(s: SavingsEstimate): string {
       return `the raw page ≈ ${format(s.baseline)} tok (counted, HTML as served)`;
     case 'served-markdown':
       return `the text the server sent ≈ ${format(s.baseline)} tok (counted)`;
+    case 'search':
+      return `reading the whole document ≈ ${format(s.baseline)} tok (estimate)`;
     case 'raw-text':
       return `the raw extracted text ≈ ${format(s.baseline)} tok (counted)`;
   }

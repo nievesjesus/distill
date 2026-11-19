@@ -251,7 +251,7 @@ export async function handleClaudePreToolUse(
             updatedInput: { ...toolInput, file_path: converted.path, offset: 1, limit },
             permissionDecision: 'allow',
             permissionDecisionReason: 'distill: converted copy in its cache',
-            additionalContext: `${lead} This is a large document: ${lines} lines, ~${tokens} tokens. Only lines 1-${limit} were loaded. Read the sections you need with Read on ${original} using offset and limit (for a PDF, pages works too) from this index:\n${index}${note}`,
+            additionalContext: `${lead} This is a large document: ${lines} lines, ~${tokens} tokens. Only lines 1-${limit} were loaded. To find a word or number, search with distill_search. Read the sections you need with Read on ${original} using offset and limit (for a PDF, pages works too) from this index:\n${index}${note}`,
           },
         };
       }

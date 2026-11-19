@@ -393,6 +393,7 @@ describe('large document index', () => {
     const ctx = context(result);
     expect(ctx).toContain(`distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`);
     expect(ctx).toContain(`This is a large document: ${lines.length} lines, ~${countTokens(markdown)} tokens. Only lines 1-${limit} were loaded.`);
+    expect(ctx).toContain('search with distill_search');
     expect(ctx).toContain(`Read on ${file} using offset and limit (for a PDF, pages works too) from this index:\n${renderOutline(buildOutline(markdown), { name: 'b.pdf' })}`);
   });
 

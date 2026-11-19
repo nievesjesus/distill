@@ -4,7 +4,9 @@ import { InvalidArgumentError } from 'commander';
 import { parseBoosterList } from '../core/booster-list';
 import { savedPercent, shortCount } from '../core/format';
 import { buildOutline, fitLines, renderOutline, sliceLines } from '../core/outline';
-import { type SavingsEstimate, estimateSavings, savingsNote } from '../core/savings';
+import { type SavingsEstimate, estimateSavings, estimateSearchSavings, savingsNote } from '../core/savings';
+import { SearchQueryError, renderHits, searchMarkdown } from '../core/search';
+import { countTokens } from '../core/tokens';
 import type { LocalBoosterId } from '../core/types';
 import type { Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
@@ -29,6 +31,16 @@ export interface ConvertOptions {
 }
 
 export interface OutlineOptions {
+  json?: boolean;
+  maxSize: number;
+  allowPrivate?: boolean;
+  allowHost?: string[];
+}
+
+export interface GrepOptions {
+  regex?: boolean;
+  context?: number;
+  max?: number;
   json?: boolean;
   maxSize: number;
   allowPrivate?: boolean;
@@ -66,6 +78,13 @@ export function parseRate(value: string): number {
 export function parsePositiveInt(value: string): number {
   if (!/^\d+$/.test(value) || Number(value) < 1 || !Number.isSafeInteger(Number(value))) {
     throw new InvalidArgumentError('must be a positive integer');
+  }
+  return Number(value);
+}
+
+export function parseNonNegativeInt(value: string): number {
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new InvalidArgumentError('must be a non-negative integer');
   }
   return Number(value);
 }
@@ -217,6 +236,50 @@ export async function runOutline(file: string, options: OutlineOptions, io: Conv
     } else {
       io.stdout(renderOutline(outline, { name: result.name }));
     }
+    return 0;
+  } catch (error) {
+    const outcome = failure(file, error);
+    if (options.json) io.stdout(JSON.stringify(outcome));
+    else if ('error' in outcome) io.stderr(`${file}  error: ${outcome.error.code}: ${outcome.error.message}`);
+    return 1;
+  } finally {
+    distiller.close();
+  }
+}
+
+export async function runGrep(query: string, file: string, options: GrepOptions, io: ConvertIo): Promise<number> {
+  const searchOptions = {
+    ...(options.regex ? { regex: true } : {}),
+    ...(options.context === undefined ? {} : { context: options.context }),
+    ...(options.max === undefined ? {} : { maxHits: options.max }),
+  };
+  try {
+    searchMarkdown('', query, searchOptions);
+  } catch (error) {
+    if (!(error instanceof SearchQueryError)) throw error;
+    io.stderr(`error: ${error.message}`);
+    return 2;
+  }
+  let distiller: Distiller;
+  try {
+    distiller = await io.openDistiller(Math.round(options.maxSize * 1024 * 1024));
+  } catch (error) {
+    if (options.json) io.stdout(JSON.stringify(failure(file, error)));
+    else io.stderr(`error: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+  try {
+    const result = isUrlInput(file) ? await distiller.distillUrl(file, { lingua: false, ...webOptions(options) }) : await distiller.distillFile(file, { lingua: false });
+    const found = searchMarkdown(result.markdown, query, searchOptions);
+    const body = found.hits.length === 0 ? 'No matches.' : renderHits(found.hits);
+    const more = found.truncated ? `\n${found.total - found.hits.length} more not shown (${found.total} in total). Raise --max or narrow the query.` : '';
+    const text = `${body}${more}`;
+    const savings = estimateSearchSavings(result, countTokens(text));
+    try {
+      io.recordUsage?.(result.kind, savings);
+    } catch {}
+    io.stdout(options.json ? JSON.stringify(found) : text);
+    if (!options.json && io.savingsNote !== false) io.stderr(savingsNote(savings));
     return 0;
   } catch (error) {
     const outcome = failure(file, error);
