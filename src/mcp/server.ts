@@ -241,7 +241,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         }
         const more = page.to < page.end;
         const continuation = more ? continuationFor(page, limit !== undefined) : undefined;
-        const savings = offset === 1 && args.section === undefined ? estimateSavings(result) : undefined;
+        const savings = offset === 1 && args.limit === undefined && args.section === undefined ? estimateSavings(result) : undefined;
         if (savings) track(result.kind, savings);
         const note = withNote && savings ? savingsNote(savings) : undefined;
         const partialStart = args.offset === undefined && args.limit === undefined && args.section === undefined && page.to < page.total;

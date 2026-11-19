@@ -177,7 +177,7 @@ export function renderOutline(outline: Outline, opts: { name?: string } = {}): s
   const rows = outline.entries.map((entry) => {
     const indent = '  '.repeat(Math.max(0, entry.level - 1));
     const page = entry.page === undefined ? '' : ` · p.${entry.page}`;
-    return `${indent}L${format(entry.line)}-${format(entry.endLine)} · ${format(entry.tokens)} tok${page} · ${entry.title}`;
+    return `${indent}L${entry.line}-${entry.endLine} · ${format(entry.tokens)} tok${page} · ${entry.title}`;
   });
   return [head, ...rows].join('\n');
 }

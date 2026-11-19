@@ -454,7 +454,8 @@ describe('outline and sections', () => {
     expect(second).not.toHaveProperty('continuation');
     const fromStart = (await file(client, { path: '/x/big.pdf', limit: 3 })).structuredContent as Structured;
     expect(fromStart.lines).toEqual({ from: 1, to: 3, total: 25 });
-    expect(fromStart).toHaveProperty('savings');
+    expect(fromStart).not.toHaveProperty('savings');
+    expect(fromStart).not.toHaveProperty('note');
     expect(fromStart).not.toHaveProperty('outline');
   });
 
@@ -473,11 +474,13 @@ describe('outline and sections', () => {
 });
 
 describe('usage recording', () => {
-  it('records distill_file wherever it returns savings, never for a section or a later offset', async () => {
+  it('records distill_file only from the start without limit or section', async () => {
     const recorded: unknown[][] = [];
     const client = await connect({ recordUsage: (...args) => recorded.push(args), stat: fixedStat });
     await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
     await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', offset: 2 } });
+    await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', offset: 1, limit: 1 } });
+    await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', limit: 1 } });
     await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', section: 'a.pdf' } });
     expect(recorded).toEqual([['PDF', SAVINGS]]);
   });

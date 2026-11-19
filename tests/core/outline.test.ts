@@ -170,6 +170,15 @@ describe('renderOutline', () => {
     const big = `# A\n${'word '.repeat(3000)}\n## B\nx`;
     expect(renderOutline(buildOutline(big))).toMatch(/~\d,\d{3} tokens/);
   });
+
+  it('keeps line numbers plain while the header and token counts use separators', () => {
+    const md = `# A\n${'line\n'.repeat(1500)}## B\nx`;
+    const text = renderOutline(buildOutline(md));
+    expect(text.split('\n')[0]).toMatch(/: 1,\d{3} lines, /);
+    expect(text).toMatch(/L1-1503 /);
+    expect(text).toMatch(/L1502-1503 /);
+    expect(text).not.toMatch(/L[\d,]*\d,\d{3}/);
+  });
 });
 
 describe('sliceLines', () => {
