@@ -47,6 +47,13 @@ describe('plugin files', () => {
     expect(skill).toContain('--limit');
   });
 
+  it('skill covers audio and video with the install hint', () => {
+    const skill = claudeSkillMarkdown('distill-llm');
+    expect(skill.split('\n')[2]).toMatch(/audio|video/i);
+    expect(skill).toMatch(/transcribed locally/);
+    expect(skill).toContain('distill-llm asr install');
+  });
+
   it('skill points at search before reading a long document whole', () => {
     const skill = claudeSkillMarkdown('distill-llm');
     expect(skill).toContain('distill-llm grep "<query>" "<path>"');
@@ -61,7 +68,7 @@ describe('plugin files', () => {
 });
 
 describe('hook.mjs', () => {
-  const extensions = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'webp', 'txt', 'md', 'html', 'htm', 'xhtml', 'mhtml', 'mht', 'epub', 'eml', 'msg', 'xml', 'rss', 'atom'];
+  const extensions = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'webp', 'txt', 'md', 'html', 'htm', 'xhtml', 'mhtml', 'mht', 'epub', 'eml', 'msg', 'xml', 'rss', 'atom', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'aiff', 'aif', 'mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'];
 
   it('convertible extensions match the TypeScript list', async () => {
     const { CONVERTIBLE_EXTENSIONS } = await load('hook.mjs');

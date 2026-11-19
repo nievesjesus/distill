@@ -41,6 +41,13 @@ describe('portable agents skill', () => {
     expect(text).toContain('distill_search');
   });
 
+  it('covers audio and video with the install hint', () => {
+    expect(text.split('\n')[2]).toMatch(/audio|video/i);
+    expect(text).toMatch(/transcribed locally/);
+    expect(text).toContain('distill-llm asr install');
+    expect(agentsSkillMarkdown('node /opt/d/cli.js')).toContain('node /opt/d/cli.js asr install');
+  });
+
   it('tells the agent about figure pages', () => {
     expect(text).toContain('figure');
   });

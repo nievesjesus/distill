@@ -28,6 +28,8 @@ export interface ConvertOptions {
   allowPrivate?: boolean;
   allowHost?: string[];
   full?: boolean;
+  timestamps?: 'none' | 'coarse' | 'segment';
+  frames?: 'none' | 'ocr';
 }
 
 export interface OutlineOptions {
@@ -74,6 +76,16 @@ export function parseRate(value: string): number {
   }
   return rate;
 }
+
+function oneOf<T extends string>(choices: readonly T[]): (value: string) => T {
+  return (value) => {
+    if ((choices as readonly string[]).includes(value)) return value as T;
+    throw new InvalidArgumentError(`must be one of: ${choices.join(', ')}`);
+  };
+}
+
+export const parseTimestamps = oneOf(['none', 'coarse', 'segment'] as const);
+export const parseFrames = oneOf(['none', 'ocr'] as const);
 
 export function parsePositiveInt(value: string): number {
   if (!/^\d+$/.test(value) || Number(value) < 1 || !Number.isSafeInteger(Number(value))) {
@@ -179,7 +191,14 @@ export async function runConvert(files: string[], options: ConvertOptions, io: C
   async function convertOne(index: number): Promise<void> {
     const input = files[index];
     try {
-      const settings = { boosters, lingua: options.lingua ?? false, rate: options.rate, ...(options.full ? { mode: 'full' as const } : {}) };
+      const settings = {
+        boosters,
+        lingua: options.lingua ?? false,
+        rate: options.rate,
+        ...(options.full ? { mode: 'full' as const } : {}),
+        ...(options.timestamps ? { timestamps: options.timestamps } : {}),
+        ...(options.frames ? { frames: options.frames } : {}),
+      };
       const result = isUrlInput(input) ? await distiller.distillUrl(input, { ...settings, ...webOptions(options) }) : await distiller.distillFile(input, settings);
       try {
         io.recordUsage?.(result.kind, estimateSavings(result));

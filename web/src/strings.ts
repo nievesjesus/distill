@@ -42,6 +42,7 @@ export const S = {
   queued: 'Queued',
   parsing: 'Parsing',
   ocr: 'OCR',
+  transcribing: 'Transcribing',
   tokensSuffix: 'tok',
   unknownKind: '?',
   footerLine: (raw: string, out: string, done: number, total: number) =>
@@ -126,4 +127,9 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   forbidden: 'Requests from this origin are not allowed.',
   needs_javascript: 'This page needs JavaScript to show its content.',
   fetch_failed: 'The page could not be fetched.',
+  asr_unavailable: 'Speech recognition is not installed. Run `distill-llm asr install` once (about 700 MB).',
+  ffmpeg_missing: 'ffmpeg is needed to read this audio or video file. Install it and restart distill.',
+  no_audio: 'This file has no audio to transcribe.',
+  asr_failed: 'Transcription failed.',
+  aborted: 'Transcription was cancelled.',
 };

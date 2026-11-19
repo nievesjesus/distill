@@ -51,6 +51,7 @@ On top of that, distill's lossless boosters trim another 10% from LiteParse's Ma
 - **One engine, many doors.** The same local pipeline behind a web app, a desktop app, a Docker image, a CLI, an MCP server and hooks for Claude Code and OpenCode.
 - **Real parsing.** [LiteParse](https://github.com/run-llama/liteparse) by LlamaIndex reads PDFs and images (with OCR). DOCX, PPTX, XLSX and CSV use a built-in reader, or LiteParse through LibreOffice when it is installed; legacy Office and ODF go through LibreOffice.
 - **Web pages, books and mail.** `distill-llm convert <url>` and the MCP tool `distill_url` turn a public page into clean Markdown; saved `.html`, `.mhtml`, `.epub`, `.eml`, `.msg` and RSS/Atom files work too. See [Web pages](#web-pages).
+- **Audio and video.** Recordings are transcribed on your machine into a compact transcript, with the on-screen text of videos. See [Supported formats](#supported-formats).
 - **Lossless boosters.** Small, deterministic passes drop repeated boilerplate, image paths and link targets, table padding and extra whitespace. Content words stay.
 - **Optional LLMLingua-2.** A local model for when you want to go further and accept a lossy result. Off by default, installed on demand.
 - **Honest numbers.** Every file's before and after token counts come from a real tokenizer, live in the UI.
@@ -329,6 +330,7 @@ LLMLingua-2 is optional and experimental. It needs Apple Silicon, Windows x64 or
 | EPUB | nothing else (chapters in reading order with titles from the table of contents; DRM-protected books are refused) |
 | EML, MSG | nothing else (headers, body and a list of attachments; attachment contents are not converted) |
 | RSS, Atom (`.xml`, `.rss`, `.atom`) | nothing else (a list of entries with date, link and summary) |
+| MP3, WAV, M4A, AAC, FLAC, OGG, OPUS, AIFF; MP4, MOV, MKV, WEBM, AVI, M4V | a one-time `distill-llm asr install` (about 700 MB, runs offline afterwards) and, for everything but WAV, [ffmpeg](https://ffmpeg.org/) on your `PATH` (or `DISTILL_FFMPEG`). The speech is transcribed locally with Parakeet TDT 0.6B v3 (25 languages including English and Spanish): paragraphs, a `[mm:ss]` about once a minute (`--timestamps none\|coarse\|segment`), fillers and glued punctuation cleaned. For video, new on-screen text is OCR'd and added once, as `> [slide mm:ss]` blocks (`--frames none` skips it). Transcripts are cached by file content. Savings are counted against the same transcript as SRT, which is what a typical transcription tool hands the model |
 
 Password-protected PDFs are reported as an error. Parsing quality is whatever LiteParse gives you: it varies on dense tables and complex scans, and distill does not try to hide that.
 

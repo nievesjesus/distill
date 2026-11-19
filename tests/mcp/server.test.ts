@@ -205,7 +205,79 @@ describe('createMcpServer', () => {
     });
     expect(Object.keys(result.structuredContent as object)).toEqual(['note', 'kind', 'pages', 'lines', 'tokens', 'savings', 'markdown']);
     expect(calls[0]?.path).toBe('/x/doc.pdf');
-    expect(calls[0]?.opts).toEqual({ boosters: new Set(['dedupe', 'ws']), lingua: false });
+    expect(calls[0]?.opts).toEqual({ boosters: new Set(['dedupe', 'ws']), lingua: false, signal: expect.any(AbortSignal) });
+  });
+
+  describe('audio and video', () => {
+    function mediaDistiller(calls: { path: string; opts: any }[], error?: DistillError): Distiller {
+      return {
+        ...fakeDistiller(),
+        async distillFile(path, opts) {
+          calls.push({ path, opts });
+          if (error) throw error;
+          return { path, name: 'talk.mp3', kind: 'AUDIO', pages: 1, markdown: '[00:00] hello', tokens: { raw: 100, out: 60 }, ms: 5 };
+        },
+      };
+    }
+
+    it('accepts timestamps and frames and passes them on', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      const client = await connect({ distiller: mediaDistiller(calls) });
+      const result = await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4', timestamps: 'segment', frames: 'none' } });
+      expect(result.isError).toBeFalsy();
+      expect(calls[0].opts).toMatchObject({ timestamps: 'segment', frames: 'none' });
+    });
+
+    it('reports an SRT-based estimate in structured savings and the note', async () => {
+      const client = await connect({ distiller: mediaDistiller([]) });
+      const result = await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(result.isError).toBeFalsy();
+      expect((result.structuredContent as any).savings.basis).toBe('srt');
+      expect((result.structuredContent as any).note).toContain('vs an SRT transcript');
+    });
+
+    it('does not reuse a cached transcript for different timestamps or frames', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      const client = await connect({ distiller: mediaDistiller(calls), stat: fixedStat });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4' } });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4' } });
+      expect(calls).toHaveLength(1);
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4', timestamps: 'none' } });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4', frames: 'none' } });
+      expect(calls).toHaveLength(3);
+    });
+
+    it('rejects an unknown timestamps or frames value', async () => {
+      const client = await connect();
+      expect((await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.mp3', timestamps: 'fine' } })).isError).toBe(true);
+      expect((await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.mp3', frames: 'all' } })).isError).toBe(true);
+    });
+
+    it('passes the request abort signal for long transcriptions', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      const client = await connect({ distiller: mediaDistiller(calls) });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(calls[0].opts.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('surfaces asr_unavailable with the install command', async () => {
+      const error = new DistillError('asr_unavailable', 'Speech recognition is not installed. Run `distill-llm asr install` to download it (about 700 MB, one time).');
+      const client = await connect({ distiller: mediaDistiller([], error) });
+      const result = await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain('asr_unavailable');
+      expect(JSON.stringify(result.content)).toContain('distill-llm asr install');
+    });
+
+    it('describes local transcription and the wait on long recordings', async () => {
+      const client = await connect();
+      const { tools } = await client.listTools();
+      const text = tools.find((tool) => tool.name === 'distill_file')?.description ?? '';
+      expect(text).toMatch(/MP3|audio/i);
+      expect(text).toContain('transcribes locally');
+      expect(text).toMatch(/first run of a long recording takes a while/i);
+      expect(text).toContain('asr_unavailable');
+    });
   });
 
   it('distill_file returns isError with code and message', async () => {

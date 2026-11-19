@@ -35,6 +35,23 @@ describe('estimateSavings', () => {
   });
 });
 
+describe('audio and video savings', () => {
+  it.each(['AUDIO', 'VIDEO'])('uses the SRT tokens as the baseline for %s', (kind) => {
+    expect(estimateSavings({ kind, pages: 1, tokens: { raw: 1000, out: 700 } })).toEqual({
+      baseline: 1000,
+      out: 700,
+      saved: 300,
+      percent: 30,
+      basis: 'srt',
+    });
+  });
+
+  it('labels the note as against an SRT transcript', () => {
+    const note = savingsNote(estimateSavings({ kind: 'AUDIO', pages: 1, tokens: { raw: 1000, out: 700 } }));
+    expect(note).toContain('vs an SRT transcript ≈ 1,000 tok (counted)');
+  });
+});
+
 describe('sumSavings', () => {
   it('adds up estimates and recomputes the percent', () => {
     const pdf = estimateSavings({ kind: 'PDF', pages: 7, tokens: { raw: 1813, out: 1731 } });

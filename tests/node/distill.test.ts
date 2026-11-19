@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_ACTIVE, runBoosters } from '../../src/core/boosters/pipeline';
+import { estimateSavings } from '../../src/core/savings';
 import { countTokens } from '../../src/core/tokens';
 import type { LinguaStatus } from '../../src/core/types';
 import { createDistiller } from '../../src/node/distill';
@@ -209,6 +210,33 @@ describe('createDistiller with a fake parser', () => {
     const parser = fakeParser();
     createDistiller({ parser, libreoffice: true }).close();
     expect(parser.close).toHaveBeenCalled();
+  });
+});
+
+describe('createDistiller with audio and video', () => {
+  it('passes the transcript options to the parser and reports SRT tokens as raw', async () => {
+    const audio = join(dir, 'talk.m4a');
+    await writeFile(audio, 'x');
+    const toMarkdown = vi.fn(async () => ({ markdown: '[00:00] hello world', pages: 1, rawTokens: 40 }));
+    const parser = { ...fakeParser(), toMarkdown } as Parser;
+    const controller = new AbortController();
+    const result = await createDistiller({ parser, libreoffice: true }).distillFile(audio, { timestamps: 'none', frames: 'none', signal: controller.signal });
+    expect(toMarkdown).toHaveBeenCalledWith(audio, { timestamps: 'none', frames: 'none', signal: controller.signal });
+    expect(result.kind).toBe('AUDIO');
+    expect(result.tokens.raw).toBe(40);
+    expect(estimateSavings(result).basis).toBe('srt');
+  });
+
+  it('surfaces asr_unavailable from the parser', async () => {
+    const video = join(dir, 'clip.mp4');
+    await writeFile(video, 'x');
+    const parser = {
+      ...fakeParser(),
+      toMarkdown: vi.fn(async () => {
+        throw new DistillError('asr_unavailable', 'Speech recognition is not installed.');
+      }),
+    } as Parser;
+    await expectCode(createDistiller({ parser, libreoffice: true }).distillFile(video), 'asr_unavailable');
   });
 });
 

@@ -6,6 +6,7 @@ import { countTokens } from '../core/tokens';
 import { isInside } from '../node/inside';
 import { isOwnCommand } from './install-claude';
 import { type MatchContext, type ReadRule, parseReadRule, ruleMayMatch } from './read-rules';
+import { detectKind } from '../core/kind';
 import { isHookConvertible } from './supported';
 
 export interface ClaudeHookDeps {
@@ -18,6 +19,7 @@ export interface ClaudeHookDeps {
   savingsNote?: boolean;
   recordUsage?: (path: string, savings: SavingsEstimate) => void;
   indexMinTokens?: number;
+  asrInstalled?: () => boolean;
 }
 
 const DEFAULT_INDEX_MIN_TOKENS = 8000;
@@ -82,6 +84,10 @@ function sliceOfPages(markdown: string, physical: string[]): PageSlice | null {
   const figures = indexes.filter((index) => markers[index].visual === 'figure').map((index) => String(index + 1));
   if (figures.length === indexes.length) return null;
   return { from, to, text: lines.slice(from - 1, to).join('\n'), figures, count: physical.length };
+}
+
+function asrMissingContext(name: string, original: string): string {
+  return `distill can transcribe ${name} locally to save tokens, but speech recognition is not installed, so this read was not converted. To enable it, run \`distill-llm asr install\` once (about 700 MB), then read ${original} again.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -203,6 +209,10 @@ export async function handleClaudePreToolUse(
     const files = settingsFiles(realCwd, realProject, deps);
     if (await anyReadRestriction(files, candidates, ctx)) return null;
     if (deps.plugin === true && (await anyOwnHook(files))) return null;
+    const mediaKind = detectKind(original);
+    if ((mediaKind === 'AUDIO' || mediaKind === 'VIDEO') && deps.asrInstalled?.() === false) {
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: asrMissingContext(basename(original), original) } };
+    }
     const converted = await convert(realOriginal);
     if (pageLabels !== null) {
       if (converted.markdown === undefined) return null;

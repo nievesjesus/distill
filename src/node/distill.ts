@@ -16,6 +16,7 @@ import { createLingua, findPackageRoot } from './lingua';
 import type { Lingua } from './lingua';
 import { getAsrStatus } from './asr-install';
 import { createLinguaInstaller } from './lingua-install';
+import { withMedia } from './asr/media';
 import { withBuiltinOffice } from './office';
 import { createParser } from './parse';
 import type { Parser } from './parse';
@@ -37,6 +38,9 @@ export interface DistillOptions {
   boosters?: ReadonlySet<LocalBoosterId>;
   lingua?: boolean;
   rate?: number;
+  timestamps?: 'none' | 'coarse' | 'segment';
+  frames?: 'none' | 'ocr';
+  signal?: AbortSignal;
 }
 
 export interface DistillUrlOptions extends DistillOptions {
@@ -119,7 +123,13 @@ export function createDistiller(deps: {
       linguaFor(opts);
 
       const started = performance.now();
-      const parsed = await deps.parser.toMarkdown(path, opts.mode ? { mode: opts.mode } : undefined);
+      const parseOptions = {
+        ...(opts.mode ? { mode: opts.mode } : {}),
+        ...(opts.timestamps ? { timestamps: opts.timestamps } : {}),
+        ...(opts.frames ? { frames: opts.frames } : {}),
+        ...(opts.signal ? { signal: opts.signal } : {}),
+      };
+      const parsed = await deps.parser.toMarkdown(path, Object.keys(parseOptions).length > 0 ? parseOptions : undefined);
       const markdown = await polish(parsed.markdown, opts);
       return {
         path,
@@ -176,10 +186,10 @@ export async function openDistiller(maxBytes?: number): Promise<Distiller> {
   const version = readVersion(join(packageRoot, 'package.json'));
   const liteparseVersion = readVersion(require.resolve('@llamaindex/liteparse/package.json'));
   const libreoffice = await exposeLibreOffice();
-  const parser = withSavedFormats(withBuiltinOffice(createParser(), { libreoffice }));
+  const cacheDir = join(homedir(), '.cache', 'distill-llm');
+  const asrCacheDir = cacheDirFromEnv(process.env) ?? cacheDir;
+  const parser = withMedia(withSavedFormats(withBuiltinOffice(createParser(), { libreoffice })), { cacheDir: asrCacheDir });
   try {
-    const cacheDir = join(homedir(), '.cache', 'distill-llm');
-    const asrCacheDir = cacheDirFromEnv(process.env) ?? cacheDir;
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
     const lingua = createLingua({ cacheDir, installer });
     await lingua.probe();

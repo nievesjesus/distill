@@ -5,7 +5,7 @@ export interface SavingsEstimate {
   out: number;
   saved: number;
   percent: number;
-  basis: 'pdf-pages' | 'raw-text' | 'raw-html' | 'served-markdown' | 'search';
+  basis: 'pdf-pages' | 'raw-text' | 'raw-html' | 'served-markdown' | 'search' | 'srt';
 }
 
 function build(baseline: number, out: number, basis: SavingsEstimate['basis']): SavingsEstimate {
@@ -16,6 +16,7 @@ function build(baseline: number, out: number, basis: SavingsEstimate['basis']): 
 function basisOf(r: { kind: string; markdownServed?: boolean }): SavingsEstimate['basis'] {
   if (r.kind === 'PDF') return 'pdf-pages';
   if (r.kind === 'HTML') return r.markdownServed ? 'served-markdown' : 'raw-html';
+  if (r.kind === 'AUDIO' || r.kind === 'VIDEO') return 'srt';
   return 'raw-text';
 }
 
@@ -49,6 +50,8 @@ function versus(s: SavingsEstimate): string {
       return `the text the server sent ≈ ${format(s.baseline)} tok (counted)`;
     case 'search':
       return `reading the whole document ≈ ${format(s.baseline)} tok (estimate)`;
+    case 'srt':
+      return `an SRT transcript ≈ ${format(s.baseline)} tok (counted)`;
     case 'raw-text':
       return `the raw extracted text ≈ ${format(s.baseline)} tok (counted)`;
   }

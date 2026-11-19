@@ -43,6 +43,59 @@ const pdf = (name = 'b.pdf', dir = proj): string => {
 
 const deps = (extra: Record<string, unknown> = {}) => ({ homeDir: home, managedSettingsPaths: [], ...extra });
 
+describe('audio and video reads', () => {
+  const media = (name: string): string => {
+    const file = join(proj, name);
+    writeFileSync(file, 'x');
+    return file;
+  };
+
+  it('lets the read proceed and tells the agent how to install speech recognition when it is missing', async () => {
+    const file = media('call.mp3');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    const result = (await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => false }))) as {
+      hookSpecificOutput: Record<string, unknown>;
+    };
+    expect(convert).not.toHaveBeenCalled();
+    expect(result.hookSpecificOutput.hookEventName).toBe('PreToolUse');
+    expect(result.hookSpecificOutput).not.toHaveProperty('updatedInput');
+    expect(result.hookSpecificOutput).not.toHaveProperty('permissionDecision');
+    expect(result.hookSpecificOutput.additionalContext).toContain('distill-llm asr install');
+    expect(result.hookSpecificOutput.additionalContext).toContain('call.mp3');
+  });
+
+  it('converts to a transcript once speech recognition is installed, with an SRT-based note', async () => {
+    const file = media('talk.mp4');
+    const savings = estimateSavings({ kind: 'VIDEO', pages: 1, tokens: { raw: 2000, out: 1200 } });
+    const convert = vi.fn(async () => ({ path: '/cache/t.md', savings }));
+    const record = vi.fn();
+    const result = (await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => true, recordUsage: record }))) as {
+      hookSpecificOutput: { updatedInput: { file_path: string }; additionalContext: string };
+    };
+    expect(convert).toHaveBeenCalledWith(file);
+    expect(result.hookSpecificOutput.updatedInput.file_path).toBe('/cache/t.md');
+    expect(result.hookSpecificOutput.additionalContext).toContain('vs an SRT transcript');
+    expect(record).toHaveBeenCalledOnce();
+  });
+
+  it('converts when no installation check is wired', async () => {
+    const file = media('talk.m4a');
+    const convert = vi.fn(async () => ({ path: '/cache/t.md' }));
+    await handleClaudePreToolUse(payload({ file_path: file }), convert, deps());
+    expect(convert).toHaveBeenCalledOnce();
+  });
+
+  it('does not add install context for files outside the project or a pdf', async () => {
+    const outside = join(base, 'outside.mp3');
+    writeFileSync(outside, 'x');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    expect(await handleClaudePreToolUse(payload({ file_path: outside }), convert, deps({ asrInstalled: () => false }))).toBeNull();
+    const result = await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ asrInstalled: () => false }));
+    expect(convert).toHaveBeenCalledOnce();
+    expect(result).not.toBeNull();
+  });
+});
+
 describe('handleClaudePreToolUse', () => {
   it('rewrites a pdf read and keeps offset and limit', async () => {
     const file = pdf();

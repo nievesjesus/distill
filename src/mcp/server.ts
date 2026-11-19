@@ -35,6 +35,14 @@ const linguaSchema = z
   .boolean()
   .optional()
   .describe('Optional LLMLingua-2 compression, lossy: it removes words. Only works when installed (see distill_capabilities); avoid it for contracts and other exact text');
+const timestampsSchema = z
+  .enum(['none', 'coarse', 'segment'])
+  .optional()
+  .describe('Audio and video only. Timestamps in the transcript: coarse (default, a [mm:ss] about once a minute), none (fewest tokens) or segment (one per spoken segment, to quote precise moments)');
+const framesSchema = z
+  .enum(['none', 'ocr'])
+  .optional()
+  .describe('Video only. ocr (default) adds the on-screen text that appears, once each, as > [slide mm:ss] blocks between the speech; none skips it and is faster');
 const visualPagesSchema = z.array(z.object({ page: z.number().int().min(1), label: z.string().optional(), kind: z.enum(['figure', 'scan']) }));
 const VISUAL_HINT = 'Pages listed in visualPages contain charts or images that are not in the text; if the question depends on them, view the original page with distill_page_image. visualPages[].page is the physical page number (1-based position in the PDF); label is the printed page label, only present when it differs.';
 const entrySchema = z.object({
@@ -57,7 +65,7 @@ const savingsSchema = z.object({
   out: z.number(),
   saved: z.number(),
   percent: z.number(),
-  basis: z.enum(['pdf-pages', 'raw-text', 'raw-html', 'served-markdown', 'search']),
+  basis: z.enum(['pdf-pages', 'raw-text', 'raw-html', 'served-markdown', 'search', 'srt']),
 });
 const linesSchema = z.object({ from: z.number(), to: z.number(), total: z.number() });
 const errorSchema = z.object({ code: z.string(), message: z.string() });
@@ -133,10 +141,20 @@ function continuationFor(page: Page, windowed: boolean, tool: string): string {
   return `Showing lines ${page.from}-${page.to} of ${page.total}. Call ${tool} again with offset ${page.to + 1}${rest} to continue.`;
 }
 
-function toOptions(args: { boosters?: LocalBoosterId[]; lingua?: boolean }): DistillOptions {
+interface FileArgs {
+  boosters?: LocalBoosterId[];
+  lingua?: boolean;
+  timestamps?: 'none' | 'coarse' | 'segment';
+  frames?: 'none' | 'ocr';
+}
+
+function toOptions(args: FileArgs, signal?: AbortSignal): DistillOptions {
   const opts: DistillOptions = {};
   if (args.boosters !== undefined) opts.boosters = new Set(args.boosters);
   if (args.lingua !== undefined) opts.lingua = args.lingua;
+  if (args.timestamps !== undefined) opts.timestamps = args.timestamps;
+  if (args.frames !== undefined) opts.frames = args.frames;
+  if (signal !== undefined) opts.signal = signal;
   return opts;
 }
 
@@ -158,10 +176,12 @@ export function createMcpServer(deps: McpDeps): McpServer {
   const statFile = deps.stat ?? stat;
   const cache = new Map<string, DistillResult>();
 
-  async function cacheKey(resolved: string, args: { boosters?: LocalBoosterId[]; lingua?: boolean }): Promise<string | null> {
+  async function cacheKey(resolved: string, args: FileArgs): Promise<string | null> {
     try {
       const info = await statFile(resolved);
-      return JSON.stringify([resolved, info.size, info.mtimeMs, [...(args.boosters ?? [])].sort(), args.lingua ?? null]);
+      const key: unknown[] = [resolved, info.size, info.mtimeMs, [...(args.boosters ?? [])].sort(), args.lingua ?? null];
+      if (args.timestamps !== undefined || args.frames !== undefined) key.push(args.timestamps ?? null, args.frames ?? null);
+      return JSON.stringify(key);
     } catch {
       return null;
     }
@@ -177,10 +197,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     return true;
   }
 
-  async function distillOne(
-    path: string,
-    args: { boosters?: LocalBoosterId[]; lingua?: boolean },
-  ): Promise<{ result: DistillResult; key: string | null }> {
+  async function distillOne(path: string, args: FileArgs, signal?: AbortSignal): Promise<{ result: DistillResult; key: string | null }> {
     const resolved = await deps.resolvePath(path);
     const key = await cacheKey(resolved, args);
     const hit = key === null ? undefined : cache.get(key);
@@ -189,7 +206,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       cache.set(key, hit);
       return { result: hit, key };
     }
-    const result = await deps.distiller.distillFile(resolved, toOptions(args));
+    const result = await deps.distiller.distillFile(resolved, toOptions(args, signal));
     if (key !== null) {
       cache.set(key, result);
       if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value as string);
@@ -282,7 +299,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_file',
     {
       title: 'Read a document as Markdown',
-      description: `Read one local document (PDF, DOCX, PPTX, XLSX, ODT/ODS/ODP, CSV, PNG/JPG/TIFF/WebP, saved web pages HTML/MHTML, EPUB, emails EML/MSG, RSS/Atom feeds) as token-lean Markdown. For a live web page use distill_url. Read-only: never modifies or uploads the file. Use distill_files for several files at once and distill_outline first for long documents, then pass \`section\` or \`offset\`/\`limit\`. Output is capped at about ${budget} tokens per call; follow \`nextOffset\`. Fails with password_protected, needs_libreoffice (legacy .doc/.xls/.ppt and OpenDocument), forbidden (outside allowed roots), too_large (over ${maxSize}) or parse_failed. Tables and scans are only as faithful as the parser. ${VISUAL_HINT}`,
+      description: `Read one local document (PDF, DOCX, PPTX, XLSX, ODT/ODS/ODP, CSV, PNG/JPG/TIFF/WebP, saved web pages HTML/MHTML, EPUB, emails EML/MSG, RSS/Atom feeds) or audio/video file (MP3, WAV, M4A, AAC, FLAC, OGG, OPUS, AIFF, MP4, MOV, MKV, WEBM, AVI, M4V) as token-lean Markdown. Audio and video: this transcribes locally with an on-device speech model (nothing is uploaded), the first run of a long recording takes a while (the result is cached by content), video also lists new on-screen text, and it needs ffmpeg for formats other than WAV and a one-time install (see distill_capabilities; fails with asr_unavailable until \`distill-llm asr install\` is run). For a live web page use distill_url. Read-only: never modifies or uploads the file. Use distill_files for several files at once and distill_outline first for long documents, then pass \`section\` or \`offset\`/\`limit\`. Output is capped at about ${budget} tokens per call; follow \`nextOffset\`. Fails with password_protected, needs_libreoffice (legacy .doc/.xls/.ppt and OpenDocument), forbidden (outside allowed roots), too_large (over ${maxSize}), asr_unavailable, ffmpeg_missing, no_audio or parse_failed. Tables and scans are only as faithful as the parser. ${VISUAL_HINT}`,
       annotations: READ_ONLY,
       inputSchema: {
         path: z.string().min(1).describe(PATH_HINT),
@@ -304,6 +321,8 @@ export function createMcpServer(deps: McpDeps): McpServer {
           .describe('Title of a section from distill_outline (case-insensitive; exact match first, then substring). Reads just that section; cannot be combined with offset'),
         boosters: boostersSchema,
         lingua: linguaSchema,
+        timestamps: timestampsSchema,
+        frames: framesSchema,
       },
       outputSchema: {
         continuation: z.string().optional(),
@@ -320,12 +339,12 @@ export function createMcpServer(deps: McpDeps): McpServer {
         markdown: z.string(),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       try {
         if (args.section !== undefined && args.offset !== undefined) {
           throw new DistillError('bad_request', 'Pass either section or offset, not both');
         }
-        const { result, key } = await distillOne(args.path, args);
+        const { result, key } = await distillOne(args.path, args, extra?.signal);
         return respond(result, key, args, 'distill_file');
       } catch (error) {
         const { code, message } = describeError(error);

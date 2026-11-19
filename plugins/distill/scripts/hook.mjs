@@ -3,7 +3,7 @@ import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launch } from './launch.mjs';
 
-export const CONVERTIBLE_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'odt', 'ods', 'odp', 'mhtml', 'mht', 'epub', 'eml', 'msg']);
+export const CONVERTIBLE_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'odt', 'ods', 'odp', 'mhtml', 'mht', 'epub', 'eml', 'msg', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'aiff', 'aif', 'mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v']);
 
 export function isCandidate(payload) {
   if (typeof payload !== 'object' || payload === null || payload.tool_name !== 'Read') return false;

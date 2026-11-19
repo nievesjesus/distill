@@ -90,6 +90,20 @@ describe('stats recording', () => {
   });
 });
 
+describe('hook with audio', () => {
+  it('lets the read through with install instructions when speech recognition is missing', async () => {
+    const file = join(dir, 'call.mp3');
+    writeFileSync(file, 'x');
+    const payload = JSON.stringify({ tool_name: 'Read', tool_input: { file_path: file }, cwd: dir });
+    const h = harness({ DISTILL_NO_UPDATE_CHECK: '1' }, { readStdin: async () => payload });
+    await run(['hook', 'claude'], h.deps).catch(() => {});
+    const output = JSON.parse(h.stdout.join(''));
+    expect(output.hookSpecificOutput.updatedInput).toBeUndefined();
+    expect(output.hookSpecificOutput.additionalContext).toContain('distill-llm asr install');
+    expect(readStats(cacheDir)).toEqual([]);
+  });
+});
+
 describe('DISTILL_CACHE_DIR', () => {
   it('moves the cache and the stats there', async () => {
     const file = join(dir, 'report.pdf');

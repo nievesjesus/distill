@@ -147,6 +147,15 @@ describe('convertCached', () => {
     expect(second.savings).toEqual(first.savings);
   });
 
+  it('keeps an SRT-based savings estimate for a transcript across a cache hit', async () => {
+    const distiller = fakeDistiller(async () => ({ name: 'call.mp3', kind: 'AUDIO', pages: 1, markdown: '[00:00] hi', tokens: { raw: 100, out: 60 } }) as never);
+    const first = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    const second = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    expect(first.savings?.basis).toBe('srt');
+    expect(second.cached).toBe(true);
+    expect(second.savings).toEqual(first.savings);
+  });
+
   it('returns null savings on a hit when the sidecar is missing', async () => {
     const distiller = fakeDistiller();
     const first = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });

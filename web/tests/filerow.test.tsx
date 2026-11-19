@@ -21,6 +21,11 @@ describe('FileRow', () => {
     expect(error).toHaveTextContent('Unsupported file type');
   });
 
+  it.each(['AUDIO', 'VIDEO'] as const)('says Transcribing while a %s file is being read', (kind) => {
+    render(<ul><FileRow file={{ ...queued, name: 'talk.mp3', kind, status: 'parsing' }} /></ul>);
+    expect(screen.getByText('Transcribing')).toBeInTheDocument();
+  });
+
   it('keeps the full file name in a title so a truncated name stays readable', () => {
     const name = 'a-very-long-quarterly-financial-statement-and-supporting-schedules-2026.pdf';
     render(<ul><FileRow file={{ ...queued, name, kind: 'PDF' }} /></ul>);

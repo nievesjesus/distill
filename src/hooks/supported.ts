@@ -1,6 +1,6 @@
 import { detectKind } from '../core/kind';
 
-const HOOK_KINDS: ReadonlySet<string> = new Set(['PDF', 'DOCX', 'PPTX', 'XLSX', 'ODF', 'HTML', 'EPUB', 'EMAIL']);
+const HOOK_KINDS: ReadonlySet<string> = new Set(['PDF', 'DOCX', 'PPTX', 'XLSX', 'ODF', 'HTML', 'EPUB', 'EMAIL', 'AUDIO', 'VIDEO']);
 const EXCLUDED_EXTENSIONS: ReadonlySet<string> = new Set(['csv', 'html', 'htm', 'xhtml']);
 
 export function isHookConvertible(path: string): boolean {
