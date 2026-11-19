@@ -164,7 +164,7 @@
         <thead><tr><th scope="col">Booster</th><th scope="col">What it does</th><th scope="col">Loss</th></tr></thead>
         <tbody>
           <tr><th scope="row">Drop repeated boilerplate</th><td>Removes repeated running headers and footers and bare page indicators such as <code>Page 3 of 12</code>, keeping the first. Short repeated lines are never removed.</td><td><span class="chip ok">No information lost</span></td></tr>
-          <tr><th scope="row">Slim images and links</th><td><code>![alt](path)</code> becomes <code>[alt]</code> and <code>[text](url)</code> becomes <code>text</code>.</td><td><span class="chip warn">Drops image paths and URLs</span></td></tr>
+          <tr><th scope="row">Slim images and links</th><td><code>![alt](path)</code> becomes <code>[alt]</code>, <code>[text](url)</code> becomes <code>text</code> and <code>&lt;u&gt;text&lt;/u&gt;</code> becomes <code>text</code>.</td><td><span class="chip warn">Drops image paths, URLs and underline tags</span></td></tr>
           <tr><th scope="row">Compact tables</th><td>Removes alignment padding from GFM tables.</td><td><span class="chip ok">None</span></td></tr>
           <tr><th scope="row">Collapse whitespace</th><td>Collapses blank-line runs, trailing spaces and double spaces outside code.</td><td><span class="chip ok">None</span></td></tr>
           <tr><th scope="row">LLMLingua-2</th><td>A local model removes low-value words. Optional, experimental, off by default.</td><td><span class="chip lossy">Lossy</span></td></tr>

@@ -17,4 +17,25 @@ describe('slimMedia', () => {
   it('leaves fenced code untouched', () => {
     expect(slimMedia('```\n![x](y)\n```')).toBe('```\n![x](y)\n```');
   });
+
+  it('removes underline tags and keeps the inner text', () => {
+    expect(slimMedia('published at <u>example.com/a.</u> today')).toBe('published at example.com/a. today');
+  });
+
+  it('removes underline tags regardless of case and spacing', () => {
+    expect(slimMedia('<U>a</U> <u >b</u >')).toBe('a b');
+  });
+
+  it('removes underline tags inside a link', () => {
+    expect(slimMedia('[<u>Exhibit A</u>](https://x.com/a)')).toBe('Exhibit A');
+  });
+
+  it('leaves underline tags inside fenced code untouched', () => {
+    expect(slimMedia('```\n<u>x</u>\n```')).toBe('```\n<u>x</u>\n```');
+  });
+
+  it('is idempotent with underline tags', () => {
+    const once = slimMedia('a <u>b</u> [<U>c</U>](d) <<u>u>');
+    expect(slimMedia(once)).toBe(once);
+  });
 });
