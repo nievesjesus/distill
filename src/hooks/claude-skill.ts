@@ -2,14 +2,14 @@ import { join } from 'node:path';
 
 export const CLAUDE_SKILL_NAME = 'distill-office-documents';
 
-const MARKER = '<!-- distill-llm skill -->';
+export const SKILL_MARKER = '<!-- distill-llm skill -->';
 
 export function claudeSkillPath(base: string): string {
   return join(base, '.claude', 'skills', CLAUDE_SKILL_NAME, 'SKILL.md');
 }
 
 export function isOwnSkill(text: string): boolean {
-  return text.split(/\r?\n/).some((line) => line.trim() === MARKER);
+  return text.split(/\r?\n/).some((line) => line.trim() === SKILL_MARKER);
 }
 
 export function claudeSkillMarkdown(command: string): string {
@@ -17,7 +17,7 @@ export function claudeSkillMarkdown(command: string): string {
 name: ${CLAUDE_SKILL_NAME}
 description: Use when you need to read a Word, Excel, PowerPoint or OpenDocument file (.docx, .doc, .xlsx, .xls, .pptx, .ppt, .odt, .ods, .odp). The Read tool cannot open these files; this converts them to token-lean Markdown locally.
 ---
-${MARKER}
+${SKILL_MARKER}
 
 # Read Office documents as Markdown
 
