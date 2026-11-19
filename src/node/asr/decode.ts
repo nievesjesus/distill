@@ -1,6 +1,7 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { open } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { AsrError, FFMPEG_MISSING_MESSAGE } from './errors';
 
 export const SAMPLE_RATE = 16000;
@@ -12,7 +13,11 @@ const STDERR_CAP = 8192;
 export type SpawnFn = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
 export function ffmpegArgs(input: string): string[] {
-  return ['-nostdin', '-hide_banner', '-loglevel', 'error', '-i', input, '-vn', '-ac', '1', '-ar', String(SAMPLE_RATE), '-f', 'f32le', 'pipe:1'];
+  return ['-nostdin', '-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file,pipe', '-i', resolve(input), '-vn', '-ac', '1', '-ar', String(SAMPLE_RATE), '-f', 'f32le', 'pipe:1'];
+}
+
+export function ffprobeArgs(input: string): string[] {
+  return ['-v', 'error', '-protocol_whitelist', 'file,pipe', '-show_entries', 'format=duration', '-of', 'csv=p=0', '-i', resolve(input)];
 }
 
 export interface WavInfo {

@@ -6,7 +6,7 @@ import { cpus } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASR_MODEL_ID, asrPaths, getAsrStatus, resolveFfmpeg } from '../asr-install';
-import { readWavInfo, wavDuration } from './decode';
+import { ffprobeArgs, readWavInfo, wavDuration } from './decode';
 import { ASR_UNAVAILABLE_MESSAGE, AsrError } from './errors';
 import type { AsrErrorCode } from './errors';
 
@@ -23,6 +23,7 @@ export interface TranscribeOptions {
   threads?: number;
   onProgress?: (seconds: number) => void;
   workerPath?: string;
+  killGraceMs?: number;
 }
 
 export interface TranscribeResult {
@@ -99,7 +100,7 @@ function probeDuration(ffmpeg: string, input: string, platform: NodeJS.Platform)
   const probe = join(dirname(ffmpeg), platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
   if (!existsSync(probe)) return Promise.resolve(undefined);
   return new Promise((resolve) => {
-    execFile(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', input], { timeout: 10_000, windowsHide: true }, (error, stdout) => {
+    execFile(probe, ffprobeArgs(input), { timeout: 10_000, windowsHide: true }, (error, stdout) => {
       const seconds = Number.parseFloat(String(stdout).trim());
       resolve(error || !Number.isFinite(seconds) || seconds <= 0 ? undefined : seconds);
     });
@@ -129,6 +130,7 @@ function runWorker(
   timeoutMs: number,
   signal: AbortSignal | undefined,
   onProgress: ((seconds: number) => void) | undefined,
+  killGraceMs: number,
 ): Promise<WorkerRun> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [workerPath], {
@@ -143,11 +145,13 @@ function runWorker(
     let forced: AsrError | undefined;
     let stderr = '';
     let buffered = '';
+    let escalation: NodeJS.Timeout | undefined;
 
     const kill = (error: AsrError) => {
       if (forced) return;
       forced = error;
-      child.kill('SIGKILL');
+      child.kill('SIGTERM');
+      escalation = setTimeout(() => child.kill('SIGKILL'), killGraceMs);
     };
     const timer = setTimeout(() => kill(new AsrError('timeout', `Transcription timed out after ${Math.round(timeoutMs / 1000)} s.`)), timeoutMs);
     const onAbort = () => kill(new AsrError('aborted', 'Transcription was cancelled'));
@@ -165,7 +169,11 @@ function runWorker(
       if (event.type === 'segment' && typeof event.text === 'string' && typeof event.start === 'number' && typeof event.end === 'number') {
         segments.push({ start: round3(event.start), end: round3(event.end), text: event.text });
       } else if (event.type === 'progress' && typeof event.seconds === 'number') {
-        onProgress?.(event.seconds);
+        try {
+          onProgress?.(event.seconds);
+        } catch (error) {
+          kill(new AsrError('asr_failed', `Progress callback failed: ${error instanceof Error ? error.message : String(error)}`));
+        }
       } else if (event.type === 'done' && typeof event.duration === 'number') {
         duration = round3(event.duration);
       } else if (event.type === 'error') {
@@ -190,11 +198,13 @@ function runWorker(
     child.stdin.on('error', () => undefined);
     child.on('error', (error) => {
       clearTimeout(timer);
+      clearTimeout(escalation);
       signal?.removeEventListener('abort', onAbort);
       reject(new AsrError('asr_failed', `Could not start the speech worker: ${error.message}`));
     });
     child.on('close', (code, killSignal) => {
       clearTimeout(timer);
+      clearTimeout(escalation);
       signal?.removeEventListener('abort', onAbort);
       if (buffered.trim()) handle(buffered);
       if (forced) return reject(forced);
@@ -232,6 +242,7 @@ export async function transcribe(input: string, options: TranscribeOptions): Pro
     timeoutMs,
     options.signal,
     options.onProgress,
+    options.killGraceMs ?? 2000,
   );
   await writeCache(file, result);
   return { ...result, cached: false };

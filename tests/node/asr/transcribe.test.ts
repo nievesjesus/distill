@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASR_FILES, ASR_MODEL_ID, asrPaths, asrPlatformPackage } from '../../../src/node/asr-install';
 import { AsrError } from '../../../src/node/asr/errors';
 import { transcribe } from '../../../src/node/asr/transcribe';
@@ -57,6 +58,24 @@ beforeEach(() => {
   writeFileSync(wav, makeWav({ rate: 16000, channels: 1, bits: 16, count: 16000, frames: () => 0 }));
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const grandchildWorker = (pidFile: string, handleTerm: boolean) => `
+const { spawn } = await import('node:child_process');
+const { writeFileSync } = await import('node:fs');
+const g = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+writeFileSync(${JSON.stringify(pidFile)}, String(g.pid));
+${handleTerm ? "process.on('SIGTERM', () => { g.kill('SIGKILL'); process.exit(0); });" : "process.on('SIGTERM', () => {});"}
+setInterval(()=>{},1000);
+`;
 
 describe('transcribe', () => {
   it('collects segments from the worker, rounds times and reports progress', async () => {
@@ -148,5 +167,50 @@ describe('transcribe', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(transcribe(wav, { cacheDir, workerPath: worker(okWorker), env: {}, signal: controller.signal })).rejects.toMatchObject({ code: 'aborted' });
+  });
+
+  describe.skipIf(process.platform === 'win32')('child cleanup', () => {
+    it('terminates the worker gracefully on abort so its child process is cleaned up', async () => {
+      const pidFile = join(root, 'pid');
+      const controller = new AbortController();
+      const run = transcribe(wav, { cacheDir, workerPath: worker(grandchildWorker(pidFile, true)), env: {}, signal: controller.signal });
+      await vi.waitFor(() => expect(existsSync(pidFile)).toBe(true));
+      await sleep(100);
+      const pid = Number(readFileSync(pidFile, 'utf8'));
+      expect(alive(pid)).toBe(true);
+      controller.abort();
+      await expect(run).rejects.toMatchObject({ code: 'aborted' });
+      await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 3000 });
+    });
+
+    it('escalates to SIGKILL when the worker ignores SIGTERM', async () => {
+      const pidFile = join(root, 'pid2');
+      const started = Date.now();
+      const run = transcribe(wav, { cacheDir, workerPath: worker(grandchildWorker(pidFile, false)), env: {}, timeoutMs: 400, killGraceMs: 200 });
+      await expect(run).rejects.toMatchObject({ code: 'timeout' });
+      expect(Date.now() - started).toBeLessThan(4000);
+      const pid = Number(readFileSync(pidFile, 'utf8'));
+      process.kill(pid, 'SIGKILL');
+    });
+  });
+
+  it('kills the worker and rejects with asr_failed when onProgress throws', async () => {
+    const pidFile = join(root, 'pid3');
+    const body = `${grandchildWorker(pidFile, true)}\nout({type:'progress',seconds:1});`;
+    const err = await transcribe(wav, {
+      cacheDir,
+      workerPath: worker(body),
+      env: {},
+      onProgress: () => {
+        throw new Error('callback exploded');
+      },
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(AsrError);
+    expect(err.code).toBe('asr_failed');
+    expect(err.message).toMatch(/callback exploded/);
+    if (process.platform !== 'win32') {
+      const pid = Number(readFileSync(pidFile, 'utf8'));
+      await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 3000 });
+    }
   });
 });

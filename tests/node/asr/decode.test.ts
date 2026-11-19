@@ -1,10 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FloatBytes, LinearResampler, WindowFeeder, ffmpegArgs, pcmStream, readWavInfo, wavDuration } from '../../../src/node/asr/decode';
+import { FloatBytes, LinearResampler, WindowFeeder, ffmpegArgs, ffprobeArgs, pcmStream, readWavInfo, wavDuration } from '../../../src/node/asr/decode';
 import { AsrError } from '../../../src/node/asr/errors';
 import { makeWav, sine } from './helpers';
 
@@ -172,7 +172,18 @@ class FakeChild extends EventEmitter {
 
 describe('ffmpeg path', () => {
   it('builds the exact argument list', () => {
-    expect(ffmpegArgs('/a b/c.m4a')).toEqual(['-nostdin', '-hide_banner', '-loglevel', 'error', '-i', '/a b/c.m4a', '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', 'pipe:1']);
+    expect(ffmpegArgs('/a b/c.m4a')).toEqual(['-nostdin', '-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file,pipe', '-i', '/a b/c.m4a', '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', 'pipe:1']);
+  });
+
+  it('passes an absolute input so a leading dash is never an option', () => {
+    const args = ffmpegArgs('-evil.mp4');
+    expect(args[args.indexOf('-i') + 1]).toBe(resolve('-evil.mp4'));
+    expect(isAbsolute(args[args.indexOf('-i') + 1])).toBe(true);
+  });
+
+  it('restricts ffprobe protocols and uses an absolute input', () => {
+    const args = ffprobeArgs('-evil.mp4');
+    expect(args).toEqual(['-v', 'error', '-protocol_whitelist', 'file,pipe', '-show_entries', 'format=duration', '-of', 'csv=p=0', '-i', resolve('-evil.mp4')]);
   });
 
   it('spawns without a shell and streams f32 samples across odd chunks', async () => {
@@ -198,6 +209,7 @@ describe('ffmpeg path', () => {
     expect(calls[0].cmd).toBe('/usr/bin/ffmpeg');
     expect(calls[0].opts.shell).toBe(false);
     expect(calls[0].args).toEqual(ffmpegArgs(path));
+    expect(calls[0].args).toContain('-protocol_whitelist');
   });
 
   it('raises ffmpeg_missing with install hints when there is no ffmpeg', async () => {

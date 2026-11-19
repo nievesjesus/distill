@@ -36,6 +36,11 @@ function loadSherpa(runtimeRoot: string): any {
 }
 
 async function main(): Promise<void> {
+  const controller = new AbortController();
+  process.on('SIGTERM', () => {
+    controller.abort();
+    process.exit(143);
+  });
   const req = await readRequest();
   const sherpa = loadSherpa(req.runtimeRoot);
   const recognizer = new sherpa.OfflineRecognizer({
@@ -64,7 +69,7 @@ async function main(): Promise<void> {
   );
   const pending: Promise<void>[] = [];
   await runPipeline({
-    pcm: pcmStream(req.input, { ffmpeg: req.ffmpeg }),
+    pcm: pcmStream(req.input, { ffmpeg: req.ffmpeg, signal: controller.signal }),
     vad: {
       acceptWaveform: (samples) => vad.acceptWaveform(samples),
       isEmpty: () => vad.isEmpty(),
