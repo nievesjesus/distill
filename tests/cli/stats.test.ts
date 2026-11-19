@@ -89,6 +89,19 @@ describe('stats recording', () => {
   });
 });
 
+describe('DISTILL_CACHE_DIR', () => {
+  it('moves the cache and the stats there', async () => {
+    const file = join(dir, 'report.pdf');
+    writeFileSync(file, 'x');
+    const override = join(dir, 'override');
+    const payload = JSON.stringify({ tool_name: 'Read', tool_input: { file_path: file }, cwd: dir });
+    const h = harness({ DISTILL_NO_UPDATE_CHECK: '1', DISTILL_CACHE_DIR: override }, { readStdin: async () => payload, cacheDir: undefined });
+    await run(['hook', 'claude'], h.deps).catch(() => {});
+    expect(h.stdout.join('')).toContain(join(override, 'out'));
+    expect(readStats(override)).toMatchObject([{ source: 'hook', kind: 'PDF' }]);
+  });
+});
+
 describe('stats command', () => {
   it('prints a summary', async () => {
     const file = join(dir, 'a.pdf');
