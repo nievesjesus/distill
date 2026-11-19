@@ -10,6 +10,7 @@ import { isHookConvertible } from './supported';
 
 export interface ClaudeHookDeps {
   homeDir: string;
+  cacheDir?: string;
   projectDir?: string;
   managedSettingsPaths?: string[];
   platform?: NodeJS.Platform;
@@ -198,7 +199,7 @@ export async function handleClaudePreToolUse(
     const [realOriginal, realCwd, realProject] = await Promise.all([realpath(original), realpath(cwd), realpathOrNull(deps.projectDir)]);
     if (!isInside(realOriginal, realCwd) && !(realProject !== null && isInside(realOriginal, realProject))) return null;
     const ctx: MatchContext = { cwd: realCwd, home: deps.homeDir, platform: deps.platform ?? process.platform };
-    const candidates = [original, realOriginal, join(deps.homeDir, '.cache', 'distill-llm', 'out', 'probe.md')];
+    const candidates = [original, realOriginal, join(deps.cacheDir ?? join(deps.homeDir, '.cache', 'distill-llm'), 'out', 'probe.md')];
     const files = settingsFiles(realCwd, realProject, deps);
     if (await anyReadRestriction(files, candidates, ctx)) return null;
     if (deps.plugin === true && (await anyOwnHook(files))) return null;
