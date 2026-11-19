@@ -15,6 +15,11 @@ import { lineDiff } from '../hooks/diff';
 import { normalizeSettings, planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
 import { isOwnOpencodePlugin, opencodePluginPath, planOpencodeInstall } from '../hooks/install-opencode';
 import { isHookConvertible } from '../hooks/supported';
+import { agentOptionKey, AGENTS, renderStatus, statusRows } from '../agents';
+import { defaultExec } from '../agents/exec';
+import type { Exec } from '../agents/exec';
+import { agentsSkillMarkdown, agentsSkillPath, hermesSkillPath } from '../agents/skill';
+import type { AgentContext, AgentModule, Step } from '../agents/types';
 import type { Distiller } from '../node/distill';
 import { cwdResolver, resolveRoots, rootResolver } from '../mcp/roots';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -48,6 +53,8 @@ export interface CliDeps {
   homeDir?: string;
   cwd?: string;
   which?: (bin: string) => string | null;
+  exec?: Exec;
+  platform?: NodeJS.Platform;
   isTTY?: boolean;
   prompt?: (question: string) => Promise<string>;
   isGitIgnored?: (cwd: string, file: string) => boolean | null;
@@ -92,6 +99,17 @@ interface HooksOptions {
   opencode?: boolean;
   project?: boolean;
   yes?: boolean;
+  dryRun?: boolean;
+}
+
+interface AgentsOptions extends HooksOptions {
+  codex?: boolean;
+  gemini?: boolean;
+  cursor?: boolean;
+  claudeDesktop?: boolean;
+  hermes?: boolean;
+  openclaw?: boolean;
+  all?: boolean;
 }
 
 export function readVersion(): string {
@@ -212,6 +230,8 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const isTTY = deps.isTTY ?? Boolean(process.stdin.isTTY);
   const prompt = deps.prompt ?? defaultPrompt;
   const isGitIgnored = deps.isGitIgnored ?? gitCheckIgnore;
+  const exec = deps.exec ?? defaultExec;
+  const platform = deps.platform ?? process.platform;
 
   let checker = deps.updateChecker;
   const getChecker = (): UpdateChecker => {
@@ -588,22 +608,29 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   type Target = 'claude' | 'opencode';
 
+  const confirmApply = async (options: HooksOptions): Promise<boolean | null> => {
+    if (options.yes === true) return true;
+    if (!isTTY) {
+      stderr('Refusing to write without confirmation. Re-run with --yes.');
+      exit(1);
+      return null;
+    }
+    const answer = (await prompt('Apply? [y/N] ')).trim().toLowerCase();
+    if (answer !== 'y' && answer !== 'yes') {
+      stdout('Aborted.');
+      return false;
+    }
+    return true;
+  };
+
   const applyChange = async (path: string, label: string, before: string | null, next: string | null, options: HooksOptions, note?: string): Promise<boolean> => {
     stdout(`File: ${label}`);
     if (note !== undefined) stdout(note);
     for (const line of lineDiff(before ?? '', next ?? '')) stdout(line);
-    if (options.yes !== true) {
-      if (!isTTY) {
-        stderr('Refusing to write without confirmation. Re-run with --yes.');
-        exit(1);
-        return false;
-      }
-      const answer = (await prompt('Apply? [y/N] ')).trim().toLowerCase();
-      if (answer !== 'y' && answer !== 'yes') {
-        stdout('Aborted.');
-        return true;
-      }
-    }
+    if (options.dryRun === true) return true;
+    const confirmed = await confirmApply(options);
+    if (confirmed === null) return false;
+    if (!confirmed) return true;
     try {
       if (next === null) rmSync(path, { force: true });
       else {
@@ -644,9 +671,8 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     return resolved;
   };
 
-  const processSkill = async (action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
+  const processSkillAt = async (path: string, markdown: string, action: 'install' | 'uninstall', options: HooksOptions): Promise<boolean> => {
     const project = options.project === true;
-    const path = claudeSkillPath(project ? cwd : homeDir);
     const resolved = resolveTargetPath(path, project);
     if (resolved === null) return false;
     const label = resolved !== path ? `${path} -> ${resolved}` : path;
@@ -660,28 +686,30 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     }
     if (current === null) {
       if (action === 'uninstall') return true;
-      return applyChange(path, label, null, claudeSkillMarkdown(command), options);
+      return applyChange(path, label, null, markdown, options);
     }
     if (!isOwnSkill(current)) {
       stdout(`${path} exists and was not created by distill; leaving it.`);
       return true;
     }
     if (action === 'install') {
-      const next = claudeSkillMarkdown(command);
-      if (next === current) {
+      if (markdown === current) {
         stdout(`Already installed: ${path}`);
         return true;
       }
-      return applyChange(path, label, current, next, options);
+      return applyChange(path, label, current, markdown, options);
     }
     const removed = await applyChange(path, label, current, null, options);
-    if (removed) {
+    if (removed && options.dryRun !== true) {
       try {
         rmdirSync(dirname(path));
       } catch {}
     }
     return removed;
   };
+
+  const processSkill = (action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> =>
+    processSkillAt(claudeSkillPath(options.project === true ? cwd : homeDir), claudeSkillMarkdown(command), action, options);
 
   const processTarget = async (target: Target, action: 'install' | 'uninstall', options: HooksOptions, command: string): Promise<boolean> => {
     const settingsOk = await processSettingsTarget(target, action, options, command);
@@ -793,6 +821,123 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       .option('--yes', 'apply without asking')
       .action((options: HooksOptions) => runHooksAction(action, options));
   }
+
+  const agents = program.command('agents').description('Install or remove distill for other coding agents');
+
+  const agentContext = (project: boolean, command: string): AgentContext => ({ home: homeDir, cwd, project, command, exec, which, env, platform });
+
+  const applyStep = async (step: Step, options: AgentsOptions): Promise<boolean> => {
+    if (step.kind === 'info') {
+      stdout(step.text);
+      return true;
+    }
+    if (step.kind === 'manual') {
+      stdout(`Manual step: ${step.title}`);
+      stdout(`File: ${step.path}`);
+      for (const line of step.lines) stdout(`  ${line}`);
+      return true;
+    }
+    if (step.kind === 'exec') {
+      stdout(`Command: ${step.display}`);
+      if (options.dryRun === true) return true;
+      const confirmed = await confirmApply(options);
+      if (confirmed === null) return false;
+      if (!confirmed) return true;
+      const result = exec(step.bin, step.args, cwd);
+      if (result.error !== undefined || result.status !== 0) {
+        stderr(`${step.display} failed: ${result.error ?? (result.stderr.trim() || `exit code ${String(result.status)}`)}`);
+        exit(1);
+        return false;
+      }
+      stdout(`Ran: ${step.display}`);
+      return true;
+    }
+    const resolved = resolveTargetPath(step.path, options.project === true);
+    if (resolved === null) return false;
+    const label = resolved !== step.path ? `${step.path} -> ${resolved}` : step.path;
+    return applyChange(step.path, label, step.before, step.next, options, step.note);
+  };
+
+  const runAgentsAction = async (action: 'install' | 'uninstall', options: AgentsOptions): Promise<void> => {
+    const project = options.project === true;
+    const command = hookCommand({ which, version: readVersion(), npmCommand: env.npm_command });
+    const ctx = agentContext(project, command);
+    const chosen = AGENTS.filter((agent) => (options as Record<string, unknown>)[agentOptionKey(agent.id)] === true || (options.all === true && agent.detect(ctx)));
+    if (chosen.length === 0) {
+      if (options.all === true) {
+        stdout('No supported agents detected.');
+        return;
+      }
+      stderr(`Choose an agent: ${AGENTS.map((agent) => `--${agent.id}`).join(' ')} or --all.`);
+      exit(2);
+      return;
+    }
+    if (action === 'install') {
+      stdout(`Command: ${command}`);
+      if (command !== 'distill-llm') {
+        if (options.dryRun !== true) {
+          stderr('distill-llm is not installed globally, and a temporary npx path would break the registered server. Run: npm i -g distill-llm');
+          exit(1);
+          return;
+        }
+        stdout('Warning: distill-llm is not installed globally (npm i -g distill-llm); a real install would be refused.');
+      }
+    }
+    for (const agent of chosen) {
+      stdout(`== ${agent.label} ==`);
+      let steps: Step[];
+      try {
+        steps = await (action === 'install' ? agent.installSteps(ctx) : agent.uninstallSteps(ctx));
+      } catch (error) {
+        stderr(`${agent.label}: ${errorMessage(error)}`);
+        exit(1);
+        return;
+      }
+      if (steps.length === 0) stdout('Nothing to remove.');
+      for (const step of steps) {
+        if (!(await applyStep(step, options))) return;
+      }
+    }
+    const skills: { path: string; label: string }[] = [];
+    if (chosen.some((agent) => agent.skill === 'agents')) {
+      const sharedBase = project ? cwd : homeDir;
+      const stillUsing = action === 'uninstall' ? AGENTS.filter((agent: AgentModule) => agent.skill === 'agents' && !chosen.includes(agent) && agent.mcp(ctx) === 'yes') : [];
+      if (stillUsing.length > 0) stdout(`Keeping the shared skill: still used by ${stillUsing.map((agent) => agent.label).join(', ')}.`);
+      else skills.push({ path: agentsSkillPath(sharedBase), label: 'shared skill (~/.agents/skills)' });
+    }
+    if (!project && chosen.some((agent) => agent.skill === 'hermes')) skills.push({ path: hermesSkillPath(homeDir), label: 'Hermes skill' });
+    for (const skill of skills) {
+      stdout(`== ${skill.label} ==`);
+      if (!(await processSkillAt(skill.path, agentsSkillMarkdown(command), action, options))) return;
+    }
+  };
+
+  for (const action of ['install', 'uninstall'] as const) {
+    const sub = agents
+      .command(action)
+      .description(action === 'install' ? 'Register distill (MCP server and skill) with coding agents' : 'Remove distill from coding agents');
+    sub
+      .option('--codex', 'Codex CLI and the ChatGPT desktop app')
+      .option('--gemini', 'Gemini CLI')
+      .option('--cursor', 'Cursor')
+      .option('--opencode', 'OpenCode (MCP server, plugin and skill)')
+      .option('--claude-desktop', 'Claude Desktop')
+      .option('--hermes', 'Hermes Agent')
+      .option('--openclaw', 'OpenClaw')
+      .option('--all', 'every detected agent')
+      .option('--project', 'use project files instead of your home directory (where the agent supports it)')
+      .option('--yes', 'apply without asking')
+      .option('--dry-run', 'show what would change without changing anything')
+      .action((options: AgentsOptions) => runAgentsAction(action, options));
+  }
+
+  agents
+    .command('status')
+    .description('Show where distill is installed')
+    .option('--project', 'look at project files instead of your home directory')
+    .action((options: HooksOptions) => {
+      for (const line of renderStatus(statusRows(agentContext(options.project === true, 'distill-llm')))) stdout(line);
+    });
 
   try {
     await program.parseAsync(argv, { from: 'user' });
