@@ -199,7 +199,8 @@ Each run was headless, in a fresh project, after `distill-llm agents install --p
 - **Codex CLI 0.162:** answered from both files through the `distill-documents` skill (`distill-llm convert --stdout`), inside its workspace-write sandbox.
 - **Gemini CLI 0.67:** configuration written, not run. Google no longer serves Gemini CLI to individual accounts (it asks to move to Antigravity).
 - **Antigravity CLI (`agy`) 1.2:** not supported yet. It does not load the project skill, so it read the files another way.
-- **Cursor, Hermes Agent and OpenClaw:** configuration only, not run yet.
+- **Cursor CLI (cursor-agent 2026.01):** answered from both files through the distill MCP server (`distill_files`) registered in `.cursor/mcp.json`, savings note included. When another document-conversion skill is installed, Cursor may pick that one first; ask for distill by name.
+- **Hermes Agent and OpenClaw:** configuration only, not run yet.
 
 ### CLI
 
