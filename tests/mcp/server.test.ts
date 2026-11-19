@@ -574,6 +574,85 @@ describe('usage recording', () => {
     expect(recorded).toEqual([['PDF', SAVINGS], ['PDF', SAVINGS]]);
   });
 
+  describe('once per document', () => {
+    type Data = { note?: string; savings?: unknown };
+    const setup = async (stat: (p: string) => Promise<{ size: number; mtimeMs: number }> = fixedStat) => {
+      const recorded: unknown[][] = [];
+      const client = await connect({ recordUsage: (...args) => recorded.push(args), stat });
+      return { recorded, client };
+    };
+
+    it('outline then file reports once', async () => {
+      const { recorded, client } = await setup();
+      const outline = await client.callTool({ name: 'distill_outline', arguments: { path: '/x/a.pdf' } });
+      const file = await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      expect((outline.structuredContent as Data).note).toBe(savingsNote(SAVINGS));
+      expect(file.structuredContent).not.toHaveProperty('note');
+      expect(file.structuredContent).not.toHaveProperty('savings');
+      expect(recorded).toEqual([['PDF', SAVINGS]]);
+    });
+
+    it('file then outline reports once', async () => {
+      const { recorded, client } = await setup();
+      const file = await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      const outline = await client.callTool({ name: 'distill_outline', arguments: { path: '/x/a.pdf' } });
+      expect((file.structuredContent as Data).note).toBe(savingsNote(SAVINGS));
+      expect(outline.structuredContent).not.toHaveProperty('note');
+      expect(recorded).toEqual([['PDF', SAVINGS]]);
+    });
+
+    it('a second distill_file has no note', async () => {
+      const { recorded, client } = await setup();
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      const second = await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      expect(second.structuredContent).not.toHaveProperty('note');
+      expect(second.structuredContent).not.toHaveProperty('savings');
+      expect(recorded).toHaveLength(1);
+    });
+
+    it('a partial read does not consume the report', async () => {
+      const { recorded, client } = await setup();
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', offset: 1, limit: 1 } });
+      const full = await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      expect((full.structuredContent as Data).note).toBe(savingsNote(SAVINGS));
+      expect(recorded).toHaveLength(1);
+    });
+
+    it('different documents each get their note', async () => {
+      const { recorded, client } = await setup();
+      const a = await client.callTool({ name: 'distill_outline', arguments: { path: '/x/a.pdf' } });
+      const b = await client.callTool({ name: 'distill_file', arguments: { path: '/x/b.pdf' } });
+      expect((a.structuredContent as Data).note).toBeDefined();
+      expect((b.structuredContent as Data).note).toBeDefined();
+      expect(recorded).toHaveLength(2);
+    });
+
+    it('distill_files skips documents already reported', async () => {
+      const { recorded, client } = await setup();
+      await client.callTool({ name: 'distill_outline', arguments: { path: '/x/a.pdf' } });
+      const result = await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/a.pdf', '/x/b.pdf'] } });
+      const data = result.structuredContent as { results: { savings?: unknown }[]; total: unknown; note?: string };
+      expect(data.results[0]).not.toHaveProperty('savings');
+      expect(data.results[1]?.savings).toEqual(SAVINGS);
+      expect(data.note).toBe(savingsNote(SAVINGS));
+      expect(recorded).toHaveLength(2);
+      const again = await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/a.pdf', '/x/b.pdf'] } });
+      expect(again.structuredContent).toHaveProperty('total', null);
+      expect(again.structuredContent).not.toHaveProperty('note');
+      expect(recorded).toHaveLength(2);
+    });
+
+    it('keeps reporting when the document cannot be statted', async () => {
+      const { recorded, client } = await setup(async () => {
+        throw new Error('gone');
+      });
+      await client.callTool({ name: 'distill_outline', arguments: { path: '/x/a.pdf' } });
+      const file = await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      expect((file.structuredContent as Data).note).toBe(savingsNote(SAVINGS));
+      expect(recorded).toHaveLength(2);
+    });
+  });
+
   it('does not break the call when recording throws', async () => {
     const client = await connect({
       recordUsage: () => {

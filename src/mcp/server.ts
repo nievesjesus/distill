@@ -13,6 +13,7 @@ const MAX_PATHS = 20;
 const SERVER_NAME = 'distill-llm';
 const DEFAULT_MAX_RESULT_TOKENS = 10000;
 const CACHE_SIZE = 8;
+const REPORTED_SIZE = 256;
 const CHARS_PER_TOKEN = 4;
 const PATH_HINT = "Absolute path, or relative to the server's working directory";
 const SKIPPED_NOTE = 'Not included to stay under the size limit. Call distill_file with this path.';
@@ -160,21 +161,34 @@ export function createMcpServer(deps: McpDeps): McpServer {
     }
   }
 
-  async function distillOne(path: string, args: { boosters?: LocalBoosterId[]; lingua?: boolean }): Promise<DistillResult> {
+  const reported = new Set<string>();
+
+  function claimReport(key: string | null): boolean {
+    if (key === null) return true;
+    if (reported.has(key)) return false;
+    reported.add(key);
+    if (reported.size > REPORTED_SIZE) reported.delete(reported.values().next().value as string);
+    return true;
+  }
+
+  async function distillOne(
+    path: string,
+    args: { boosters?: LocalBoosterId[]; lingua?: boolean },
+  ): Promise<{ result: DistillResult; key: string | null }> {
     const resolved = await deps.resolvePath(path);
     const key = await cacheKey(resolved, args);
     const hit = key === null ? undefined : cache.get(key);
     if (key !== null && hit) {
       cache.delete(key);
       cache.set(key, hit);
-      return hit;
+      return { result: hit, key };
     }
     const result = await deps.distiller.distillFile(resolved, toOptions(args));
     if (key !== null) {
       cache.set(key, result);
       if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value as string);
     }
-    return result;
+    return { result, key };
   }
 
   const maxSize = formatLimit(deps.health().maxBytes);
@@ -226,7 +240,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         if (args.section !== undefined && args.offset !== undefined) {
           throw new DistillError('bad_request', 'Pass either section or offset, not both');
         }
-        const result = await distillOne(args.path, args);
+        const { result, key } = await distillOne(args.path, args);
         let offset = args.offset ?? 1;
         let limit = args.limit;
         if (args.section !== undefined) {
@@ -245,7 +259,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         const more = page.to < page.end;
         const continuation = more ? continuationFor(page, limit !== undefined) : undefined;
         const firstRead = offset === 1 && args.limit === undefined && args.section === undefined;
-        const savings = firstRead ? estimateSavings(result) : undefined;
+        const savings = firstRead && claimReport(key) ? estimateSavings(result) : undefined;
         const visualPages = firstRead && result.visualPages && result.visualPages.length > 0 ? result.visualPages : undefined;
         if (savings) track(result.kind, savings);
         const note = withNote && savings ? savingsNote(savings) : undefined;
@@ -304,12 +318,12 @@ export function createMcpServer(deps: McpDeps): McpServer {
     },
     async (args) => {
       try {
-        const result = await distillOne(args.path, args);
+        const { result, key } = await distillOne(args.path, args);
         const outline = buildOutline(result.markdown);
         const text = renderOutline(outline, { name: result.name });
-        const savings = estimateSavings(result);
-        track(result.kind, savings);
-        const note = withNote ? savingsNote(savings) : undefined;
+        const savings = claimReport(key) ? estimateSavings(result) : undefined;
+        if (savings) track(result.kind, savings);
+        const note = withNote && savings ? savingsNote(savings) : undefined;
         const content: { type: 'text'; text: string }[] = [{ type: 'text', text }];
         if (note) content.push({ type: 'text', text: note });
         return {
@@ -391,7 +405,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
               nextOffset: z.number().optional(),
               truncated: z.boolean().optional(),
               tokens: tokensSchema,
-              savings: savingsSchema,
+              savings: savingsSchema.optional(),
               markdown: z.string(),
             }),
             z.object({ path: z.string(), skipped: z.literal(true), continuation: z.string() }),
@@ -411,7 +425,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
             nextOffset?: number;
             truncated?: boolean;
             tokens: { raw: number; out: number };
-            savings: SavingsEstimate;
+            savings?: SavingsEstimate;
             markdown: string;
           }
         | { path: string; skipped: true; continuation: string }
@@ -432,22 +446,26 @@ export function createMcpServer(deps: McpDeps): McpServer {
           continue;
         }
         try {
-          const result = await distillOne(path, args);
-          const savings = estimateSavings(result);
+          const { result, key } = await distillOne(path, args);
+          const savings = claimReport(key) ? estimateSavings(result) : undefined;
           const cost = countTokens(result.markdown);
           if (cost <= remaining) {
             remaining -= cost;
-            estimates.push(savings);
-            track(result.kind, savings);
-            results.push({ path, tokens: result.tokens, savings, markdown: result.markdown });
+            if (savings) {
+              estimates.push(savings);
+              track(result.kind, savings);
+            }
+            results.push({ path, tokens: result.tokens, ...(savings ? { savings } : {}), markdown: result.markdown });
             sections.push(`# ${result.name}\n\n${result.markdown}`);
             continue;
           }
           const page = paginate(result.markdown, 1, remaining) as Page;
           cut = true;
           partial += 1;
-          estimates.push(savings);
-          track(result.kind, savings);
+          if (savings) {
+            estimates.push(savings);
+            track(result.kind, savings);
+          }
           const entry: Entry = {
             path,
             continuation: `Showing lines ${page.from}-${page.to} of ${page.total}. Call distill_file with this path and offset ${page.to + 1} to continue.`,
@@ -455,7 +473,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
             ...(page.to < page.total ? { nextOffset: page.to + 1 } : {}),
             ...(page.truncated ? { truncated: true } : {}),
             tokens: result.tokens,
-            savings,
+            ...(savings ? { savings } : {}),
             markdown: page.markdown,
           };
           results.push(entry);
