@@ -23,7 +23,12 @@ let txtPath: string;
 let bigPath: string;
 
 function fakeParser(markdown = RAW): Parser {
-  return { toMarkdown: vi.fn(async () => ({ markdown, pages: 3 })), toJson: vi.fn(), close: vi.fn() };
+  return {
+    toMarkdown: vi.fn(async () => ({ markdown, pages: 3 })),
+    toJson: vi.fn(),
+    renderPage: vi.fn(async () => ({ png: Buffer.from('PNG'), width: 850, height: 1100 })),
+    close: vi.fn(),
+  };
 }
 
 function fakeLingua(installed: boolean): Lingua {
@@ -60,6 +65,49 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
+
+describe('renderPage', () => {
+  it('renders a pdf page through the parser at 100 dpi', async () => {
+    const parser = fakeParser();
+    const distiller = createDistiller({ parser, libreoffice: true });
+    const page = await distiller.renderPage(pdfPath, 2);
+    expect(parser.renderPage).toHaveBeenCalledWith(pdfPath, 2, { dpi: 100 });
+    expect(page).toEqual({ image: Buffer.from('PNG'), mimeType: 'image/png', width: 850, height: 1100 });
+  });
+
+  it('returns an image file itself', async () => {
+    const png = join(dir, 'pic.png');
+    await writeFile(png, Buffer.from('rawpng'));
+    const parser = fakeParser();
+    const page = await createDistiller({ parser, libreoffice: true }).renderPage(png, 1);
+    expect(page).toEqual({ image: Buffer.from('rawpng'), mimeType: 'image/png' });
+    expect(parser.renderPage).not.toHaveBeenCalled();
+  });
+
+  it('rejects page 2 of an image', async () => {
+    const png = join(dir, 'pic2.png');
+    await writeFile(png, Buffer.from('rawpng'));
+    await expectCode(createDistiller({ parser: fakeParser(), libreoffice: true }).renderPage(png, 2), 'bad_request');
+  });
+
+  it('rejects other kinds with bad_request', async () => {
+    const docx = join(dir, 'a.docx');
+    await writeFile(docx, 'x');
+    const distiller = createDistiller({ parser: fakeParser(), libreoffice: true });
+    await expectCode(distiller.renderPage(docx, 1), 'bad_request');
+    await expectCode(distiller.renderPage(txtPath, 1), 'unsupported_type');
+  });
+
+  it('rejects a bad page number and missing files', async () => {
+    const distiller = createDistiller({ parser: fakeParser(), libreoffice: true });
+    await expectCode(distiller.renderPage(pdfPath, 0), 'bad_request');
+    await expectCode(distiller.renderPage(join(dir, 'missing.pdf'), 1), 'not_found');
+  });
+
+  it('enforces the size limit', async () => {
+    await expectCode(createDistiller({ parser: fakeParser(), libreoffice: true, maxBytes: 10 }).renderPage(bigPath, 1), 'too_large');
+  });
 });
 
 describe('createDistiller with a fake parser', () => {

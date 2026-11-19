@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { crc32, deflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
@@ -268,12 +269,68 @@ function inventory() {
   return pages;
 }
 
+function solidPng(width, height) {
+  const raw = Buffer.alloc((width * 3 + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (width * 3 + 1);
+    for (let x = 0; x < width; x += 1) {
+      const band = Math.floor((x + y) / 24) % 2 === 0;
+      raw[row + 1 + x * 3] = band ? 26 : 224;
+      raw[row + 2 + x * 3] = band ? 86 : 138;
+      raw[row + 3 + x * 3] = band ? 196 : 40;
+    }
+  }
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc32(body), body.length + 4);
+    return out;
+  };
+  const head = Buffer.alloc(13);
+  head.writeUInt32BE(width, 0);
+  head.writeUInt32BE(height, 4);
+  head[8] = 8;
+  head[9] = 2;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', head),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+function chartDoc() {
+  const data = [['North', 412], ['South', 287], ['East', 655], ['West', 190]];
+  const bars = data
+    .map(([name, v], i) => {
+      const h = Math.round((v / 700) * 300);
+      const x = 60 + i * 110;
+      return `<rect x="${x}" y="${340 - h}" width="70" height="${h}" fill="#1a56c4"/><text x="${x + 35}" y="${330 - h}" text-anchor="middle" font-size="16" font-family="Helvetica, Arial, sans-serif" fill="#1b1f24">${v}</text><text x="${x + 35}" y="364" text-anchor="middle" font-size="16" font-family="Helvetica, Arial, sans-serif" fill="#1b1f24">${name}</text>`;
+    })
+    .join('');
+  const png = solidPng(240, 245).toString('base64');
+  return [
+    `<div class="page"><h1>Q3 2026 Revenue Review</h1><p class="small">Northwind Labs, Inc. Internal review.</p>
+      <p>This review summarizes how the third quarter of fiscal 2026 unfolded across the four sales regions. It is intended for the leadership team ahead of the planning cycle for the next fiscal year.</p>
+      <p>Each region is covered on its own page, followed by a short note about the team. Figures are preliminary and will be confirmed once the books are closed.</p></div>`,
+    `<div class="page"><h2>Revenue by region</h2>
+      <p>The chart below shows revenue by region.</p>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 380" width="6.2in" height="4.5in"><line x1="40" y1="340" x2="500" y2="340" stroke="#999" stroke-width="1"/>${bars}</svg></div>`,
+    `<div class="page"><h2>Team</h2>
+      <img src="data:image/png;base64,${png}" style="width:4.8in;height:4.9in;display:block;image-rendering:pixelated;margin:0 0 8pt" alt="Team photo placeholder">
+      <p>The regional team gathered at the annual offsite to review the plan for the coming year.</p></div>`,
+  ];
+}
+
 const docs = [
   { file: 'q3-financial-report.pdf', header: 'Northwind Labs — Q3 2026 Report — Internal', pages: financialReport() },
   { file: 'sales-ledger.pdf', header: 'Orbit Retail Group — Q3 2026 Order Ledger Export — Finance', pages: ledger() },
   { file: 'inventory-export.pdf', header: 'Northwind Labs — Inventory Export — Operations', pages: inventory() },
   { file: 'product-roadmap.pdf', header: 'Brightpath Software — Helios Roadmap 2026.4 — Confidential', pages: roadmap() },
   { file: 'vendor-contract.pdf', header: 'Granite Ridge Systems — Master Services Agreement MSA-2026-0417', pages: contract() },
+  { file: 'q3-charts.pdf', header: 'Northwind Labs — Q3 2026 Revenue Review — Internal', pages: chartDoc() },
 ];
 
 export async function makeDemoDocs() {

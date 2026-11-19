@@ -1,6 +1,6 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { buildOutline, fitLines, renderOutline } from '../core/outline';
+import { buildOutline, figurePagesIn, fitLines, renderOutline } from '../core/outline';
 import { type SavingsEstimate, savingsNote } from '../core/savings';
 import { countTokens } from '../core/tokens';
 import { isInside } from '../node/inside';
@@ -21,6 +21,16 @@ export interface ClaudeHookDeps {
 
 const DEFAULT_INDEX_MIN_TOKENS = 8000;
 const FIRST_PART_TOKENS = 2000;
+
+function figureNote(pages: string[]): string {
+  const first = pages[0];
+  if (first === undefined) return '';
+  if (pages.length === 1) {
+    return `\nPage ${first} contains a chart or image that is not in this Markdown. If the question depends on it, Read the original with pages: "${first}".`;
+  }
+  const list = `${pages.slice(0, -1).join(', ')} and ${pages[pages.length - 1]}`;
+  return `\nPages ${list} contain charts or images that are not in this Markdown. If the question depends on them, Read the original with pages: "${first}".`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -142,13 +152,14 @@ export async function handleClaudePreToolUse(
     const converted = await convert(realOriginal);
     const paged = toolInput.offset !== undefined || toolInput.limit !== undefined;
     let note = '';
+    const figures = !paged && converted.markdown !== undefined ? figureNote(figurePagesIn(converted.markdown)) : '';
     if (!paged && converted.savings !== undefined) {
       try {
         deps.recordUsage?.(original, converted.savings);
       } catch {}
       if (deps.savingsNote !== false) note = `\n${savingsNote(converted.savings)}`;
     }
-    const lead = `distill converted ${basename(original)} to Markdown to save tokens. Original file: ${original}.`;
+    const lead = `distill converted ${basename(original)} to Markdown to save tokens. Original file: ${original}.${figures}`;
     const indexMin = deps.indexMinTokens ?? DEFAULT_INDEX_MIN_TOKENS;
     const markdown = converted.markdown;
     if (!paged && markdown !== undefined && indexMin > 0) {

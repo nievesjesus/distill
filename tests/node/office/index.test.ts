@@ -7,6 +7,7 @@ function fakeParser(): Parser {
   return {
     toMarkdown: vi.fn(async () => ({ markdown: 'fake', pages: 1 })),
     toJson: vi.fn(async () => ({ fake: true })),
+    renderPage: vi.fn(async () => ({ png: Buffer.from('p'), width: 1, height: 2 })),
     close: vi.fn(),
   };
 }
@@ -55,3 +56,13 @@ describe('withBuiltinOffice', () => {
     expect(fake.close).toHaveBeenCalled();
   });
 });
+
+describe('withBuiltinOffice renderPage', () => {
+  it('passes page rendering to the wrapped parser', async () => {
+    const fake = fakeParser();
+    const parser = withBuiltinOffice(fake, { libreoffice: false, readFile });
+    expect(await parser.renderPage('/x/a.pdf', 3, { dpi: 100 })).toEqual({ png: Buffer.from('p'), width: 1, height: 2 });
+    expect(fake.renderPage).toHaveBeenCalledWith('/x/a.pdf', 3, { dpi: 100 });
+  });
+});
+

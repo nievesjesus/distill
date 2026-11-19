@@ -10,6 +10,10 @@ describe('claude skill', () => {
     expect(isOwnSkill(text)).toBe(true);
   });
 
+  it('tells the agent about figure pages', () => {
+    expect(claudeSkillMarkdown('distill-llm')).toContain('figure');
+  });
+
   it('does not claim foreign skills', () => {
     expect(isOwnSkill('# my skill')).toBe(false);
   });

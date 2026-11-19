@@ -1,4 +1,5 @@
 import { countTokens } from './tokens';
+import type { VisualKind, VisualPage } from './types';
 
 export interface OutlineEntry {
   kind: 'heading' | 'page' | 'start';
@@ -8,6 +9,8 @@ export interface OutlineEntry {
   endLine: number;
   tokens: number;
   page?: string;
+  visual?: VisualKind;
+  visualPages?: VisualPage[];
 }
 
 export interface Outline {
@@ -18,7 +21,7 @@ export interface Outline {
 
 const DEFAULT_MAX_ENTRIES = 150;
 const MAX_TITLE = 60;
-const PAGE_MARKER = /^<!-- page (\S+) -->$/;
+const PAGE_MARKER = /^<!-- page (\S+?)(?:: (figure|scan) \([^)]*\))? -->$/;
 const HEADING = /^(#{1,6})[ \t]+\S/;
 const FENCE = /^\s{0,3}(```|~~~)/;
 const TITLE_PREFIX = /^[#|\-*>\s]+/;
@@ -32,6 +35,7 @@ interface Heading {
 interface Marker {
   line: number;
   label: string;
+  visual?: VisualKind;
 }
 
 const EMPHASIS_PAIR = /\*\*|__/g;
@@ -65,13 +69,17 @@ function scan(lines: string[]): { headings: Heading[]; markers: Marker[] } {
     if (fence !== null) return;
     const marker = PAGE_MARKER.exec(text);
     if (marker) {
-      markers.push({ line: index + 1, label: marker[1] });
+      markers.push({ line: index + 1, label: marker[1], ...(marker[2] ? { visual: marker[2] as VisualKind } : {}) });
       return;
     }
     const heading = HEADING.exec(text);
     if (heading) headings.push({ level: heading[1].length, line: index + 1, title: text.trim() });
   });
   return { headings, markers };
+}
+
+export function figurePagesIn(markdown: string): string[] {
+  return scan(markdown.split('\n')).markers.filter((marker) => marker.visual === 'figure').map((marker) => marker.label);
 }
 
 function pageAt(markers: Marker[], line: number): string | undefined {
@@ -83,12 +91,34 @@ function pageAt(markers: Marker[], line: number): string | undefined {
   return label;
 }
 
+function hasBody(lines: string[], from: number, to: number): boolean {
+  for (let i = from; i <= to; i++) {
+    if (lines[i - 1].trim() !== '' && !PAGE_MARKER.test(lines[i - 1])) return true;
+  }
+  return false;
+}
+
+function visualIn(lines: string[], markers: Marker[], from: number, to: number): VisualPage[] {
+  const found: VisualPage[] = [];
+  let current: Marker | undefined;
+  for (const marker of markers) {
+    if (marker.line > from) break;
+    current = marker;
+  }
+  const inRange = markers.filter((marker) => marker.line > from && marker.line <= to && hasBody(lines, marker.line + 1, to));
+  for (const marker of current ? [current, ...inRange] : inRange) {
+    if (marker.visual) found.push({ page: marker.label, kind: marker.visual });
+  }
+  return found;
+}
+
 function headingEntries(lines: string[], headings: Heading[], markers: Marker[], maxLevel: number): OutlineEntry[] {
   const kept = headings.filter((heading) => heading.level <= maxLevel);
   return kept.map((heading, index) => {
     const next = kept.slice(index + 1).find((candidate) => candidate.level <= heading.level);
     const endLine = next ? next.line - 1 : lines.length;
     const page = pageAt(markers, heading.line);
+    const visualPages = visualIn(lines, markers, heading.line, endLine);
     return {
       kind: 'heading',
       level: heading.level,
@@ -97,6 +127,7 @@ function headingEntries(lines: string[], headings: Heading[], markers: Marker[],
       endLine,
       tokens: tokensOf(lines, heading.line, endLine),
       ...(page === undefined ? {} : { page }),
+      ...(visualPages.length > 0 ? { visualPages } : {}),
     };
   });
 }
@@ -120,6 +151,7 @@ function pageEntries(lines: string[], markers: Marker[], maxEntries: number): Ou
     const last = group[group.length - 1];
     const following = markers[start + size];
     const endLine = following ? following.line - 1 : lines.length;
+    const visualPages = group.flatMap((marker) => (marker.visual ? [{ page: marker.label, kind: marker.visual }] : []));
     entries.push({
       kind: 'page',
       level: 1,
@@ -128,6 +160,8 @@ function pageEntries(lines: string[], markers: Marker[], maxEntries: number): Ou
       endLine,
       tokens: tokensOf(lines, first.line, endLine),
       page: group.length === 1 ? first.label : `${first.label}–${last.label}`,
+      ...(group.length === 1 && first.visual ? { visual: first.visual } : {}),
+      ...(group.length > 1 && visualPages.length > 0 ? { visualPages } : {}),
     });
   }
   return entries;
@@ -170,6 +204,14 @@ export function buildOutline(markdown: string, opts: { maxEntries?: number } = {
   return { lines: lines.length, tokens, entries };
 }
 
+function visualSummary(pages: VisualPage[] | undefined): string {
+  if (!pages) return '';
+  const list = (kind: VisualKind) => pages.filter((entry) => entry.kind === kind).map((entry) => entry.page);
+  const figures = list('figure');
+  const scans = list('scan');
+  return `${figures.length > 0 ? ` · figures p.${figures.join(', ')}` : ''}${scans.length > 0 ? ` · scans p.${scans.join(', ')}` : ''}`;
+}
+
 const format = (n: number): string => n.toLocaleString('en-US');
 
 export function renderOutline(outline: Outline, opts: { name?: string } = {}): string {
@@ -177,7 +219,8 @@ export function renderOutline(outline: Outline, opts: { name?: string } = {}): s
   const rows = outline.entries.map((entry) => {
     const indent = '  '.repeat(Math.max(0, entry.level - 1));
     const page = entry.page === undefined ? '' : ` · p.${entry.page}`;
-    return `${indent}L${entry.line}-${entry.endLine} · ${format(entry.tokens)} tok${page} · ${entry.title}`;
+    const visual = entry.visual ? ` · ${entry.visual}` : '';
+    return `${indent}L${entry.line}-${entry.endLine} · ${format(entry.tokens)} tok${page}${visual}${visualSummary(entry.visualPages)} · ${entry.title}`;
   });
   return [head, ...rows].join('\n');
 }

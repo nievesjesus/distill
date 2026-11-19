@@ -34,6 +34,10 @@ describe('portable agents skill', () => {
     expect(text).toMatch(/never upload/i);
   });
 
+  it('tells the agent about figure pages', () => {
+    expect(text).toContain('figure');
+  });
+
   it('contains no comments other than the marker', () => {
     expect(text.replace('<!-- distill-llm skill -->', '')).not.toMatch(/<!--|\/\/|\/\*/);
   });

@@ -173,6 +173,7 @@ export function createApp(deps: AppDeps): Hono {
       markdown: result.markdown,
       ms: Math.round(performance.now() - started),
       ...(result.engine ? { engine: result.engine } : {}),
+      ...(result.visualPages ? { visualPages: result.visualPages } : {}),
     };
     return c.json(body);
   });

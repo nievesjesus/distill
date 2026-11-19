@@ -598,3 +598,60 @@ describe('run hook convert', () => {
     expect(h.openDistiller).not.toHaveBeenCalled();
   });
 });
+
+describe('visual pages', () => {
+  const context = (result: unknown): string => (result as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+  const savings = estimateSavings({ kind: 'PDF', pages: 7, tokens: { raw: 1813, out: 1731 } });
+  const lead = (file: string) => `distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`;
+  const figure = (page: string) => `<!-- page ${page}: figure (chart or image not in this text; see the original page) -->`;
+  const scan = (page: string) => `<!-- page ${page}: scan (OCR text) -->`;
+  const doc = (...markers: string[]) => `${markers.join('\n\ntext\n\n')}\n\ntext\n`;
+
+  it('points at two figure pages before the savings note', async () => {
+    const file = pdf();
+    const markdown = doc('<!-- page 1 -->', '<!-- page 2 -->', figure('4'), figure('9'));
+    const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', savings, markdown }), deps());
+    expect(context(result)).toBe(
+      `${lead(file)}\nPages 4 and 9 contain charts or images that are not in this Markdown. If the question depends on them, Read the original with pages: "4".\n${savingsNote(savings)}`,
+    );
+  });
+
+  it('names a single figure page', async () => {
+    const file = pdf();
+    const markdown = doc('<!-- page 1 -->', figure('3'));
+    const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', markdown }), deps());
+    expect(context(result)).toBe(`${lead(file)}\nPage 3 contains a chart or image that is not in this Markdown. If the question depends on it, Read the original with pages: "3".`);
+  });
+
+  it('lists more than two pages with commas', async () => {
+    const file = pdf();
+    const markdown = doc(figure('2'), figure('5'), figure('8'));
+    const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', markdown }), deps());
+    expect(context(result)).toContain('Pages 2, 5 and 8 contain charts or images');
+    expect(context(result)).toContain('pages: "2"');
+  });
+
+  it('says nothing for scans and plain pages', async () => {
+    const file = pdf();
+    const markdown = doc('<!-- page 1 -->', scan('2'));
+    const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', markdown }), deps());
+    expect(context(result)).toBe(lead(file));
+  });
+
+  it('stays out of paged reads', async () => {
+    const file = pdf();
+    const markdown = doc('<!-- page 1 -->', figure('2'));
+    const result = await handleClaudePreToolUse(payload({ file_path: file, limit: 5 }), async () => ({ path: '/c.md', markdown }), deps());
+    expect(context(result)).toBe(lead(file));
+  });
+
+  it('goes before the index of a large document', async () => {
+    const file = pdf();
+    const body = Array.from({ length: 400 }, (_, i) => `row ${i} alpha beta gamma delta`).join('\n');
+    const markdown = `<!-- page 1 -->\n\n${body}\n\n${figure('2')}\n\n${body}\n`;
+    const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', markdown }), deps({ indexMinTokens: 100 }));
+    const text = context(result);
+    expect(text.indexOf('Page 2 contains a chart')).toBeGreaterThan(-1);
+    expect(text.indexOf('Page 2 contains a chart')).toBeLessThan(text.indexOf('Index of'));
+  });
+});

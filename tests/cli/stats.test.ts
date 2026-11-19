@@ -20,6 +20,7 @@ afterEach(() => {
 
 function fakeDistiller(): Distiller {
   return {
+    renderPage: async () => { throw new Error('unused'); },
     async distillFile(path) {
       const name = basename(path);
       return { path, name, kind: 'PDF', pages: 3, markdown: `# ${name}\n`, tokens: { raw: 1000, out: 300 }, ms: 1 };
