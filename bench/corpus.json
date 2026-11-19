@@ -1,0 +1,204 @@
+[
+  {
+    "id": "nist-sp800-53r5",
+    "url": "https://nvlpubs.nist.gov/nistpubs/specialpublications/NIST.SP.800-53r5.pdf",
+    "sha256": "fc63bcd61715d0181dd8e85998b1e6201ae3515fc6626102101cab1841e11ec6",
+    "ext": "pdf",
+    "license": "Public domain (US government work)",
+    "title": "NIST SP 800-53 Rev. 5: Security and Privacy Controls"
+  },
+  {
+    "id": "nist-sp800-171r3",
+    "url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-171r3.pdf",
+    "sha256": "3e4631df8b5d61f40a6e542b52779ef30ddbbfff31e09214fa94ad6e6f5e6d08",
+    "ext": "pdf",
+    "license": "Public domain (US government work)",
+    "title": "NIST SP 800-171 Rev. 3: Protecting CUI"
+  },
+  {
+    "id": "nist-ai-rmf",
+    "url": "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf",
+    "sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
+    "ext": "pdf",
+    "license": "Public domain (US government work)",
+    "title": "NIST AI Risk Management Framework 1.0"
+  },
+  {
+    "id": "nist-csf2",
+    "url": "https://nvlpubs.nist.gov/nistpubs/cswp/NIST.CSWP.29.pdf",
+    "sha256": "3c31f46fee98cac0c4323453e5109291a213b4de7fef8c058af9bf67f717433c",
+    "ext": "pdf",
+    "license": "Public domain (US government work)",
+    "title": "NIST Cybersecurity Framework 2.0"
+  },
+  {
+    "id": "911-report",
+    "url": "https://www.govinfo.gov/content/pkg/GPO-911REPORT/pdf/GPO-911REPORT.pdf",
+    "sha256": "657d41475eb3a9a5e3e87a6c7c51ac1dfbe1af7566d1abff7bf7286e7e1c0e1b",
+    "ext": "pdf",
+    "license": "Public domain (US government work)",
+    "title": "The 9/11 Commission Report"
+  },
+  {
+    "id": "eia-aeo2023",
+    "url": "https://www.eia.gov/outlooks/aeo/pdf/AEO2023_Narrative.pdf",
+    "sha256": "571c10176dad2f2a4fe0a3d36bb9870980fd77e289b5b1fdb2a1d0df35866855",
+    "ext": "pdf",
+    "license": "Public domain (US government work)",
+    "title": "EIA Annual Energy Outlook 2023 Narrative"
+  },
+  {
+    "id": "cms-trustees-2024",
+    "url": "https://www.cms.gov/files/document/2024-medicare-trustees-report.pdf",
+    "sha256": "79e509017f363e71df61dffe5fe11536c1ffbdef56b877d885016e2802cb230b",
+    "ext": "pdf",
+    "license": "Public domain (US government work)",
+    "title": "2024 Medicare Trustees Report"
+  },
+  {
+    "id": "erp-2024",
+    "url": "https://www.govinfo.gov/content/pkg/ERP-2024/pdf/ERP-2024.pdf",
+    "sha256": "2f8bf287fab050bc3213a0a53feac974c6a0b1862193c59d8530453555ff3aa1",
+    "ext": "pdf",
+    "license": "Public domain (US government work)",
+    "title": "Economic Report of the President 2024"
+  },
+  {
+    "id": "census-p60-279",
+    "url": "https://www.census.gov/content/dam/Census/library/publications/2023/demo/p60-279.pdf",
+    "sha256": "ce921ae1c54b000b3c1defbe52762a5358b9b597a6cd01aee5b84671fab598c5",
+    "ext": "pdf",
+    "license": "Public domain (US government work)",
+    "title": "Income in the United States: 2022 (Census P60-279)"
+  },
+  {
+    "id": "arxiv-mamba",
+    "url": "https://arxiv.org/pdf/2312.00752v2",
+    "sha256": "adf70ed1803c85b1899dec3e21f3af0b124411439e8654b840ea65f7b9f52b2e",
+    "ext": "pdf",
+    "license": "CC BY 4.0",
+    "title": "Mamba: Linear-Time Sequence Modeling with Selective State Spaces"
+  },
+  {
+    "id": "arxiv-foundation-models",
+    "url": "https://arxiv.org/pdf/2108.07258v3",
+    "sha256": "05e867e3c710a3b0c0e13eb372d013c3511f2ee114bace5ca5c402d6341e92dd",
+    "ext": "pdf",
+    "license": "CC BY 4.0",
+    "title": "On the Opportunities and Risks of Foundation Models"
+  },
+  {
+    "id": "arxiv-mistral7b",
+    "url": "https://arxiv.org/pdf/2310.06825v1",
+    "sha256": "dfbac4e7035344b305c947481f2e7e8a02f7a24a563917eb6e47f6591d14c5ae",
+    "ext": "pdf",
+    "license": "CC BY 4.0",
+    "title": "Mistral 7B"
+  },
+  {
+    "id": "arxiv-cot",
+    "url": "https://arxiv.org/pdf/2201.11903v6",
+    "sha256": "7d9f878c23b460e4566aa4ec9201b1abfb3b8faefb2b1356e411cb90fef72a12",
+    "ext": "pdf",
+    "license": "CC BY 4.0",
+    "title": "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models"
+  },
+  {
+    "id": "nist-ssp-template",
+    "url": "https://csrc.nist.gov/files/pubs/sp/800/171/r2/upd1/final/docs/cui-ssp-template-final.docx",
+    "sha256": "341a8cad3fc26efa567ac304097e0cabd8191925ce743169bb2e9bd1b41341a4",
+    "ext": "docx",
+    "license": "Public domain (US government work)",
+    "title": "NIST CUI System Security Plan template"
+  },
+  {
+    "id": "nist-collab-index",
+    "url": "https://csrc.nist.gov/files/pubs/sp/800/53/r5/upd1/final/docs/sp800-53-collaboration-index-template.docx",
+    "sha256": "b90eb95de2c2dfcc5e91615f479ae55450d1a44ad87d4d666c3bc53c169e4ef9",
+    "ext": "docx",
+    "license": "Public domain (US government work)",
+    "title": "NIST SP 800-53 collaboration index template"
+  },
+  {
+    "id": "nist-53r5-catalog",
+    "url": "https://csrc.nist.gov/files/pubs/sp/800/53/r5/upd1/final/docs/sp800-53r5-control-catalog.xlsx",
+    "sha256": "1777ed6f839bccd55516e6e703bfe75e3cf63efb2ec80bb9309ed960af2c9ea4",
+    "ext": "xlsx",
+    "license": "Public domain (US government work)",
+    "title": "NIST SP 800-53 Rev. 5 control catalog"
+  },
+  {
+    "id": "nist-171a-assess",
+    "url": "https://csrc.nist.gov/files/pubs/sp/800/171/a/final/docs/sp800-171a-assessment-procedures.xlsx",
+    "sha256": "8975a7c1595b4c5a724ee3e72f7e76a848e320be6d9e46027cdf5c8a315bfbc3",
+    "ext": "xlsx",
+    "license": "Public domain (US government work)",
+    "title": "NIST SP 800-171A assessment procedures"
+  },
+  {
+    "id": "census-nst-pop",
+    "url": "https://www2.census.gov/programs-surveys/popest/tables/2020-2023/state/totals/NST-EST2023-POP.xlsx",
+    "sha256": "aec49456a006a06bdaba1ec90f032e0412617da40cdda26709074fbc6bb528e6",
+    "ext": "xlsx",
+    "license": "Public domain (US government work)",
+    "title": "Census state population estimates 2020-2023"
+  },
+  {
+    "id": "nasa-x57-briefing",
+    "url": "https://ntrs.nasa.gov/api/citations/20240003802/downloads/20240305%20Subset%20of%20X-57%20PS%20Charts.pptx",
+    "sha256": "66f165134477bcb5ea6488f35b940890bcef1c4f398de1d6f5cdb5004bf32235",
+    "ext": "pptx",
+    "license": "Public domain (US government work)",
+    "title": "NASA X-57 closeout briefing (subset)"
+  },
+  {
+    "id": "nasa-access-rationale",
+    "url": "https://ntrs.nasa.gov/api/citations/20230017093/downloads/ACCESS%20Rationale_NAC.pptx",
+    "sha256": "53b81b225e6aaf917fd209e74f227667cef0f4aef0b8e3753f44a9efc1e38764",
+    "ext": "pptx",
+    "license": "Public domain (US government work)",
+    "title": "NASA ACCESS rationale briefing"
+  },
+  {
+    "id": "demo-vendor-contract",
+    "local": "demo:vendor-contract.pdf",
+    "ext": "pdf",
+    "license": "Synthetic (generated by scripts/marketing/make-demo-docs.mjs)",
+    "title": "Demo document vendor-contract"
+  },
+  {
+    "id": "demo-q3-financial-report",
+    "local": "demo:q3-financial-report.pdf",
+    "ext": "pdf",
+    "license": "Synthetic (generated by scripts/marketing/make-demo-docs.mjs)",
+    "title": "Demo document q3-financial-report"
+  },
+  {
+    "id": "demo-q3-charts",
+    "local": "demo:q3-charts.pdf",
+    "ext": "pdf",
+    "license": "Synthetic (generated by scripts/marketing/make-demo-docs.mjs)",
+    "title": "Demo document q3-charts"
+  },
+  {
+    "id": "demo-sales-ledger",
+    "local": "demo:sales-ledger.pdf",
+    "ext": "pdf",
+    "license": "Synthetic (generated by scripts/marketing/make-demo-docs.mjs)",
+    "title": "Demo document sales-ledger"
+  },
+  {
+    "id": "demo-inventory-export",
+    "local": "demo:inventory-export.pdf",
+    "ext": "pdf",
+    "license": "Synthetic (generated by scripts/marketing/make-demo-docs.mjs)",
+    "title": "Demo document inventory-export"
+  },
+  {
+    "id": "demo-product-roadmap",
+    "local": "demo:product-roadmap.pdf",
+    "ext": "pdf",
+    "license": "Synthetic (generated by scripts/marketing/make-demo-docs.mjs)",
+    "title": "Demo document product-roadmap"
+  }
+]

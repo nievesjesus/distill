@@ -1,0 +1,346 @@
+[
+  {
+    "id": "contract-term",
+    "doc": "demo-vendor-contract",
+    "question": "What is the initial term of the agreement, in months?",
+    "expected": { "type": "number", "value": 36 },
+    "tags": ["simple"],
+    "source": "pdftotext p1, section 2: 'initial term of thirty-six (36) months'"
+  },
+  {
+    "id": "contract-fee-total",
+    "doc": "demo-vendor-contract",
+    "question": "What is the total annual fee in USD in the fees schedule (Schedule B)?",
+    "expected": { "type": "number", "value": 420000 },
+    "tags": ["table"],
+    "source": "pdftotext p4, Schedule B total row: 420,000.00"
+  },
+  {
+    "id": "contract-support-sandbox",
+    "doc": "demo-vendor-contract",
+    "question": "What is the combined annual fee in USD of Premium Support and the Sandbox Environment?",
+    "expected": { "type": "number", "value": 60000 },
+    "tags": ["table", "multi"],
+    "source": "pdftotext p4, Schedule B: Premium Support 48,000.00 + Sandbox Environment 12,000.00"
+  },
+  {
+    "id": "q3-revenue",
+    "doc": "demo-q3-financial-report",
+    "question": "What was Northwind Labs' total revenue in Q3 2026, in millions of dollars?",
+    "expected": { "type": "number", "value": 48.2 },
+    "tags": ["simple"],
+    "source": "pdftotext p1, executive summary: 'revenue of $48.2 million'"
+  },
+  {
+    "id": "q3-publicsector-delta",
+    "doc": "demo-q3-financial-report",
+    "question": "In the Public Sector region section, what was the Q3 2026 revenue of Delta Vault, in thousands of dollars?",
+    "expected": { "type": "number", "value": 25450 },
+    "tags": ["table"],
+    "source": "pdftotext p6, section 6 Public Sector table: Delta Vault 25,450"
+  },
+  {
+    "id": "q3-publicsector-bookings",
+    "doc": "demo-q3-financial-report",
+    "question": "In the Public Sector region section, what is the sum of new bookings for July, August and September, in thousands of dollars?",
+    "expected": { "type": "number", "value": 5983 },
+    "tags": ["table", "multi"],
+    "source": "pdftotext p6, Public Sector monthly table: 1,931 + 2,057 + 1,995 = 5,983"
+  },
+  {
+    "id": "charts-top-region",
+    "doc": "demo-q3-charts",
+    "question": "According to the revenue-by-region chart, which region had the highest revenue?",
+    "expected": { "type": "text", "value": "East" },
+    "tags": ["chart"],
+    "source": "p2 bar chart (verified by rendering the page): East 655, North 412, South 287, West 190"
+  },
+  {
+    "id": "charts-west",
+    "doc": "demo-q3-charts",
+    "question": "According to the revenue-by-region chart, what is the revenue value shown for the West region?",
+    "expected": { "type": "number", "value": 190 },
+    "tags": ["chart"],
+    "source": "p2 bar chart (verified by rendering the page): West bar labelled 190"
+  },
+  {
+    "id": "ledger-net",
+    "doc": "demo-sales-ledger",
+    "question": "What is the Net ($) of order SO-41247?",
+    "expected": { "type": "number", "value": 12804 },
+    "tags": ["table"],
+    "source": "pdftotext p5: SO-41247 ... Net 12,804"
+  },
+  {
+    "id": "inventory-total",
+    "doc": "demo-inventory-export",
+    "question": "What is the Total value of the stock row with SKU NW-700557?",
+    "expected": { "type": "number", "value": 37365.44, "tolerance": 0.01 },
+    "tags": ["table"],
+    "source": "pdftotext p5: NW-700557 Rubber gasket 40mm Lyon Central total 37,365.44"
+  },
+  {
+    "id": "roadmap-offline",
+    "doc": "demo-product-roadmap",
+    "question": "How many engineering weeks is the estimate for the 'Mobile offline mode' initiative?",
+    "expected": { "type": "number", "value": 14 },
+    "tags": ["table"],
+    "source": "pdftotext p5, Experience theme table: Mobile offline mode Q1 2027 In progress Growth 14 eng-weeks"
+  },
+  {
+    "id": "mistral-hidden-dim",
+    "doc": "arxiv-mistral7b",
+    "question": "What is the hidden_dim of the Mistral 7B model architecture?",
+    "expected": { "type": "number", "value": 14336 },
+    "tags": ["simple", "table"],
+    "source": "pdftotext p2, architecture parameter table: hidden_dim 14336"
+  },
+  {
+    "id": "mistral-window-ratio",
+    "doc": "arxiv-mistral7b",
+    "question": "In Mistral 7B, how many times larger is the context length than the sliding window size?",
+    "expected": { "type": "number", "value": 2 },
+    "tags": ["multi", "table"],
+    "source": "pdftotext p2, parameter table: context_len 8192, window_size 4096 (ratio 2)"
+  },
+  {
+    "id": "mamba-throughput",
+    "doc": "arxiv-mamba",
+    "question": "The abstract says Mamba has how many times higher inference throughput than Transformers?",
+    "expected": { "type": "number", "value": 5 },
+    "tags": ["simple"],
+    "source": "pdftotext p1, abstract: '5x higher throughput than Transformers'"
+  },
+  {
+    "id": "cot-exemplars",
+    "doc": "arxiv-cot",
+    "question": "With how many chain-of-thought exemplars was PaLM 540B prompted to reach state-of-the-art accuracy on GSM8K, according to the abstract?",
+    "expected": { "type": "number", "value": 8 },
+    "tags": ["simple"],
+    "source": "pdftotext p1, abstract: 'PaLM 540B with just eight chain-of-thought exemplars'"
+  },
+  {
+    "id": "fm-gpt3-params",
+    "doc": "arxiv-foundation-models",
+    "question": "How many parameters does GPT-3 have according to the report's introduction? Answer in billions.",
+    "expected": { "type": "number", "value": 175 },
+    "tags": ["simple"],
+    "source": "pdftotext p3: 'GPT-3 has 175 billion parameters'"
+  },
+  {
+    "id": "fm-clip-poison",
+    "doc": "arxiv-foundation-models",
+    "question": "The report says targeted attacks against CLIP-style models require modifying as little as two out of how many million training examples? Answer with the number of millions.",
+    "expected": { "type": "number", "value": 3 },
+    "tags": ["deep"],
+    "source": "pdftotext p106: 'as little as two out of 3 million training examples'"
+  },
+  {
+    "id": "fm-russia-budget",
+    "doc": "arxiv-foundation-models",
+    "question": "What was the budget, in millions of dollars, of the 2017 influence operation that originated in Russia and targeted Americans, as cited in the report?",
+    "expected": { "type": "number", "value": 12.2 },
+    "tags": ["deep"],
+    "source": "pdftotext p137: 'The budget for one 2017 influence operation ... was $12.2 million'"
+  },
+  {
+    "id": "csf-functions",
+    "doc": "nist-csf2",
+    "question": "How many Functions make up the CSF 2.0 Core?",
+    "expected": { "type": "number", "value": 6 },
+    "tags": ["simple"],
+    "source": "pdftotext p8: GOVERN, IDENTIFY, PROTECT, DETECT, RESPOND, and RECOVER"
+  },
+  {
+    "id": "airmf-functions",
+    "doc": "nist-ai-rmf",
+    "question": "How many functions is the AI RMF Core composed of?",
+    "expected": { "type": "number", "value": 4 },
+    "tags": ["simple"],
+    "source": "pdftotext p25: 'the Core is composed of four functions: GOVERN, MAP, MEASURE, and MANAGE'"
+  },
+  {
+    "id": "171r3-families",
+    "doc": "nist-sp800-171r3",
+    "question": "Into how many families are the SP 800-171 Rev. 3 security requirements organized?",
+    "expected": { "type": "number", "value": 17 },
+    "tags": ["simple"],
+    "source": "pdftotext p13: 'organized into 17 families'"
+  },
+  {
+    "id": "171r3-authenticator",
+    "doc": "nist-sp800-171r3",
+    "question": "What is the title of security requirement 03.05.12?",
+    "expected": { "type": "text", "value": "Authenticator Management" },
+    "tags": ["simple"],
+    "source": "pdftotext p47: '03.05.12 Authenticator Management'"
+  },
+  {
+    "id": "53r5-families",
+    "doc": "nist-sp800-53r5",
+    "question": "Into how many control families are the SP 800-53 Rev. 5 controls organized?",
+    "expected": { "type": "number", "value": 20 },
+    "tags": ["simple"],
+    "source": "pdftotext p35: 'controls are organized into 20 families'"
+  },
+  {
+    "id": "53r5-sc12",
+    "doc": "nist-sp800-53r5",
+    "question": "Which control identifier has the title 'Cryptographic Key Establishment and Management'?",
+    "expected": { "type": "text", "value": "SC-12" },
+    "tags": ["deep"],
+    "source": "pdftotext p334: 'SC-12 CRYPTOGRAPHIC KEY ESTABLISHMENT AND MANAGEMENT'"
+  },
+  {
+    "id": "911-flight11",
+    "doc": "911-report",
+    "question": "Which flight crashed into the North Tower of the World Trade Center at 8:46:40?",
+    "expected": { "type": "oneOf", "value": ["American 11", "American Airlines Flight 11", "American Airlines 11", "AA11", "AA 11"] },
+    "tags": ["simple"],
+    "source": "pdftotext p25: 'At 8:46:40, American 11 crashed into the North Tower'"
+  },
+  {
+    "id": "911-berger-call",
+    "doc": "911-report",
+    "question": "At what time on August 7, 1998 did National Security Advisor Berger wake President Clinton with a phone call about the embassy bombings?",
+    "expected": { "type": "oneOf", "value": ["5:35", "5.35", "0535"] },
+    "tags": ["deep"],
+    "source": "pdftotext p133, section 4.2: 'woke President Clinton with a phone call at 5:35 A.M.'"
+  },
+  {
+    "id": "911-moussaoui-order",
+    "doc": "911-report",
+    "question": "On what date was the deportation order for Zacarias Moussaoui signed?",
+    "expected": { "type": "oneOf", "value": ["August 17, 2001", "17 August 2001", "Aug 17, 2001", "Aug. 17, 2001", "2001-08-17", "8/17/2001"] },
+    "tags": ["deep"],
+    "source": "pdftotext p291: 'A deportation order was signed on August 17, 2001'"
+  },
+  {
+    "id": "erp-gdp-2023",
+    "doc": "erp-2024",
+    "question": "According to the 2024 Economic Report of the President, by what percent did real GDP grow over the four quarters of 2023?",
+    "expected": { "type": "number", "value": 3.1 },
+    "tags": ["deep"],
+    "source": "pdftotext p69: 'Real GDP accelerated to a pace of 3.1 percent over the four quarters of 2023'"
+  },
+  {
+    "id": "cms-hi-depletion",
+    "doc": "cms-trustees-2024",
+    "question": "In what year is the Medicare Hospital Insurance (HI) trust fund projected to be depleted in the 2024 Trustees Report?",
+    "expected": { "type": "number", "value": 2036 },
+    "tags": ["simple"],
+    "source": "pdftotext p12-13: 'estimated depletion date for the HI trust fund is 2036'"
+  },
+  {
+    "id": "cms-partb-premium-change",
+    "doc": "cms-trustees-2024",
+    "question": "By how many dollars did the standard monthly Part B premium rise from 2023 to 2024?",
+    "expected": { "type": "number", "value": 9.8, "tolerance": 0.01 },
+    "tags": ["table", "multi"],
+    "source": "pdftotext p88, Table III.C2: 2023 164.90, 2024 174.70 (difference 9.80)"
+  },
+  {
+    "id": "census-median-income",
+    "doc": "census-p60-279",
+    "question": "What was the real median household income in 2022, in dollars?",
+    "expected": { "type": "number", "value": 74580 },
+    "tags": ["simple"],
+    "source": "pdftotext p7: 'Real median household income was $74,580 in 2022'"
+  },
+  {
+    "id": "census-fig6-men",
+    "doc": "census-p60-279",
+    "question": "In Figure 6, what is the 2022 median earnings of men working full-time, year-round, in dollars?",
+    "expected": { "type": "number", "value": 62350 },
+    "tags": ["chart"],
+    "source": "pdftotext p16, Figure 6 chart label: 'Earnings of men $62,350' (page rendered and checked)"
+  },
+  {
+    "id": "census-fig6-gap",
+    "doc": "census-p60-279",
+    "question": "In Figure 6, how many dollars more were the 2022 median earnings of men than of women working full-time, year-round?",
+    "expected": { "type": "number", "value": 9990 },
+    "tags": ["chart", "multi"],
+    "source": "pdftotext p16, Figure 6 chart labels: men $62,350, women $52,360 (difference 9,990)"
+  },
+  {
+    "id": "eia-high-oil",
+    "doc": "eia-aeo2023",
+    "question": "In the AEO2023 High Oil Price case, what price per barrel (in 2022 dollars) does Brent crude reach by 2050?",
+    "expected": { "type": "number", "value": 190 },
+    "tags": ["simple"],
+    "source": "pdftotext p37: 'reaches $190 per barrel (b) by 2050'"
+  },
+  {
+    "id": "eia-oil-spread",
+    "doc": "eia-aeo2023",
+    "question": "By 2050, how many dollars per barrel higher is the Brent crude price in the AEO2023 High Oil Price case than in the Low Oil Price case?",
+    "expected": { "type": "number", "value": 139 },
+    "tags": ["multi"],
+    "source": "pdftotext p37: High Oil Price $190/b, Low Oil Price $51/b (difference 139)"
+  },
+  {
+    "id": "nst-texas",
+    "doc": "census-nst-pop",
+    "question": "What was the Texas resident population estimate for July 1, 2023?",
+    "expected": { "type": "number", "value": 30503301 },
+    "tags": ["office", "table"],
+    "source": "xlsx sheet 1 row 53: .Texas 2023 = 30503301 (unzipped worksheet XML)"
+  },
+  {
+    "id": "nst-al-ak",
+    "doc": "census-nst-pop",
+    "question": "What is the combined July 1, 2022 population estimate of Alabama and Alaska?",
+    "expected": { "type": "number", "value": 5807179 },
+    "tags": ["office", "multi"],
+    "source": "xlsx sheet 1 rows 10-11, 2022 column: 5073903 + 733276 = 5807179"
+  },
+  {
+    "id": "catalog-sc28",
+    "doc": "nist-53r5-catalog",
+    "question": "What is the name of control SC-28 in the control catalog spreadsheet?",
+    "expected": { "type": "text", "value": "Protection of Information at Rest" },
+    "tags": ["office", "table"],
+    "source": "xlsx sheet 1 row 989: SC-28 Protection of Information at Rest"
+  },
+  {
+    "id": "171a-mfa",
+    "doc": "nist-171a-assess",
+    "question": "In the assessment procedures spreadsheet, what is the requirement identifier (in the form 3.x.y) of the requirement 'Use multifactor authentication for local and network access to privileged accounts and for network access to non-privileged accounts'?",
+    "expected": { "type": "text", "value": "3.5.3" },
+    "tags": ["office", "table"],
+    "source": "xlsx sheet SP800-171A row 204: 3.5.3 / 03.05.03"
+  },
+  {
+    "id": "ssp-categorization",
+    "doc": "nist-ssp-template",
+    "question": "What system categorization is pre-filled in the template under System Identification?",
+    "expected": { "type": "text", "value": "Moderate Impact for Confidentiality" },
+    "tags": ["office"],
+    "source": "docx word/document.xml: 'System Categorization:  Moderate Impact for Confidentiality'"
+  },
+  {
+    "id": "collab-ac2-6",
+    "doc": "nist-collab-index",
+    "question": "What is the name of control enhancement AC-2(6) in the collaboration index template?",
+    "expected": { "type": "text", "value": "dynamic privilege management" },
+    "tags": ["office", "table"],
+    "source": "docx word/document.xml: 'AC-2(6)' followed by 'dynamic privilege management'"
+  },
+  {
+    "id": "x57-astm",
+    "doc": "nasa-x57-briefing",
+    "question": "Which ASTM committee on General Aviation did X-57 subject matter experts help with, according to the Rules and Standards Development slide? Give the committee code.",
+    "expected": { "type": "text", "value": "F44" },
+    "tags": ["office"],
+    "source": "pptx slide 6: 'ASTM Committee F44 on General Aviation'"
+  },
+  {
+    "id": "access-lead",
+    "doc": "nasa-access-rationale",
+    "question": "What is Eric Stern's role according to the title slide?",
+    "expected": { "type": "text", "value": "ACCESS NASA Technical Lead" },
+    "tags": ["office"],
+    "source": "pptx slide 1: 'Eric Stern, ACCESS NASA Technical Lead'"
+  }
+]
