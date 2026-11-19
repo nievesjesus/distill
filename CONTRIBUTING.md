@@ -32,6 +32,23 @@ For UI work, run `npm run build && node dist/cli.js --no-open` in one terminal a
 - Nothing may send documents off the machine or add telemetry.
 - Commits follow Conventional Commits (`feat(cli): …`, `fix(hooks): …`).
 
+## Benchmark
+
+`bench/` is a development tool (not in the npm package) that asks Claude Code the same questions about the same documents with and without distill, and compares the real cost, turns, time and correctness.
+
+```bash
+npm run bench:fetch
+npm run bench -- --tasks tag:simple --repeats 1 --max-runs 4 --model haiku
+npm run bench:report
+```
+
+- **Cost:** every run is a real headless `claude -p` call billed to your Claude Code login. The full set (about 45 tasks, two arms) can cost tens of dollars with `sonnet`. Use `--max-cost-usd` (default 20 per night), `--max-runs`, `--model` and `--tasks tag:simple,tag:deep,id:...` to keep it small. A single run is capped at `--run-budget-usd` (default 2) and 15 minutes.
+- **Documents:** `bench/corpus.json` lists public documents by URL and SHA-256. `bench:fetch` stores them in `~/.cache/distill-llm/bench/corpus/` and refuses any file whose hash differs. The demo documents come from `.cache/marketing/docs/` and are regenerated when missing.
+- **Tasks:** `bench/tasks.json` holds the questions and expected answers. Each one carries a `source` (page and snippet) checked against the original with an independent tool, never against distill's output.
+- **Isolation:** each run gets a fresh temp folder with only the document and a fresh distill cache (`DISTILL_CACHE_DIR`). The distill arm loads `plugins/distill` and uses the npm package in `--package` (default `distill-llm@latest`; pass a local tarball to test a branch). User-level Claude settings and plugins are shared by both arms.
+- **Results:** one JSON line per run in `~/.cache/distill-llm/bench/results/runs.jsonl` (`--results <dir>` changes it). Runs accumulate across nights; `--resume` skips what is already done tonight. `bench:report` aggregates every night into `bench-report.md` and `report.json` next to it: medians and spread, a paired distill/baseline ratio with a bootstrap 95% interval, tag breakdowns and the tasks where distill lost.
+- **Nightly on macOS:** `npm run bench:install-nightly` writes a launchd agent that runs `bench/nightly.sh` at 02:30 (budget `DISTILL_BENCH_BUDGET`, default $15; logs in `~/.cache/distill-llm/bench/logs/`). It asks before changing anything; `--dry-run` only prints the plan and `npm run bench:uninstall-nightly` removes it.
+
 ## Pull requests
 
 Keep them focused, include tests, and make sure `npm test`, `npm run typecheck` and `npm run test:smoke` pass. Describe what changed for the user, not only in the code.
