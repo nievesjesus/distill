@@ -131,6 +131,26 @@ describe('classifyPage', () => {
     expect(classifyPage(stats({ layout: { figureCount: 2 } }), 500)).toBeNull();
   });
 
+  it('flags a vector chart with text labels and no ruled table (q3-charts p2)', () => {
+    expect(
+      classifyPage(stats({ uncoveredVectorArea: undefined, layout: { figureCount: 3, figureCoverage: 0.061, ruledTableCount: 0 } }), 198),
+    ).toBe('figure');
+  });
+
+  it('does not flag pages with a ruled table (product-roadmap p6, p8, q3-financial p9)', () => {
+    expect(classifyPage(stats({ layout: { figureCount: 1, figureCoverage: 0.473, ruledTableCount: 1 } }), 936)).toBeNull();
+    expect(classifyPage(stats({ layout: { figureCount: 1, figureCoverage: 0.673, ruledTableCount: 1 } }), 1043)).toBeNull();
+    expect(
+      classifyPage(stats({ uncoveredVectorArea: undefined, layout: { figureCount: 1, figureCoverage: 0.136, ruledTableCount: 1 } }), 360),
+    ).toBeNull();
+  });
+
+  it('ignores a small figure coverage and missing layout fields', () => {
+    expect(classifyPage(stats({ layout: { figureCount: 1, figureCoverage: 0.02, ruledTableCount: 0 } }), 500)).toBeNull();
+    expect(classifyPage(stats({ layout: { figureCount: 1 } }), 500)).toBeNull();
+    expect(classifyPage(stats({ layout: undefined }), 500)).toBeNull();
+  });
+
   it('treats an undefined vector area as not computed', () => {
     expect(classifyPage(stats({ uncoveredVectorArea: undefined }), 500)).toBeNull();
   });

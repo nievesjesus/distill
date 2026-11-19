@@ -21,7 +21,7 @@ export interface PageComplexity {
   fullPageImage: boolean;
   largestImageCoverage: number;
   uncoveredVectorArea?: number;
-  layout?: { figureCount: number };
+  layout?: { figureCount?: number; figureCoverage?: number; ruledTableCount?: number };
 }
 
 interface PageText {
@@ -34,13 +34,21 @@ interface PageText {
 const FIGURE_IMAGE_COVERAGE = 0.03;
 const FIGURE_VECTOR_AREA = 1000;
 const FIGURE_SPARSE_TEXT = 50;
+const FIGURE_LAYOUT_COVERAGE = 0.03;
 
 export function classifyPage(complexity: PageComplexity | undefined, textLength: number): VisualKind | null {
   if (!complexity) return null;
   if (complexity.fullPageImage) return 'scan';
   if (complexity.largestImageCoverage >= FIGURE_IMAGE_COVERAGE) return 'figure';
   if ((complexity.uncoveredVectorArea ?? 0) >= FIGURE_VECTOR_AREA) return 'figure';
-  if (textLength < FIGURE_SPARSE_TEXT && (complexity.layout?.figureCount ?? 0) > 0) return 'figure';
+  const figureCount = complexity.layout?.figureCount ?? 0;
+  if (textLength < FIGURE_SPARSE_TEXT && figureCount > 0) return 'figure';
+  if (
+    figureCount > 0 &&
+    (complexity.layout?.ruledTableCount ?? 0) === 0 &&
+    (complexity.layout?.figureCoverage ?? 0) >= FIGURE_LAYOUT_COVERAGE
+  )
+    return 'figure';
   return null;
 }
 
