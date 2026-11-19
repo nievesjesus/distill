@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { commandParts, jsonFileStep, parseFailure, planServerInstall, planServerRemove, serverState } from './json-config';
+import { jsonFileStep, parseFailure, planServerInstall, planServerRemove, serverState } from './json-config';
 import { readText } from './read';
 import type { AgentContext, AgentModule, McpState, Step } from './types';
 
@@ -10,8 +10,7 @@ function configPath(ctx: AgentContext): string {
   return join(ctx.project ? ctx.cwd : ctx.home, '.cursor', 'mcp.json');
 }
 
-function deeplink(command: string): string {
-  const { bin, args } = commandParts(command, ['mcp']);
+function deeplink({ bin, args }: { bin: string; args: string[] }): string {
   const config = Buffer.from(JSON.stringify({ command: bin, args }), 'utf8').toString('base64');
   return `cursor://anysphere.cursor-deeplink/mcp/install?name=distill&config=${encodeURIComponent(config)}`;
 }
@@ -31,7 +30,7 @@ export const cursor: AgentModule = {
   async installSteps(ctx): Promise<Step[]> {
     const path = configPath(ctx);
     const current = readText(path);
-    const { bin, args } = commandParts(ctx.command, ['mcp']);
+    const { bin, args } = ctx.mcp;
     let plan;
     try {
       plan = planServerInstall(current, PATH, { type: 'stdio', command: bin, args });
@@ -39,7 +38,7 @@ export const cursor: AgentModule = {
       throw error instanceof SyntaxError ? parseFailure(path, error) : error;
     }
     const steps: Step[] = plan.changed ? [jsonFileStep(path, current, plan)] : [{ kind: 'info', text: `Already registered: ${path}` }];
-    steps.push({ kind: 'info', text: `One-click install link (opens Cursor): ${deeplink(ctx.command)}` });
+    steps.push({ kind: 'info', text: `One-click install link (opens Cursor): ${deeplink(ctx.mcp)}` });
     return steps;
   },
   async uninstallSteps(ctx): Promise<Step[]> {

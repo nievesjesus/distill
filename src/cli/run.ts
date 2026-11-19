@@ -15,8 +15,9 @@ import { lineDiff } from '../hooks/diff';
 import { normalizeSettings, planClaudeInstall, planClaudeUninstall } from '../hooks/install-claude';
 import { isOwnOpencodePlugin, opencodePluginPath, planOpencodeInstall } from '../hooks/install-opencode';
 import { isHookConvertible } from '../hooks/supported';
-import { agentOptionKey, AGENTS, renderStatus, statusRows } from '../agents';
+import { agentOptionKey, AGENTS, failureHint, renderStatus, statusRows } from '../agents';
 import { defaultExec } from '../agents/exec';
+import { commandParts } from '../agents/json-config';
 import type { Exec } from '../agents/exec';
 import { agentsSkillMarkdown, agentsSkillPath, hermesSkillPath } from '../agents/skill';
 import type { AgentContext, AgentModule, Step } from '../agents/types';
@@ -54,6 +55,7 @@ export interface CliDeps {
   cwd?: string;
   which?: (bin: string) => string | null;
   exec?: Exec;
+  mcpLauncher?: { bin: string; args: string[] };
   platform?: NodeJS.Platform;
   isTTY?: boolean;
   prompt?: (question: string) => Promise<string>;
@@ -608,6 +610,13 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   type Target = 'claude' | 'opencode';
 
+  let collectFailures = false;
+  let stepFailed = false;
+  const failExit = (code: number): void => {
+    if (collectFailures) stepFailed = true;
+    else exit(code);
+  };
+
   const confirmApply = async (options: HooksOptions): Promise<boolean | null> => {
     if (options.yes === true) return true;
     if (!isTTY) {
@@ -639,7 +648,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       }
     } catch (error) {
       stderr(`Could not write ${path}: ${errorMessage(error)}`);
-      exit(1);
+      failExit(1);
       return false;
     }
     stdout(next === null ? `Removed ${path}` : `Wrote ${path}`);
@@ -657,14 +666,14 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       resolved = realTarget(path);
     } catch {
       stderr(`Refusing to follow ${isLink ? 'dangling symlink' : 'unresolvable path'} ${path}.`);
-      exit(1);
+      failExit(1);
       return null;
     }
     if (project) {
       const root = realpathSync(cwd);
       if (!isInside(resolved, root)) {
         stderr(`Refusing to write ${path}: it links outside the project (${resolved}).`);
-        exit(1);
+        failExit(1);
         return null;
       }
     }
@@ -681,7 +690,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       current = readIfExists(path);
     } catch (error) {
       stderr(`Could not read ${path}: ${errorMessage(error)}`);
-      exit(1);
+      failExit(1);
       return false;
     }
     if (current === null) {
@@ -824,7 +833,20 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   const agents = program.command('agents').description('Install or remove distill for other coding agents');
 
-  const agentContext = (project: boolean, command: string): AgentContext => ({ home: homeDir, cwd, project, command, exec, which, env, platform });
+  const resolveLauncher = (command: string): { bin: string; args: string[] } => {
+    if (deps.mcpLauncher) return deps.mcpLauncher;
+    const root = findPackageRoot(dirname(fileURLToPath(import.meta.url)));
+    if (root !== undefined) {
+      try {
+        return { bin: process.execPath, args: [realpathSync(join(root, 'dist', 'cli.js')), 'mcp'] };
+      } catch {}
+    }
+    return commandParts(command, ['mcp']);
+  };
+
+  const agentContext = (project: boolean, command: string): AgentContext => ({ home: homeDir, cwd, project, command, mcp: resolveLauncher(command), exec, which, env, platform });
+
+  let agentInFlight: AgentModule['id'] = 'codex';
 
   const applyStep = async (step: Step, options: AgentsOptions): Promise<boolean> => {
     if (step.kind === 'info') {
@@ -857,8 +879,11 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         return manualRun(`${step.bin} could not be started (${result.error})`);
       }
       if (result.error !== undefined || result.status !== 0) {
-        stderr(`${step.display} failed: ${result.error ?? (result.stderr.trim() || `exit code ${String(result.status)}`)}`);
-        exit(1);
+        const reason = result.error ?? (result.stderr.trim() || result.stdout.trim() || `exit code ${String(result.status)}`);
+        stderr(`${step.display} failed: ${reason}`);
+        const hint = failureHint(agentInFlight, reason);
+        if (hint !== null) stderr(hint);
+        stepFailed = true;
         return false;
       }
       stdout(`Ran: ${step.display}`);
@@ -895,19 +920,34 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         stdout('Warning: distill-llm is not installed globally (npm i -g distill-llm); a real install would be refused.');
       }
     }
+    if (action === 'install') {
+      stdout('Note: the MCP server is registered with absolute paths; re-run `distill-llm agents install` after upgrading Node or moving the install.');
+    }
+    collectFailures = true;
+    const failed: string[] = [];
     for (const agent of chosen) {
       stdout(`== ${agent.label} ==`);
+      agentInFlight = agent.id;
+      stepFailed = false;
       let steps: Step[];
       try {
         steps = await (action === 'install' ? agent.installSteps(ctx) : agent.uninstallSteps(ctx));
       } catch (error) {
         stderr(`${agent.label}: ${errorMessage(error)}`);
-        exit(1);
-        return;
+        failed.push(agent.label);
+        continue;
       }
       if (steps.length === 0) stdout('Nothing to remove.');
       for (const step of steps) {
-        if (!(await applyStep(step, options))) return;
+        const ok = await applyStep(step, options);
+        if (!ok) {
+          if (!stepFailed) {
+            collectFailures = false;
+            return;
+          }
+          failed.push(agent.label);
+          break;
+        }
       }
     }
     const skills: { path: string; label: string }[] = [];
@@ -920,7 +960,19 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     if (!project && chosen.some((agent) => agent.skill === 'hermes')) skills.push({ path: hermesSkillPath(homeDir), label: 'Hermes skill' });
     for (const skill of skills) {
       stdout(`== ${skill.label} ==`);
-      if (!(await processSkillAt(skill.path, agentsSkillMarkdown(command), action, options))) return;
+      stepFailed = false;
+      if (!(await processSkillAt(skill.path, agentsSkillMarkdown(command), action, options))) {
+        if (!stepFailed) {
+          collectFailures = false;
+          return;
+        }
+        failed.push(skill.label);
+      }
+    }
+    collectFailures = false;
+    if (failed.length > 0) {
+      stderr(`Failed: ${failed.join(', ')}. The other agents were processed.`);
+      exit(1);
     }
   };
 

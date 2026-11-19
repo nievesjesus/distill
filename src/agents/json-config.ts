@@ -19,8 +19,12 @@ function serialize(root: Json): string {
   return `${JSON.stringify(root, null, 2)}\n`;
 }
 
+export function isOwnText(text: string): boolean {
+  return text.includes('distill-llm') || /distill[^"]*dist[\\/]+cli\.js/.test(text);
+}
+
 function isOwnServer(value: unknown): boolean {
-  return JSON.stringify(value ?? null).includes('distill-llm');
+  return isOwnText(JSON.stringify(value ?? null));
 }
 
 function find(root: Json, path: string[]): unknown {
@@ -93,7 +97,7 @@ export function parseFailure(path: string, error: unknown): Error {
 
 export function textServerState(text: string | null, key: RegExp): 'none' | 'own' | 'foreign' {
   if (text === null || !key.test(text)) return 'none';
-  return text.includes('distill-llm') ? 'own' : 'foreign';
+  return isOwnText(text) ? 'own' : 'foreign';
 }
 
 export function commandParts(command: string, extra: string[]): { bin: string; args: string[] } {

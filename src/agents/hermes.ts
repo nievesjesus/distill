@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { commandParts, execStep, textServerState } from './json-config';
+import { execStep, textServerState } from './json-config';
 import { readText } from './read';
 import type { AgentContext, AgentModule, McpState, Step } from './types';
 
@@ -22,7 +22,7 @@ export const hermes: AgentModule = {
     const current = state(ctx);
     if (current === 'own') return [{ kind: 'info', text: `Already registered: ${configPath(ctx)}` }];
     if (current === 'foreign') return [{ kind: 'info', text: `${configPath(ctx)} has a distill server that was not created by distill; leaving it.` }];
-    const { bin, args } = commandParts(ctx.command, ['mcp']);
+    const { bin, args } = ctx.mcp;
     if (ctx.which('hermes') === null) {
       return [
         {

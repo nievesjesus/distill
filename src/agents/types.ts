@@ -7,6 +7,7 @@ export interface AgentContext {
   cwd: string;
   project: boolean;
   command: string;
+  mcp: { bin: string; args: string[] };
   exec: Exec;
   which: (bin: string) => string | null;
   env: Record<string, string | undefined>;

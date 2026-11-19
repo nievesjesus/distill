@@ -14,6 +14,7 @@ function ctx(overrides: Partial<AgentContext> & { bins?: string[]; opencodeVersi
     cwd: overrides.cwd ?? mkdtempSync(join(tmpdir(), 'distill-agents-cwd-')),
     project: overrides.project ?? false,
     command: overrides.command ?? 'distill-llm',
+    mcp: overrides.mcp ?? { bin: 'distill-llm', args: ['mcp'] },
     env: overrides.env ?? {},
     platform: overrides.platform ?? 'darwin',
     which: (bin: string) => (bins.includes(bin) ? `/usr/bin/${bin}` : null),
@@ -134,6 +135,35 @@ describe('cursor', () => {
     const c = ctx();
     put(join(c.home, '.cursor', 'mcp.json'), '{ nope');
     await expect(cursor.installSteps(c)).rejects.toThrow(/Could not parse .*mcp\.json.*Nothing was changed/);
+  });
+});
+
+describe('absolute launcher', () => {
+  const mcp = { bin: '/opt/node/bin/node', args: ['/opt/lib/node_modules/distill-llm/dist/cli.js', 'mcp'] };
+
+  it('is used for the config entry and the deeplink, and still recognized as ours', async () => {
+    const c = ctx({ mcp });
+    const steps = await agentById('cursor').installSteps(c);
+    const file = steps[0];
+    const next = (file.kind === 'file' && file.next) || '{}';
+    expect(JSON.parse(next).mcpServers.distill).toEqual({ type: 'stdio', command: mcp.bin, args: mcp.args });
+    const info = steps.find((step) => step.kind === 'info');
+    const config = /config=(\S+)/.exec(info?.kind === 'info' ? info.text : '')?.[1] ?? '';
+    expect(JSON.parse(Buffer.from(decodeURIComponent(config), 'base64').toString('utf8'))).toEqual({ command: mcp.bin, args: mcp.args });
+    put(join(c.home, '.cursor', 'mcp.json'), next);
+    expect(agentById('cursor').mcp(c)).toBe('yes');
+  });
+
+  it('recognizes a development checkout path as ours', async () => {
+    const c = ctx({ mcp: { bin: '/n/node', args: ['/Users/me/code/distill/dist/cli.js', 'mcp'] } });
+    const file = (await agentById('cursor').installSteps(c))[0];
+    put(join(c.home, '.cursor', 'mcp.json'), (file.kind === 'file' && file.next) || '{}');
+    expect(agentById('cursor').mcp(c)).toBe('yes');
+  });
+
+  it('is passed to the agent CLIs', async () => {
+    const steps = await agentById('codex').installSteps(ctx({ bins: ['codex'], mcp }));
+    expect(steps[0]).toMatchObject({ args: ['mcp', 'add', 'distill', '--', mcp.bin, ...mcp.args] });
   });
 });
 

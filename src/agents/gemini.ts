@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { commandParts, execStep, serverState } from './json-config';
+import { execStep, serverState } from './json-config';
 import { readText } from './read';
 import type { AgentContext, AgentModule, McpState, Step } from './types';
 
@@ -33,7 +33,7 @@ export const gemini: AgentModule = {
     const current = state(ctx);
     if (current === 'own') return [{ kind: 'info', text: `Already registered: ${settingsPath(ctx)}` }];
     if (current === 'foreign') return [{ kind: 'info', text: `${settingsPath(ctx)} has an mcpServers.distill entry that was not created by distill; leaving it.` }];
-    const { bin, args } = commandParts(ctx.command, ['mcp']);
+    const { bin, args } = ctx.mcp;
     if (ctx.which('gemini') === null) {
       return [
         {

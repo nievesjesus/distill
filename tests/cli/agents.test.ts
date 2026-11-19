@@ -12,6 +12,7 @@ interface Options {
   answer?: string;
   execStatus?: number;
   platform?: NodeJS.Platform;
+  launcher?: { bin: string; args: string[] };
 }
 
 function setup(options: Options = {}) {
@@ -34,6 +35,7 @@ function setup(options: Options = {}) {
     stderr: (line: string) => stderr.push(line),
     handleSignals: false,
     env: {} as Record<string, string>,
+    mcpLauncher: options.launcher ?? { bin: 'distill-llm', args: ['mcp'] },
     platform: options.platform ?? ('darwin' as NodeJS.Platform),
     exec: (bin: string, args: string[]) => {
       calls.push([bin, ...args]);
@@ -236,6 +238,51 @@ describe('agents install', () => {
     expect(s.exit).toHaveBeenCalledWith(1);
     expect(s.stderr.join('\n')).toMatch(/Could not parse .*mcp\.json.*Nothing was changed/);
     expect(readFileSync(file, 'utf8')).toBe('{ nope');
+  });
+});
+
+describe('agents resilience and absolute paths', () => {
+  const GEMINI_ERROR = 'Cannot modify settings in an untrusted workspace. Set GEMINI_CLI_TRUST_WORKSPACE=true';
+
+  it('keeps going after a failed agent, then summarizes and exits 1', async () => {
+    const s = setup({ bins: ['gemini'], global: true });
+    s.deps.exec = (bin: string, args: string[]) => {
+      s.calls.push([bin, ...args]);
+      return { status: 1, stdout: '', stderr: GEMINI_ERROR };
+    };
+    await run(['agents', 'install', '--gemini', '--cursor', '--project', '--yes'], s.deps);
+    expect(s.stderr.join('\n')).toContain('untrusted workspace');
+    expect(s.stderr.join('\n')).toContain('trust this folder in Gemini, or rerun with GEMINI_CLI_TRUST_WORKSPACE=true, or install without --project');
+    expect(JSON.parse(readFileSync(join(s.cwd, '.cursor', 'mcp.json'), 'utf8')).mcpServers.distill.command).toBe('distill-llm');
+    expect(existsSync(join(s.cwd, '.agents', 'skills', 'distill-documents', 'SKILL.md'))).toBe(true);
+    expect(s.stderr.join('\n')).toMatch(/Failed: Gemini CLI\./);
+    expect(s.exit).toHaveBeenCalledTimes(1);
+    expect(s.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('never sets the Gemini trust variable itself', async () => {
+    const s = setup({ bins: ['gemini'] });
+    await run(['agents', 'install', '--gemini', '--project', '--yes'], s.deps);
+    expect(s.deps.env).not.toHaveProperty('GEMINI_CLI_TRUST_WORKSPACE');
+  });
+
+  it('keeps going after a step-building error', async () => {
+    const s = setup();
+    put(join(s.home, '.cursor', 'mcp.json'), '{ nope');
+    await run(['agents', 'install', '--cursor', '--claude-desktop', '--yes'], s.deps);
+    expect(existsSync(join(s.home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'))).toBe(true);
+    expect(s.stderr.join('\n')).toMatch(/Failed: Cursor\./);
+    expect(s.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('registers absolute paths for the MCP server but keeps the command name in the skill', async () => {
+    const launcher = { bin: '/opt/node/bin/node', args: ['/opt/lib/node_modules/distill-llm/dist/cli.js', 'mcp'] };
+    const s = setup({ launcher });
+    await run(['agents', 'install', '--cursor', '--yes'], s.deps);
+    const config = JSON.parse(readFileSync(join(s.home, '.cursor', 'mcp.json'), 'utf8'));
+    expect(config.mcpServers.distill).toEqual({ type: 'stdio', command: launcher.bin, args: launcher.args });
+    expect(text(s.stdout)).toContain('re-run `distill-llm agents install` after upgrading Node or moving the install');
+    expect(readFileSync(join(s.home, '.agents', 'skills', 'distill-documents', 'SKILL.md'), 'utf8')).toContain('distill-llm convert --stdout');
   });
 });
 

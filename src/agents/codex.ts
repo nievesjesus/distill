@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { commandParts, execStep, textServerState } from './json-config';
+import { execStep, textServerState } from './json-config';
 import { readText } from './read';
 import type { AgentContext, AgentModule, McpState, Step } from './types';
 
@@ -42,7 +42,7 @@ export const codex: AgentModule = {
     const current = state(ctx);
     if (current === 'own') return [{ kind: 'info', text: `Already registered: ${configPath(ctx)}` }];
     if (current === 'foreign') return [{ kind: 'info', text: `${configPath(ctx)} has an mcp_servers.distill entry that was not created by distill; leaving it.` }];
-    const { bin, args } = commandParts(ctx.command, ['mcp']);
+    const { bin, args } = ctx.mcp;
     const followUp = [
       'Codex has no flag for these, so add them to the [mcp_servers.distill] table:',
       TIMEOUT_LINE,

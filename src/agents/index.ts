@@ -69,3 +69,10 @@ export function renderStatus(rows: StatusRow[]): string[] {
   }
   return lines;
 }
+
+export function failureHint(id: AgentId, message: string): string | null {
+  if (id === 'gemini' && /untrusted workspace/i.test(message)) {
+    return 'Hint: trust this folder in Gemini, or rerun with GEMINI_CLI_TRUST_WORKSPACE=true, or install without --project.';
+  }
+  return null;
+}

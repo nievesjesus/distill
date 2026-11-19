@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { isOwnOpencodePlugin, opencodePluginPath, planOpencodeInstall } from '../hooks/install-opencode';
-import { commandParts, jsonFileStep, parseFailure, planServerInstall, planServerRemove, serverState, textServerState } from './json-config';
+import { jsonFileStep, parseFailure, planServerInstall, planServerRemove, serverState, textServerState } from './json-config';
 import { readText } from './read';
 import type { AgentContext, AgentModule, McpState, Step } from './types';
 
@@ -59,7 +59,7 @@ export const opencode: AgentModule = {
   },
   async installSteps(ctx): Promise<Step[]> {
     const steps: Step[] = [];
-    const { bin, args } = commandParts(ctx.command, ['mcp']);
+    const { bin, args } = ctx.mcp;
     const major = majorVersion(ctx);
     if (jsonState(ctx) === 'own' || jsoncState(ctx) === 'own') {
       steps.push({ kind: 'info', text: 'MCP server already registered.' });

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { commandParts, jsonFileStep, parseFailure, planServerInstall, planServerRemove, serverState } from './json-config';
+import { jsonFileStep, parseFailure, planServerInstall, planServerRemove, serverState } from './json-config';
 import { readText } from './read';
 import type { AgentContext, AgentModule, McpState, Step } from './types';
 
@@ -28,7 +28,7 @@ export const claudeDesktop: AgentModule = {
     if (ctx.project) return [{ kind: 'info', text: 'Claude Desktop has a single user-level config; skipping (run without --project).' }];
     const path = configPath(ctx);
     const current = readText(path);
-    const { bin, args } = commandParts(ctx.command, ['mcp']);
+    const { bin, args } = ctx.mcp;
     let plan;
     try {
       plan = planServerInstall(current, PATH, { command: bin, args });
