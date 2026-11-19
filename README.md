@@ -179,15 +179,17 @@ When an agent's CLI is not installed, or a config file is not plain JSON, the co
 
   Codex has no project-scoped MCP registration, so `--project` only installs the skill. The ChatGPT desktop app shares `~/.codex/config.toml`, so `--codex` covers it.
 - **Cursor:** the installer also prints a one-click link (`cursor://anysphere.cursor-deeplink/mcp/install?name=distill&config=…`, with the config as base64 of `{"command":"distill-llm","args":["mcp"]}`) that opens Cursor's own install prompt.
-- **OpenCode** 1.19 and 2.x ask for permission before reading outside the project, and distill's converted Markdown lives in `~/.cache/distill-llm/out/`. If the plugin's reads prompt, allow that folder with the `external_directory` permission in `opencode.json`:
+- **OpenCode** asks for permission before reading outside the project, and distill's converted Markdown lives in `~/.cache/distill-llm/out/`. If the plugin's reads prompt, allow external paths in `opencode.json`. The only form verified in a real run (OpenCode 1.19.6) allows every external path, not just distill's cache:
 
   ```json
-  { "permission": { "external_directory": { "~/.cache/distill-llm/out/**": "allow" } } }
+  { "permission": { "external_directory": "allow" } }
   ```
+
+  OpenCode's internals match `external_directory` against `<folder>/*` patterns, but a per-path form of this config key was not confirmed, so none is documented here.
 - **Claude Desktop** only loads servers at start-up: quit and reopen it after installing. The config lives in `~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows and `~/.config/Claude/` on Linux.
 - **ChatGPT on the web** only talks to remote MCP servers. OpenAI's Secure MCP Tunnel (`tunnel-client`, needs a Platform organization) can reach a local one: start it with `--mcp-command "distill-llm mcp"`. Paths then resolve on the machine that runs the tunnel, not on your laptop, so keep the documents there. See also the HTTP notes in [MCP server](#mcp-server).
 
-Hermes and OpenClaw support is configuration only: the commands above are written from their documentation and have not been run against those agents.
+Hermes and OpenClaw support is configuration only: the commands above (including `hermes mcp remove` and `openclaw mcp unset`) match their CLI documentation but have not been run against those agents. On Windows, an agent CLI that is a `.cmd` shim (or fails to start) is not run for you: the installer prints the exact command to run yourself.
 
 ### CLI
 

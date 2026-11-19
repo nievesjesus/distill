@@ -843,7 +843,19 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       const confirmed = await confirmApply(options);
       if (confirmed === null) return false;
       if (!confirmed) return true;
+      const manualRun = (reason: string): boolean => {
+        stdout(`Manual step: ${reason}; run this yourself:`);
+        stdout(`  ${step.display}`);
+        return true;
+      };
+      const resolvedBin = which(step.bin);
+      if (platform === 'win32' && resolvedBin !== null && /\.(cmd|bat)$/i.test(resolvedBin)) {
+        return manualRun(`${step.bin} is a Windows shim that cannot be started without a shell`);
+      }
       const result = exec(step.bin, step.args, cwd);
+      if (result.error !== undefined && /ENOENT|EINVAL/.test(result.error)) {
+        return manualRun(`${step.bin} could not be started (${result.error})`);
+      }
       if (result.error !== undefined || result.status !== 0) {
         stderr(`${step.display} failed: ${result.error ?? (result.stderr.trim() || `exit code ${String(result.status)}`)}`);
         exit(1);

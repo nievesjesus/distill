@@ -116,6 +116,28 @@ describe('agents install', () => {
     expect(isOwnSkill(readFileSync(join(s.home, '.agents', 'skills', 'distill-documents', 'SKILL.md'), 'utf8'))).toBe(true);
   });
 
+  it('falls back to a manual step for a Windows .cmd shim', async () => {
+    const s = setup({ bins: ['codex'], platform: 'win32' });
+    const base = s.deps.which;
+    s.deps.which = (bin: string) => (bin === 'codex' ? 'C:\\npm\\codex.cmd' : base(bin));
+    await run(['agents', 'install', '--codex', '--yes'], s.deps);
+    expect(s.calls).toEqual([]);
+    expect(s.exit).not.toHaveBeenCalled();
+    expect(text(s.stdout)).toContain('Manual step: codex is a Windows shim');
+    expect(text(s.stdout)).toContain('  codex mcp add distill -- distill-llm mcp');
+  });
+
+  it('falls back to a manual step when the spawn fails with ENOENT or EINVAL', async () => {
+    for (const code of ['ENOENT', 'EINVAL']) {
+      const s = setup({ bins: ['codex'] });
+      s.deps.exec = () => ({ status: 1, stdout: '', stderr: '', error: `spawnSync codex ${code}` });
+      await run(['agents', 'install', '--codex', '--yes'], s.deps);
+      expect(s.exit).not.toHaveBeenCalled();
+      expect(text(s.stdout)).toContain('Manual step: codex could not be started');
+      expect(text(s.stdout)).toContain('  codex mcp add distill -- distill-llm mcp');
+    }
+  });
+
   it('stops with exit 1 when the agent CLI fails', async () => {
     const s = setup({ bins: ['codex'], execStatus: 3 });
     await run(['agents', 'install', '--codex', '--yes'], s.deps);
