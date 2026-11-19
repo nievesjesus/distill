@@ -30,23 +30,53 @@ export function nodeTooOld(version) {
   return major < 22 || (major === 22 && minor < 12);
 }
 
-export function launch(args, { stdio, onSpawn } = {}) {
+const STDERR_LIMIT = 64 * 1024;
+const NOT_PUBLISHED = /ETARGET|E404|No matching version|notarget/i;
+
+export function shouldFallback(code, stderrText, overridden) {
+  return code !== 0 && !overridden && NOT_PUBLISHED.test(stderrText);
+}
+
+function stdioWithPipedStderr(stdio) {
+  const list = stdio === undefined ? ['pipe', 'pipe', 'pipe'] : Array.isArray(stdio) ? [...stdio] : [stdio, stdio, stdio];
+  const stderrMode = list[2];
+  list[2] = 'pipe';
+  return { list, forward: stderrMode === 'inherit' };
+}
+
+function attempt(npx, spec, args, { stdio, onSpawn, spawnFn, writeStderr }) {
+  const { list, forward } = stdioWithPipedStderr(stdio);
+  return new Promise((resolve) => {
+    const child = spawnFn(npx.command, npxArgs(npx.prefix, spec, args), { stdio: list, windowsHide: true });
+    let captured = '';
+    child.stderr?.on('data', (chunk) => {
+      if (forward) writeStderr(chunk);
+      if (captured.length < STDERR_LIMIT) captured += chunk.toString().slice(0, STDERR_LIMIT - captured.length);
+    });
+    child.on('error', (error) => {
+      writeStderr(`distill failed to start: ${error.message}\n`);
+      resolve({ code: 1, stderr: '' });
+    });
+    child.on('close', (code) => resolve({ code: code ?? 1, stderr: captured }));
+    if (onSpawn) onSpawn(child);
+  });
+}
+
+export async function launch(args, { stdio, onSpawn, spawnFn = spawn, env = process.env, writeStderr = (text) => process.stderr.write(text) } = {}) {
   if (nodeTooOld(process.versions.node)) {
-    process.stderr.write(`distill needs Node.js 22.12 or newer (found ${process.versions.node})\n`);
-    return Promise.resolve(1);
+    writeStderr(`distill needs Node.js 22.12 or newer (found ${process.versions.node})\n`);
+    return 1;
   }
   const npx = npxCommand(process.execPath, process.platform, existsSync);
   if (npx.unsupported) {
-    process.stderr.write('distill could not find npx next to Node.js; install Node.js 22.12 or newer from nodejs.org\n');
-    return Promise.resolve(1);
+    writeStderr('distill could not find npx next to Node.js; install Node.js 22.12 or newer from nodejs.org\n');
+    return 1;
   }
-  return new Promise((resolve) => {
-    const child = spawn(npx.command, npxArgs(npx.prefix, packageSpec(process.env, pluginRoot), args), { stdio, windowsHide: true });
-    child.on('error', (error) => {
-      process.stderr.write(`distill failed to start: ${error.message}\n`);
-      resolve(1);
-    });
-    child.on('close', (code) => resolve(code ?? 1));
-    if (onSpawn) onSpawn(child);
-  });
+  const overridden = typeof env.DISTILL_PLUGIN_PACKAGE === 'string' && env.DISTILL_PLUGIN_PACKAGE !== '';
+  const spec = packageSpec(env, pluginRoot);
+  const options = { stdio, onSpawn, spawnFn, writeStderr };
+  const first = await attempt(npx, spec, args, options);
+  if (!shouldFallback(first.code, first.stderr, overridden)) return first.code;
+  writeStderr(`distill: ${spec} is not on npm yet; using the latest release\n`);
+  return (await attempt(npx, 'distill-llm@latest', args, options)).code;
 }
