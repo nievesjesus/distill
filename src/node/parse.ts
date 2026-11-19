@@ -1,23 +1,66 @@
 import { availableParallelism } from 'node:os';
 import { LiteParse, ParseTimeoutError } from '@llamaindex/liteparse';
+import type { VisualKind, VisualPage } from '../core/types';
 import { DistillError } from './errors';
 
 export interface Parser {
-  toMarkdown(path: string): Promise<{ markdown: string; pages: number; engine?: 'liteparse' | 'builtin' }>;
+  toMarkdown(path: string): Promise<{ markdown: string; pages: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[] }>;
   toJson(path: string): Promise<unknown>;
   close(): void;
+}
+
+export interface PageComplexity {
+  textLength?: number;
+  fullPageImage: boolean;
+  largestImageCoverage: number;
+  uncoveredVectorArea?: number;
+  layout?: { figureCount: number };
 }
 
 interface PageText {
   pageNum: number;
   pageLabel?: string;
   markdown: string;
+  complexity?: PageComplexity;
+}
+
+const FIGURE_IMAGE_COVERAGE = 0.03;
+const FIGURE_VECTOR_AREA = 1000;
+const FIGURE_SPARSE_TEXT = 50;
+
+export function classifyPage(complexity: PageComplexity | undefined, textLength: number): VisualKind | null {
+  if (!complexity) return null;
+  if (complexity.fullPageImage) return 'scan';
+  if (complexity.largestImageCoverage >= FIGURE_IMAGE_COVERAGE) return 'figure';
+  if ((complexity.uncoveredVectorArea ?? 0) >= FIGURE_VECTOR_AREA) return 'figure';
+  if (textLength < FIGURE_SPARSE_TEXT && (complexity.layout?.figureCount ?? 0) > 0) return 'figure';
+  return null;
+}
+
+const labelOf = (page: PageText): string => String(page.pageLabel ?? page.pageNum).replace(/\s+/g, '-');
+const kindOf = (page: PageText): VisualKind | null => classifyPage(page.complexity, page.complexity?.textLength ?? page.markdown.length);
+
+const MARKER_SUFFIX: Record<VisualKind, string> = {
+  figure: ': figure (chart or image not in this text; see the original page)',
+  scan: ': scan (OCR text)',
+};
+
+export function visualPagesOf(pages: readonly PageText[]): VisualPage[] {
+  const out: VisualPage[] = [];
+  for (const page of pages) {
+    const kind = kindOf(page);
+    if (kind) out.push({ page: labelOf(page), kind });
+  }
+  return out;
 }
 
 export function joinPages(pages: readonly PageText[], text: string): string {
   if (pages.length <= 1) return text;
   return pages
-    .map((page) => `<!-- page ${String(page.pageLabel ?? page.pageNum).replace(/\s+/g, '-')} -->\n\n${page.markdown}`)
+    .map((page) => {
+      const kind = kindOf(page);
+      return `<!-- page ${labelOf(page)}${kind ? MARKER_SUFFIX[kind] : ''} -->\n\n${page.markdown}`;
+    })
     .join('\n\n');
 }
 
@@ -62,6 +105,7 @@ export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {
       keepHeadersFooters: false,
       ocrEnabled: true,
       ...parserOptionsFromEnv(process.env),
+      includeComplexity: true,
       quiet: true,
       poolSize,
       parseTimeoutMs,
@@ -74,7 +118,7 @@ export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {
     async toMarkdown(path) {
       try {
         const result = await markdownParser.parse(path);
-        return { markdown: joinPages(result.pages, result.text), pages: result.totalPages };
+        return { markdown: joinPages(result.pages, result.text), pages: result.totalPages, visualPages: visualPagesOf(result.pages) };
       } catch (error) {
         throw mapError(error, path);
       }

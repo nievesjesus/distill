@@ -215,3 +215,37 @@ describe('fitLines', () => {
     expect(fitLines('a\nb', 1000)).toBe(2);
   });
 });
+
+describe('outline visual pages', () => {
+  const FIG = '<!-- page 2: figure (chart or image not in this text; see the original page) -->';
+  const SCAN = '<!-- page 3: scan (OCR text) -->';
+
+  it('keeps the class on page entries and renders it', () => {
+    const md = ['<!-- page 1 -->', '', 'one', FIG, '', 'two', SCAN, '', 'three'].join('\n');
+    const o = buildOutline(md);
+    expect(o.entries.map((e) => [e.page, e.visual])).toEqual([
+      ['1', undefined],
+      ['2', 'figure'],
+      ['3', 'scan'],
+    ]);
+    const text = renderOutline(o);
+    expect(text).toContain('p.2 · figure ·');
+    expect(text).toContain('p.3 · scan ·');
+  });
+
+  it('lists visual pages inside a heading range', () => {
+    const md = ['<!-- page 1 -->', '# A', 'x', FIG, 'y', SCAN, '# B', 'z'].join('\n');
+    const o = buildOutline(md);
+    expect(o.entries[0].visualPages).toEqual([{ page: '2', kind: 'figure' }]);
+    expect(o.entries[1].visualPages).toEqual([{ page: '3', kind: 'scan' }]);
+    const text = renderOutline(o);
+    expect(text).toContain('figures p.2');
+    expect(text).toContain('scans p.3');
+    expect(text.split('\n')[2]).toContain('scans p.3');
+  });
+
+  it('keeps plain markers working', () => {
+    const o = buildOutline(['<!-- page a:b -->', 'x', '<!-- page c -->', 'y'].join('\n'));
+    expect(o.entries.map((e) => e.page)).toEqual(['a:b', 'c']);
+  });
+});

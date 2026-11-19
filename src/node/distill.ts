@@ -80,6 +80,7 @@ export function createDistiller(deps: {
         tokens: { raw: countTokens(parsed.markdown), out: countTokens(markdown) },
         ms: Math.round(performance.now() - started),
         ...(parsed.engine ? { engine: parsed.engine } : {}),
+        ...(parsed.visualPages ? { visualPages: parsed.visualPages } : {}),
       };
     },
     health: () => ({
