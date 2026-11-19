@@ -175,14 +175,14 @@ describe('joinPages visual markers', () => {
     expect(joinPages([page(1, 'only', figure)], 'original')).toBe('original');
   });
 
-  it('lists visual pages by label', () => {
+  it('lists visual pages by physical number, with the label when it differs', () => {
     expect(visualPagesOf([page(1, 'a'), { ...page(2, 'b', figure), pageLabel: 'ii' }, page(3, 'c', scan)])).toEqual([
-      { page: 'ii', kind: 'figure' },
-      { page: '3', kind: 'scan' },
+      { page: 2, label: 'ii', kind: 'figure' },
+      { page: 3, kind: 'scan' },
     ]);
   });
 
   it('reports the class of a single page', () => {
-    expect(visualPagesOf([page(1, 'only', figure)])).toEqual([{ page: '1', kind: 'figure' }]);
+    expect(visualPagesOf([page(1, 'only', figure)])).toEqual([{ page: 1, kind: 'figure' }]);
   });
 });

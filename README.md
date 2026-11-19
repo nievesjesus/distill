@@ -79,7 +79,7 @@ Results are capped at 10,000 tokens (`DISTILL_MCP_MAX_TOKENS` changes it) so the
 
 For long documents, call `distill_outline({ path })` first. It returns an index: one line per section with its line range, page and token count. Then read only what you need with `distill_file({ path, section })` (a title from the index, case-insensitive) or `distill_file({ path, offset, limit })`. When a first read is cut short, `distill_file` adds the same index to the result so the model can jump.
 
-Pages with a chart, figure or scan are flagged in the page markers and in `visualPages` (returned by `distill_file` on a first read and by `distill_outline`). When the question depends on a figure page, `distill_page_image({ path, page })` returns that one page as a PNG (about 100 dpi, roughly 0.3 MB for a Letter page); for an image file it returns the image itself.
+Pages with a chart, figure or scan are flagged in the page markers and in `visualPages` (returned by `distill_file` on a first read and by `distill_outline`). Each `visualPages` entry is `{ page, label?, kind }`: `page` is the physical page number (1-based position in the PDF, what `distill_page_image` and Claude Code's Read `pages` take) and `label` is the printed page label, present only when it differs. When the question depends on a figure page, `distill_page_image({ path, page })` returns that one page as a PNG (about 100 dpi, roughly 0.3 MB for a Letter page); for an image file it returns the image itself.
 
 ```bash
 claude mcp add distill -- npx -y distill-llm mcp
