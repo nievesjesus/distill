@@ -7,12 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULT_ACTIVE, runBoosters } from '../core/boosters/pipeline';
 import { detectKind, needsLibreOfficeFor } from '../core/kind';
 import { countTokens } from '../core/tokens';
-import type { DistillResult, Health, LinguaStatus, LocalBoosterId } from '../core/types';
+import type { AsrStatus, DistillResult, Health, LinguaStatus, LocalBoosterId } from '../core/types';
 import { exposeLibreOffice } from './capabilities';
 import { DistillError } from './errors';
+import { cacheDirFromEnv } from './cache-dir';
 import { DEFAULT_MAX_BYTES } from './limits';
 import { createLingua, findPackageRoot } from './lingua';
 import type { Lingua } from './lingua';
+import { getAsrStatus } from './asr-install';
 import { createLinguaInstaller } from './lingua-install';
 import { withBuiltinOffice } from './office';
 import { createParser } from './parse';
@@ -61,6 +63,7 @@ export interface Distiller {
 export function createDistiller(deps: {
   parser: Parser;
   lingua?: Lingua;
+  asrStatus?: () => AsrStatus;
   libreoffice: boolean;
   maxBytes?: number;
   version?: string;
@@ -154,6 +157,7 @@ export function createDistiller(deps: {
       liteparseVersion: deps.liteparseVersion ?? '',
       libreoffice: deps.libreoffice,
       lingua: deps.lingua?.status() ?? NO_LINGUA,
+      ...(deps.asrStatus ? { asr: deps.asrStatus() } : {}),
       maxBytes,
     }),
     close: () => deps.parser.close(),
@@ -175,10 +179,11 @@ export async function openDistiller(maxBytes?: number): Promise<Distiller> {
   const parser = withSavedFormats(withBuiltinOffice(createParser(), { libreoffice }));
   try {
     const cacheDir = join(homedir(), '.cache', 'distill-llm');
+    const asrCacheDir = cacheDirFromEnv(process.env) ?? cacheDir;
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
     const lingua = createLingua({ cacheDir, installer });
     await lingua.probe();
-    return createDistiller({ parser, lingua, libreoffice, maxBytes, version, liteparseVersion, webCacheDir: join(cacheDir, 'web') });
+    return createDistiller({ parser, lingua, asrStatus: () => getAsrStatus({ cacheDir: asrCacheDir }), libreoffice, maxBytes, version, liteparseVersion, webCacheDir: join(cacheDir, 'web') });
   } catch (error) {
     parser.close();
     throw error;

@@ -31,6 +31,8 @@ import { findPackageRoot } from '../node/lingua';
 import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
 import type { UpdateChecker } from '../node/update-check';
 import { cacheDirFromEnv } from '../node/cache-dir';
+import { ASR_MODELS_BYTES, ASR_RUNTIME_APPROX_BYTES, createAsrInstaller } from '../node/asr-install';
+import type { AsrInstaller, AsrProgress } from '../node/asr-install';
 import { createGlobalUpdater } from '../node/update-install';
 import type { GlobalUpdater } from '../node/update-install';
 import type { InstallMethod, UpdateCheck } from '../core/types';
@@ -63,6 +65,7 @@ export interface CliDeps {
   isGitIgnored?: (cwd: string, file: string) => boolean | null;
   updateChecker?: UpdateChecker;
   globalUpdater?: GlobalUpdater | null;
+  asrInstaller?: AsrInstaller;
 }
 
 function gitCheckIgnore(cwd: string, file: string): boolean | null {
@@ -95,6 +98,25 @@ async function defaultPrompt(question: string): Promise<string> {
   } finally {
     rl.close();
   }
+}
+
+function formatMegabytes(bytes: number, digits: number): string {
+  return `${(bytes / 1_000_000).toFixed(digits)} MB`;
+}
+
+const PROGRESS_INTERVAL_MS = 1000;
+
+function progressReporter(write: (line: string) => void): (progress: AsrProgress) => void {
+  let lastPercent = -1;
+  let lastAt = 0;
+  return ({ done, total }) => {
+    const percent = total > 0 ? Math.floor((done / total) * 100) : 0;
+    const now = Date.now();
+    if (percent === lastPercent || (percent < 100 && percent - lastPercent < 1 && now - lastAt < PROGRESS_INTERVAL_MS)) return;
+    lastPercent = percent;
+    lastAt = now;
+    write(`Downloading speech models: ${percent}% (${formatMegabytes(done, 0)} of ${formatMegabytes(total, 0)})`);
+  };
 }
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -257,6 +279,14 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url))) ?? process.cwd();
     updater = createGlobalUpdater({ packageRoot });
     return updater;
+  };
+
+  let asr = deps.asrInstaller;
+  const getAsr = (): AsrInstaller => {
+    if (asr) return asr;
+    const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url))) ?? process.cwd();
+    asr = createAsrInstaller({ cacheDir, env, runtimeDir: join(packageRoot, 'asr-runtime') });
+    return asr;
   };
 
   const showNotice = async (): Promise<void> => {
@@ -460,6 +490,74 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         return;
       }
       stdout(`Updated to ${latest}.`);
+    });
+
+  const asrCommand = program.command('asr').description('Manage local speech recognition for audio and video');
+
+  asrCommand
+    .command('status')
+    .description('Show whether speech recognition is installed')
+    .option('--json', 'print the status as JSON')
+    .action((options: { json?: boolean }) => {
+      const current = getAsr().status();
+      if (options.json) {
+        stdout(JSON.stringify(current));
+        return;
+      }
+      stdout(`installed: ${current.installed ? 'yes' : 'no'}`);
+      stdout(`runtime: ${current.runtime ? 'yes' : 'no'}`);
+      stdout(`models: ${current.models ? 'yes' : 'no'}`);
+      stdout(`ffmpeg: ${current.ffmpeg ?? 'not found'}`);
+      stdout(`disk: ${formatMegabytes(current.diskBytes, 1)}`);
+      if (current.unsupportedReason) stdout(`unsupported: ${current.unsupportedReason}`);
+    });
+
+  asrCommand
+    .command('install')
+    .description('Download the speech runtime and models (about 35 MB plus 670 MB)')
+    .option('--yes', 'download without asking')
+    .action(async (options: { yes?: boolean }) => {
+      const installer = getAsr();
+      const current = installer.status();
+      if (current.unsupportedReason) {
+        stderr(current.unsupportedReason);
+        exit(1);
+        return;
+      }
+      if (current.installed) {
+        stdout('Speech recognition is already installed.');
+        return;
+      }
+      stdout(`This downloads about ${formatMegabytes(ASR_RUNTIME_APPROX_BYTES, 0)} of runtime and ${formatMegabytes(ASR_MODELS_BYTES, 0)} of models.`);
+      if (options.yes !== true) {
+        if (!isTTY) {
+          stderr('Refusing to download without confirmation. Re-run with --yes.');
+          exit(1);
+          return;
+        }
+        const answer = (await prompt(`Download about ${formatMegabytes(ASR_RUNTIME_APPROX_BYTES, 0)} + ${formatMegabytes(ASR_MODELS_BYTES, 0)}? [y/N] `)).trim().toLowerCase();
+        if (answer !== 'y' && answer !== 'yes') {
+          stdout('Aborted.');
+          return;
+        }
+      }
+      const report = progressReporter(stderr);
+      try {
+        await installer.install({ onProgress: report });
+      } catch (error) {
+        stderr(`Speech recognition install failed: ${errorMessage(error)}`);
+        exit(1);
+        return;
+      }
+      stdout('Speech recognition installed.');
+    });
+
+  asrCommand
+    .command('uninstall')
+    .description('Remove the speech runtime and models')
+    .action(async () => {
+      await getAsr().uninstall();
+      stdout('Speech recognition removed.');
     });
 
   program

@@ -66,7 +66,7 @@ const fixedStat = async () => ({ size: 1, mtimeMs: 1 });
 async function connect(deps: ConnectDeps = {}) {
   const server = createMcpServer({
     distiller: deps.distiller ?? fakeDistiller(),
-    health: () => HEALTH,
+    health: () => deps.distiller?.health() ?? HEALTH,
     resolvePath: deps.resolvePath ?? (async (p) => p),
     ...(deps.savingsNote === undefined ? {} : { savingsNote: deps.savingsNote }),
     ...(deps.maxResultTokens === undefined ? {} : { maxResultTokens: deps.maxResultTokens }),
@@ -293,6 +293,17 @@ describe('createMcpServer', () => {
     const client = await connect();
     const result = await client.callTool({ name: 'distill_capabilities', arguments: {} });
     expect(result.structuredContent).toEqual({ ...HEALTH, maxResultTokens: 10000 });
+  });
+});
+
+describe('asr capability', () => {
+  it('distill_capabilities passes the asr status through', async () => {
+    const asr = { installed: false, runtime: true, models: false, ffmpeg: '/usr/bin/ffmpeg', installable: true, diskBytes: 123 };
+    const distiller = { ...fakeDistiller(), health: () => ({ ...HEALTH, asr }) };
+    const client = await connect({ distiller });
+    const result = await client.callTool({ name: 'distill_capabilities', arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect((result.structuredContent as { asr: unknown }).asr).toEqual(asr);
   });
 });
 

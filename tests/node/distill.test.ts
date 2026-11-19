@@ -67,6 +67,14 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
+describe('health', () => {
+  it('reports the asr status when provided and omits it otherwise', () => {
+    const asr = { installed: true, runtime: true, models: true, ffmpeg: null, installable: true, diskBytes: 1 };
+    expect(createDistiller({ parser: fakeParser(), libreoffice: true, asrStatus: () => asr }).health().asr).toEqual(asr);
+    expect(createDistiller({ parser: fakeParser(), libreoffice: true }).health().asr).toBeUndefined();
+  });
+});
+
 describe('renderPage', () => {
   it('renders a pdf page through the parser at 100 dpi', async () => {
     const parser = fakeParser();

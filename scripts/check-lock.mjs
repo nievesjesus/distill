@@ -31,6 +31,15 @@ for (const name of linguaPackages) {
   else if (locked !== pinned) problems.push(`lingua-runtime: ${name} locked at ${locked}, package.json pins ${pinned}`);
 }
 
+const asrPackages = ['sherpa-onnx-node', ...['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win-arm64', 'win-ia32', 'win-x64'].map((target) => `sherpa-onnx-${target}`)];
+const asrLock = read('asr-runtime/package-lock.json');
+const asrManifest = read('asr-runtime/package.json');
+audit('asr-runtime', asrLock, asrPackages.map((name) => `node_modules/${name}`));
+const asrPinned = asrManifest.dependencies?.['sherpa-onnx-node'];
+const asrLocked = asrLock.packages['node_modules/sherpa-onnx-node']?.version;
+if (!/^\d+\.\d+\.\d+$/.test(asrPinned ?? '')) problems.push('asr-runtime: sherpa-onnx-node must be pinned to an exact version');
+else if (asrLocked !== asrPinned) problems.push(`asr-runtime: sherpa-onnx-node locked at ${asrLocked}, package.json pins ${asrPinned}`);
+
 const rootManifest = read('package.json');
 for (const name of linguaPackages) {
   const runtimePin = runtimeManifest.dependencies?.[name];

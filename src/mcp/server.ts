@@ -73,6 +73,16 @@ const linguaStatusSchema = z.object({
   unsupportedReason: z.string().optional(),
 });
 
+const asrStatusSchema = z.object({
+  installed: z.boolean(),
+  runtime: z.boolean(),
+  models: z.boolean(),
+  ffmpeg: z.string().nullable(),
+  installable: z.boolean(),
+  unsupportedReason: z.string().optional(),
+  diskBytes: z.number(),
+});
+
 export interface McpDeps {
   distiller: Distiller;
   health: () => Health;
@@ -659,13 +669,14 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_capabilities',
     {
       title: 'Report distill capabilities',
-      description: `Report the server version, the maximum file size in bytes (maxBytes), the per-call output cap in tokens (maxResultTokens) and which optional features are available (LibreOffice for legacy .doc/.xls/.ppt and OpenDocument, LLMLingua-2 for the lossy lingua option). Read-only and cheap; call it when a conversion fails with needs_libreoffice or before using lingua. Does not read any document.`,
+      description: `Report the server version, the maximum file size in bytes (maxBytes), the per-call output cap in tokens (maxResultTokens) and which optional features are available (LibreOffice for legacy .doc/.xls/.ppt and OpenDocument, LLMLingua-2 for the lossy lingua option, and the local speech-recognition stack for audio and video; the user installs it with the command distill-llm asr install, this server never does). Read-only and cheap; call it when a conversion fails with needs_libreoffice or before using lingua. Does not read any document.`,
       annotations: READ_ONLY,
       outputSchema: {
         version: z.string(),
         liteparseVersion: z.string(),
         libreoffice: z.boolean(),
         lingua: linguaStatusSchema,
+        asr: asrStatusSchema.optional(),
         maxBytes: z.number(),
         maxResultTokens: z.number(),
       },
