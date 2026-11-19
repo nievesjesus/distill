@@ -8,6 +8,19 @@ export interface Parser {
   close(): void;
 }
 
+interface PageText {
+  pageNum: number;
+  pageLabel?: string;
+  markdown: string;
+}
+
+export function joinPages(pages: readonly PageText[], text: string): string {
+  if (pages.length <= 1) return text;
+  return pages
+    .map((page) => `<!-- page ${String(page.pageLabel ?? page.pageNum).replace(/\s+/g, '-')} -->\n\n${page.markdown}`)
+    .join('\n\n');
+}
+
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_MESSAGE_LENGTH = 200;
 
@@ -61,7 +74,7 @@ export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {
     async toMarkdown(path) {
       try {
         const result = await markdownParser.parse(path);
-        return { markdown: result.text, pages: result.totalPages };
+        return { markdown: joinPages(result.pages, result.text), pages: result.totalPages };
       } catch (error) {
         throw mapError(error, path);
       }

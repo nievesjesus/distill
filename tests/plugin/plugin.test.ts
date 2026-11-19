@@ -39,6 +39,13 @@ describe('plugin files', () => {
     expect(skill).toBe(claudeSkillMarkdown('distill-llm'));
   });
 
+  it('skill asks for a bounded read and explains the index', () => {
+    const skill = claudeSkillMarkdown('distill-llm');
+    expect(skill).toContain('distill-llm convert --stdout --max-tokens 8000 "<path>"');
+    expect(skill).toContain('--offset');
+    expect(skill).toContain('--limit');
+  });
+
   it('bin/distill-llm is executable in git', () => {
     const out = spawnSync('git', ['ls-files', '-s', 'plugins/distill/bin/distill-llm'], { cwd: repo, encoding: 'utf8' }).stdout;
     expect(out.startsWith('100755')).toBe(true);

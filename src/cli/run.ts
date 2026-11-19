@@ -26,8 +26,8 @@ import type { UpdateChecker } from '../node/update-check';
 import { createGlobalUpdater } from '../node/update-install';
 import type { GlobalUpdater } from '../node/update-install';
 import type { InstallMethod, UpdateCheck } from '../core/types';
-import { parseBoosters, parseRate, runConvert } from './convert';
-import type { ConvertOptions } from './convert';
+import { parseBoosters, parsePositiveInt, parseRate, runConvert, runOutline } from './convert';
+import type { ConvertOptions, OutlineOptions } from './convert';
 
 type Server = { url: string; close(): Promise<void> };
 
@@ -311,10 +311,24 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--rate <n>', 'LLMLingua-2 keep rate (0..1)', parseRate)
     .option('--json', 'print a JSON array with the results')
     .option('--stdout', 'print the Markdown of a single file instead of writing it')
+    .option('--offset <n>', 'with --stdout: first line to print (1-based)', parsePositiveInt)
+    .option('--limit <n>', 'with --stdout: number of lines to print', parsePositiveInt)
+    .option('--max-tokens <n>', 'with --stdout: print an index and the first lines when the document is larger than this', parsePositiveInt)
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
     .action(async (files: string[], options: ConvertOptions) => {
       const code = await runConvert(files, options, { stdout, stderr, openDistiller, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
       if (isTTY && !options.json && !options.stdout) await showNotice();
+      if (code !== 0) exit(code);
+    });
+
+  program
+    .command('outline')
+    .description('Print an index of a document with line ranges and token counts')
+    .argument('<file>', 'file to index')
+    .option('--json', 'print the index as JSON')
+    .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
+    .action(async (file: string, options: OutlineOptions) => {
+      const code = await runOutline(file, options, { stdout, stderr, openDistiller });
       if (code !== 0) exit(code);
     });
 
