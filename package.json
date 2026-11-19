@@ -102,5 +102,28 @@
   "main": "dist/desktop/main.js",
   "exports": {
     "./package.json": "./package.json"
+  },
+  "overrides": {
+    "@electron/universal": {
+      "minimatch": "^11.0.1",
+      "@electron/asar": {
+        "minimatch": "^3.0.4"
+      },
+      "dir-compare": {
+        "minimatch": "^3.0.5"
+      }
+    },
+    "app-builder-lib": {
+      "minimatch": "^11.0.1",
+      "@electron/asar": {
+        "minimatch": "^3.0.4"
+      },
+      "ejs": {
+        "minimatch": "^5.1.0"
+      },
+      "electron-builder-squirrel-windows": {
+        "minimatch": "^3.0.4"
+      }
+    }
   }
 }
