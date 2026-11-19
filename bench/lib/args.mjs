@@ -7,6 +7,7 @@ const SPEC = {
   'max-runs': { type: 'int', default: Number.POSITIVE_INFINITY, min: 1 },
   package: { type: 'string', default: 'distill-llm@latest' },
   results: { type: 'string', default: '' },
+  scenario: { type: 'string', default: 'dev' },
   resume: { type: 'bool', default: false },
   night: { type: 'string', default: '' },
   seed: { type: 'string', default: '' },
@@ -54,5 +55,6 @@ export function parseArgs(argv) {
   if (typeof values.arms === 'string') values.arms = values.arms.split(',');
   for (const arm of values.arms) if (arm !== 'baseline' && arm !== 'distill') throw new Error(`Unknown arm ${arm}`);
   if (values.arms.length === 0) throw new Error('--arms needs at least one arm');
+  if (!['dev', 'clean', 'both'].includes(values.scenario)) throw new Error(`--scenario must be dev, clean or both, got ${values.scenario}`);
   return values;
 }

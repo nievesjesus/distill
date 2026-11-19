@@ -222,4 +222,70 @@ describe('bench runner with a fake claude', () => {
     expect(out.stdout).toContain('4 runs planned');
     expect(calls()).toHaveLength(0);
   });
+
+  it('hides PDF tooling in the clean scenario and leaves the dev scenario alone', async () => {
+    setup({ default: [{ kind: 'ok', answer: '5' }] }, [task('t1', 'd1', 5)]);
+    expect(bench(['--arms', 'baseline,distill', '--scenario', 'clean']).status).toBe(0);
+    const clean = calls();
+    expect(clean).toHaveLength(2);
+    for (const c of clean) {
+      expect(c.pathHead).toMatch(/shims$/);
+      for (const name of ['pdftotext', 'pdfinfo', 'pdftoppm', 'pdfimages', 'pdftohtml', 'mutool', 'qpdf', 'gs', 'textutil']) {
+        expect(c.shims[name]).toEqual({ status: 127, stderr: `${name}: command not found` });
+      }
+      expect(existsSync(c.pathHead)).toBe(false);
+    }
+    expect(records().every((r) => r.scenario === 'clean')).toBe(true);
+    rmSync(log);
+    rmSync(results, { recursive: true });
+    expect(bench(['--arms', 'baseline']).status).toBe(0);
+    expect(calls()[0].pathHead).not.toMatch(/shims$/);
+    expect(records()[0].scenario).toBe('dev');
+  });
+
+  it('records the tool paths of each run', async () => {
+    const uses = [
+      { name: 'Read', input: { file_path: 'd1.pdf', pages: '1-2' } },
+      { name: 'Bash', input: { command: 'pdftotext d1.pdf -' } },
+      { name: 'Bash', input: { command: 'python3 -c "import pypdf"' } },
+    ];
+    setup({ default: [{ kind: 'ok', answer: '5', uses, distill: true }] }, [task('t1', 'd1', 5)]);
+    bench(['--arms', 'distill']);
+    expect(records()[0].paths).toEqual(['read', 'read-pages', 'mcp-distill', 'bash-pdftools', 'bash-python']);
+  });
+
+  it('runs both scenarios and splits the budget evenly', async () => {
+    setup({ default: [{ kind: 'ok', answer: '5', cost: 0.6 }] }, [task('t1', 'd1', 5), task('t2', 'd2', 5), task('t3', 'd1', 5), task('t4', 'd2', 5)]);
+    const out = bench(['--arms', 'baseline', '--scenario', 'both', '--max-cost-usd', '2']);
+    expect(out.status).toBe(0);
+    const recs = records();
+    expect(recs.filter((r) => r.scenario === 'dev')).toHaveLength(2);
+    expect(recs.filter((r) => r.scenario === 'clean')).toHaveLength(2);
+    expect(out.stdout).toContain('Stopping: spent $1.20 dev, $1.20 clean');
+  });
+
+  it('keeps a scenario running when the other one has used its half of the budget', async () => {
+    setup({ default: [{ kind: 'ok', answer: '5', cost: 0.6 }] }, [task('t1', 'd1', 5), task('t2', 'd2', 5), task('t3', 'd1', 5)]);
+    mkdirSync(results, { recursive: true });
+    writeFileSync(join(results, 'runs.jsonl'), `${JSON.stringify({ night: '2026-11-19', task: 'old', arm: 'baseline', repeat: 1, model: 'sonnet', scenario: 'dev', ok: true, attempt: 1, costUsd: 5 })}\n`);
+    bench(['--arms', 'baseline', '--scenario', 'both', '--max-cost-usd', '4', '--resume']);
+    const fresh = records().slice(1);
+    expect(fresh.every((r) => r.scenario === 'clean')).toBe(true);
+    expect(fresh).toHaveLength(3);
+  });
+
+  it('resumes per scenario', async () => {
+    setup({ default: [{ kind: 'ok', answer: '5' }] }, [task('t1', 'd1', 5)]);
+    bench(['--arms', 'baseline', '--scenario', 'dev']);
+    const out = bench(['--arms', 'baseline', '--scenario', 'both', '--resume']);
+    expect(out.stdout).toContain('Resume: 1 of 2 runs already done');
+    expect(records().map((r) => r.scenario)).toEqual(['dev', 'clean']);
+  });
+
+  it('rejects an unknown scenario', async () => {
+    setup({ default: [{ kind: 'ok', answer: '5' }] });
+    const out = bench(['--scenario', 'nope']);
+    expect(out.status).toBe(1);
+    expect(out.stderr).toContain('--scenario must be dev, clean or both');
+  });
 });

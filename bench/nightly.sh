@@ -14,7 +14,7 @@ cd "$root" || exit 1
 echo "== $(date '+%F %T') nightly benchmark start (node $(node --version 2>&1), claude $(claude --version 2>&1))"
 
 node bench/fetch.mjs || echo "fetch reported problems, running with the documents that are ready"
-node bench/run.mjs --resume --max-cost-usd "${DISTILL_BENCH_BUDGET:-15}"
+node bench/run.mjs --resume --scenario both --max-cost-usd "${DISTILL_BENCH_BUDGET:-15}"
 status=$?
 node bench/report.mjs > /dev/null || echo "report failed"
 

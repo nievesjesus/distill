@@ -57,9 +57,10 @@ async function main() {
   const runsFile = join(results, 'runs.jsonl');
   const claude = args.claude || env.DISTILL_BENCH_CLAUDE || 'claude';
 
-  let plan = buildPlan({ tasks, arms: args.arms, repeats: args.repeats, seed });
+  const scenarios = args.scenario === 'both' ? ['dev', 'clean'] : [args.scenario];
+  let plan = buildPlan({ tasks, arms: args.arms, repeats: args.repeats, seed, scenarios });
   if (args['dry-run']) {
-    for (const unit of plan) console.log(`${unit.task.id} ${unit.arm} #${unit.repeat}`);
+    for (const unit of plan) console.log(`${unit.task.id} ${unit.arm} ${unit.scenario} #${unit.repeat}`);
     console.log(`${plan.length} runs planned for ${night}`);
     return;
   }
@@ -78,10 +79,13 @@ async function main() {
     if (args.resume) {
       const done = finishedKeys(existing);
       const before = plan.length;
-      plan = plan.filter((unit) => !done.has(unitKey(night, unit.task.id, unit.arm, unit.repeat, args.model)));
+      plan = plan.filter((unit) => !done.has(unitKey(night, unit.task.id, unit.arm, unit.repeat, args.model, unit.scenario)));
       console.log(`Resume: ${before - plan.length} of ${before} runs already done for ${night}`);
     }
-    let spent = nightCost(existing, night);
+    const spent = Object.fromEntries(scenarios.map((scenario) => [scenario, nightCost(existing, night, scenario)]));
+    const limit = args['max-cost-usd'] / scenarios.length;
+    const exhausted = new Set();
+    const spentLabel = () => (scenarios.length === 1 ? `$${spent[scenarios[0]].toFixed(2)}` : scenarios.map((scenario) => `$${spent[scenario].toFixed(2)} ${scenario}`).join(', '));
     const regenerated = { done: false };
     const pluginDir = join(repoRoot, 'plugins', 'distill');
     const options = {
@@ -103,9 +107,13 @@ async function main() {
         console.log(`Stopping: reached --max-runs ${args['max-runs']}`);
         break;
       }
-      if (budgetReached(spent, args['max-cost-usd'])) {
-        console.log(`Stopping: spent $${spent.toFixed(2)} of the $${args['max-cost-usd']} budget for ${night}`);
-        break;
+      if (budgetReached(spent[unit.scenario], limit)) {
+        exhausted.add(unit.scenario);
+        if (exhausted.size === scenarios.length) {
+          console.log(`Stopping: spent ${spentLabel()} of the $${args['max-cost-usd']} budget for ${night}`);
+          break;
+        }
+        continue;
       }
       const doc = docs.get(unit.task.doc);
       const docPath = resolveDocPath(doc, env, regenerated);
@@ -114,15 +122,15 @@ async function main() {
         continue;
       }
       started += 1;
-      const final = await runWithRetry({ task: unit.task, doc, docPath, arm: unit.arm, repeat: unit.repeat }, options, (record) => {
+      const final = await runWithRetry({ task: unit.task, doc, docPath, arm: unit.arm, repeat: unit.repeat, scenario: unit.scenario }, options, (record) => {
         appendFileSync(runsFile, `${JSON.stringify(record)}\n`);
-        if (typeof record.costUsd === 'number') spent += record.costUsd;
+        if (typeof record.costUsd === 'number') spent[unit.scenario] += record.costUsd;
       });
       if (!final.ok) failures += 1;
       const verdict = final.ok ? (final.correct === true ? 'correct' : final.correct === false ? 'wrong' : 'no answer') : `failed (${final.error})`;
-      console.log(`[${started}/${plan.length}] ${unit.task.id} ${unit.arm} #${unit.repeat}: ${verdict} $${final.costUsd.toFixed(3)}`);
+      console.log(`[${started}/${plan.length}] ${unit.task.id} ${unit.arm} ${unit.scenario} #${unit.repeat}: ${verdict} $${final.costUsd.toFixed(3)}`);
     }
-    console.log(`Done: ${started} runs, ${failures} failed, $${spent.toFixed(2)} spent tonight, results in ${runsFile}`);
+    console.log(`Done: ${started} runs, ${failures} failed, ${spentLabel()} spent tonight, results in ${runsFile}`);
   } finally {
     release();
   }

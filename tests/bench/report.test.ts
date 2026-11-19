@@ -24,6 +24,8 @@ interface Rec {
   durationMs: number;
   distillUsed: boolean;
   correct: boolean | null;
+  scenario?: string;
+  paths?: string[];
 }
 
 function rec(over: Partial<Rec>): Rec {
@@ -117,35 +119,73 @@ describe('aggregate', () => {
     ];
     const data = aggregate(records, tasks);
     expect(data.header).toMatchObject({ nights: 2, firstNight: '2026-11-19', lastNight: '2026-11-20', models: ['sonnet'], packages: ['distill-llm@1.0.0'], runs: 8 });
-    const byTask = Object.fromEntries(data.pairs.map((p: { task: string }) => [p.task, p]));
+    const byTask = Object.fromEntries(data.scenarios.dev.pairs.map((p: { task: string }) => [p.task, p]));
     expect(byTask.t1.costRatio).toBeCloseTo(0.5);
     expect(byTask.t1.tokenRatio).toBeCloseTo(0.5);
     expect(byTask.t2.costRatio).toBeCloseTo(1.5);
     expect(byTask.t3.costRatio).toBeCloseTo(0.5);
-    expect(data.overall.cost.tasks).toBe(3);
-    expect(data.overall.cost.median).toBeCloseTo(0.5);
-    expect(data.overall.cost.ci95[0]).toBeLessThanOrEqual(data.overall.cost.median);
-    expect(data.lost.map((p: { task: string }) => p.task)).toEqual(['t2']);
-    expect(data.lost[0].reasons).toEqual(['cost more', 'less accurate']);
-    const deep = data.byTag.find((t: { tag: string }) => t.tag === 'deep');
+    expect(data.scenarios.dev.overall.cost.tasks).toBe(3);
+    expect(data.scenarios.dev.overall.cost.median).toBeCloseTo(0.5);
+    expect(data.scenarios.dev.overall.cost.ci95[0]).toBeLessThanOrEqual(data.scenarios.dev.overall.cost.median);
+    expect(data.scenarios.dev.lost.map((p: { task: string }) => p.task)).toEqual(['t2']);
+    expect(data.scenarios.dev.lost[0].reasons).toEqual(['cost more', 'less accurate']);
+    const deep = data.scenarios.dev.byTag.find((t: { tag: string }) => t.tag === 'deep');
     expect(deep.tasks).toBe(2);
-    expect(data.arms.distill.distillUsedRate).toBe(1);
-    expect(data.arms.baseline.distillUsedRate).toBe(0);
+    expect(data.scenarios.dev.arms.distill.distillUsedRate).toBe(1);
+    expect(data.scenarios.dev.arms.baseline.distillUsedRate).toBe(0);
   });
 
   it('flags a task where distill was wrong and the baseline right even when cheaper', async () => {
     const { aggregate } = await load('aggregate.mjs');
     const data = aggregate([rec({ costUsd: 2 }), distill({ costUsd: 1, correct: false })], tasks);
-    expect(data.lost).toHaveLength(1);
-    expect(data.lost[0].reasons).toEqual(['less accurate']);
+    expect(data.scenarios.dev.lost).toHaveLength(1);
+    expect(data.scenarios.dev.lost[0].reasons).toEqual(['less accurate']);
+  });
+
+  it('keeps scenarios apart and pairs only within a scenario', async () => {
+    const { aggregate } = await load('aggregate.mjs');
+    const records = [
+      rec({ costUsd: 1 }),
+      distill({ costUsd: 0.5 }),
+      rec({ scenario: 'clean', costUsd: 4 }),
+      distill({ scenario: 'clean', costUsd: 8 }),
+    ];
+    const data = aggregate(records, tasks);
+    expect(data.header.scenarios).toEqual(['clean', 'dev']);
+    expect(data.scenarios.dev.pairs[0].costRatio).toBeCloseTo(0.5);
+    expect(data.scenarios.clean.pairs[0].costRatio).toBeCloseTo(2);
+    expect(data.scenarios.dev.lost).toHaveLength(0);
+    expect(data.scenarios.clean.lost.map((p: { task: string }) => p.task)).toEqual(['t1']);
+    expect(data.scenarios.dev.runs).toBe(2);
+  });
+
+  it('treats records without a scenario as dev', async () => {
+    const { aggregate } = await load('aggregate.mjs');
+    const data = aggregate([rec({})], tasks);
+    expect(data.header.scenarios).toEqual(['dev']);
+  });
+
+  it('computes the share of runs per path', async () => {
+    const { summarizeArm } = await load('aggregate.mjs');
+    const s = summarizeArm([
+      rec({ paths: ['read', 'bash-other'] }),
+      rec({ repeat: 2, paths: ['bash-pdftools'] }),
+      rec({ repeat: 3, paths: ['read-pages', 'read-converted'] }),
+      rec({ repeat: 4, paths: [] }),
+      rec({ repeat: 5, ok: false, paths: ['read'] }),
+    ]);
+    expect(s.paths.read).toBeCloseTo(0.25);
+    expect(s.paths['bash-pdftools']).toBeCloseTo(0.25);
+    expect(s.paths['read-converted']).toBeCloseTo(0.25);
+    expect(s.paths['mcp-distill']).toBe(0);
   });
 
   it('skips tasks that failed in one arm', async () => {
     const { aggregate } = await load('aggregate.mjs');
     const data = aggregate([rec({}), distill({ ok: false, correct: null, attempt: 2 })], tasks);
-    expect(data.pairs).toHaveLength(0);
-    expect(data.arms.distill.failures).toBe(1);
-    expect(data.overall.cost.median).toBeNull();
+    expect(data.scenarios.dev.pairs).toHaveLength(0);
+    expect(data.scenarios.dev.arms.distill.failures).toBe(1);
+    expect(data.scenarios.dev.overall.cost.median).toBeNull();
   });
 });
 
@@ -161,6 +201,23 @@ describe('renderReport', () => {
     expect(md).toContain('1.50x');
     expect(md).toContain('cost more, less accurate');
     expect(md).toContain('+50.0%');
+    expect(md).toContain('### Path taken');
+  });
+
+  it('renders each scenario in its own section with its own numbers', async () => {
+    const { aggregate } = await load('aggregate.mjs');
+    const { renderReport } = await load('render.mjs');
+    const records = [rec({ costUsd: 1 }), distill({ costUsd: 0.5 }), rec({ scenario: 'clean', costUsd: 4 }), distill({ scenario: 'clean', costUsd: 8, paths: ['bash-python'] })];
+    const md = renderReport(aggregate(records, tasks));
+    const clean = md.indexOf('## Scenario clean');
+    const dev = md.indexOf('## Scenario dev');
+    expect(clean).toBeGreaterThan(-1);
+    expect(dev).toBeGreaterThan(clean);
+    expect(md.slice(clean, dev)).toContain('2.00x');
+    expect(md.slice(clean, dev)).not.toContain('0.50x');
+    expect(md.slice(dev)).toContain('0.50x');
+    expect(md.slice(dev)).not.toContain('2.00x');
+    expect(md).toContain('Python PDF libraries, if installed, are not hidden');
   });
 
   it('says so when there are no runs', async () => {

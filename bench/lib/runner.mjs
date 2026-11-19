@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
+import { PDF_TOOLS, classifyPaths } from './classify.mjs';
 import { gradeReply } from './grade.mjs';
 import { parseStream, summarizeResult } from './parse.mjs';
 import { docFileName } from './tasks.mjs';
@@ -32,8 +33,18 @@ export function buildArgs({ prompt, model, arm, pluginDir, maxTurns, runBudgetUs
   return args;
 }
 
-export function buildEnv({ baseEnv, arm, packageSpec, cacheDir }) {
+export function writeShims(dir) {
+  mkdirSync(dir, { recursive: true });
+  for (const name of PDF_TOOLS) {
+    const file = join(dir, name);
+    writeFileSync(file, `#!/bin/sh\necho "${name}: command not found" >&2\nexit 127\n`);
+    chmodSync(file, 0o755);
+  }
+}
+
+export function buildEnv({ baseEnv, arm, packageSpec, cacheDir, scenario = 'dev', shimDir }) {
   const env = { ...baseEnv };
+  if (scenario === 'clean' && shimDir) env.PATH = `${shimDir}${delimiter}${baseEnv.PATH ?? ''}`;
   delete env.DISTILL_PLUGIN_PACKAGE;
   delete env.DISTILL_CACHE_DIR;
   env.DISTILL_CACHE_DIR = cacheDir;
@@ -91,18 +102,20 @@ function execute(claude, args, { cwd, env, timeoutMs }) {
 }
 
 export async function runOnce(spec, options) {
-  const { task, doc, docPath, arm, repeat, attempt } = spec;
+  const { task, doc, docPath, arm, repeat, attempt, scenario = 'dev' } = spec;
   const { claude, model, night, packageSpec, pluginDir, maxTurns, runBudgetUsd, timeoutMs, baseEnv, keep } = options;
   const root = mkdtempSync(join(tmpdir(), 'distill-bench-run-'));
   const project = join(root, 'project');
   const cacheDir = join(root, 'cache');
   mkdirSync(project);
   mkdirSync(cacheDir);
+  const shimDir = join(root, 'shims');
+  if (scenario === 'clean') writeShims(shimDir);
   const docName = docFileName(doc);
   copyFileSync(docPath, join(project, docName));
   const prompt = buildPrompt(docName, task.question);
   const args = buildArgs({ prompt, model, arm, pluginDir, maxTurns, runBudgetUsd });
-  const env = buildEnv({ baseEnv, arm, packageSpec, cacheDir });
+  const env = buildEnv({ baseEnv, arm, packageSpec, cacheDir, scenario, shimDir });
   const started = Date.now();
   let outcome;
   try {
@@ -128,6 +141,7 @@ export async function runOnce(spec, options) {
     task: task.id,
     doc: task.doc,
     arm,
+    scenario,
     model,
     package: arm === 'distill' ? packageSpec : null,
     repeat,
@@ -140,6 +154,7 @@ export async function runOnce(spec, options) {
     usage: summary?.usage ?? { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 },
     toolCalls: parsed.toolCalls,
     distillUsed: parsed.distillUsed,
+    paths: classifyPaths(parsed),
     answer: graded.answer,
     correct: graded.correct,
   };

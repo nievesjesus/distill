@@ -19,7 +19,8 @@ describe('nightly.sh', () => {
 
   it('fetches, runs with resume and the budget, then reports, logging per date', () => {
     expect(script).toContain('node bench/fetch.mjs');
-    expect(script).toContain('node bench/run.mjs --resume --max-cost-usd "${DISTILL_BENCH_BUDGET:-15}"');
+    expect(script).toContain('node bench/run.mjs --resume --scenario both --max-cost-usd "${DISTILL_BENCH_BUDGET:-15}"');
+    expect(script).not.toContain('--tasks');
     expect(script).toContain('node bench/report.mjs');
     expect(script).toContain('logs');
     expect(script).toContain('$(date +%F).log');

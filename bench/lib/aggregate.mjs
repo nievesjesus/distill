@@ -1,3 +1,4 @@
+import { PATHS } from './classify.mjs';
 import { bootstrapMedianCI, iqr, median } from './stats.mjs';
 
 export function totalInputTokens(record) {
@@ -8,7 +9,7 @@ export function totalInputTokens(record) {
 export function finalRecords(records) {
   const latest = new Map();
   for (const r of records) {
-    const key = [r.night, r.task, r.arm, r.repeat, r.model].join('|');
+    const key = [r.night, r.task, r.arm, r.repeat, r.model, r.scenario ?? 'dev'].join('|');
     const prior = latest.get(key);
     if (prior === undefined || (r.attempt ?? 1) >= (prior.attempt ?? 1)) latest.set(key, r);
   }
@@ -34,6 +35,7 @@ export function summarizeArm(records) {
     inputTokens: spread(ok.map(totalInputTokens)),
     turns: spread(ok.filter((r) => typeof r.numTurns === 'number').map((r) => r.numTurns)),
     durationMs: spread(ok.map((r) => r.durationMs)),
+    paths: Object.fromEntries(PATHS.map((path) => [path, ok.length === 0 ? null : ok.filter((r) => (r.paths ?? []).includes(path)).length / ok.length])),
     distillUsedRate: ok.length === 0 ? null : ok.filter((r) => r.distillUsed === true).length / ok.length,
     spentUsd: records.reduce((sum, r) => sum + (r.costUsd ?? 0), 0),
   };
@@ -97,12 +99,11 @@ export function lostTasks(pairs) {
   return lost.sort((a, b) => (b.costRatio ?? 0) - (a.costRatio ?? 0));
 }
 
-export function aggregate(records, tasks = []) {
-  const tasksById = new Map(tasks.map((t) => [t.id, t]));
-  const finals = finalRecords(records);
-  const nights = [...new Set(finals.map((r) => r.night))].sort();
-  const models = [...new Set(finals.map((r) => r.model))].sort();
-  const packages = [...new Set(finals.filter((r) => r.arm === 'distill').map((r) => r.package).filter(Boolean))].sort();
+export function scenarioOf(record) {
+  return record.scenario ?? 'dev';
+}
+
+function aggregateScenario(finals, tasksById) {
   const baseline = finals.filter((r) => r.arm === 'baseline');
   const distill = finals.filter((r) => r.arm === 'distill');
   const pairs = pairByTask(finals, tasksById);
@@ -121,15 +122,7 @@ export function aggregate(records, tasks = []) {
     };
   });
   return {
-    header: {
-      firstNight: nights[0] ?? null,
-      lastNight: nights[nights.length - 1] ?? null,
-      nights: nights.length,
-      models,
-      packages,
-      runs: finals.length,
-      spentUsd: records.reduce((sum, r) => sum + (r.costUsd ?? 0), 0),
-    },
+    runs: finals.length,
     arms: { baseline: summarizeArm(baseline), distill: summarizeArm(distill) },
     overall: {
       pairedTasks: pairs.length,
@@ -139,5 +132,27 @@ export function aggregate(records, tasks = []) {
     byTag,
     pairs,
     lost: lostTasks(pairs),
+  };
+}
+
+export function aggregate(records, tasks = []) {
+  const tasksById = new Map(tasks.map((t) => [t.id, t]));
+  const finals = finalRecords(records);
+  const nights = [...new Set(finals.map((r) => r.night))].sort();
+  const models = [...new Set(finals.map((r) => r.model))].sort();
+  const packages = [...new Set(finals.filter((r) => r.arm === 'distill').map((r) => r.package).filter(Boolean))].sort();
+  const names = [...new Set(finals.map(scenarioOf))].sort();
+  return {
+    header: {
+      firstNight: nights[0] ?? null,
+      lastNight: nights[nights.length - 1] ?? null,
+      nights: nights.length,
+      models,
+      packages,
+      scenarios: names,
+      runs: finals.length,
+      spentUsd: records.reduce((sum, r) => sum + (r.costUsd ?? 0), 0),
+    },
+    scenarios: Object.fromEntries(names.map((name) => [name, aggregateScenario(finals.filter((r) => scenarioOf(r) === name), tasksById)])),
   };
 }

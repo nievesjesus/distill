@@ -11,9 +11,9 @@ export function seededRandom(seed) {
   };
 }
 
-export function buildPlan({ tasks, arms, repeats, seed }) {
+export function buildPlan({ tasks, arms, repeats, seed, scenarios = ['dev'] }) {
   const units = [];
-  for (const task of tasks) for (const arm of arms) for (let repeat = 1; repeat <= repeats; repeat += 1) units.push({ task, arm, repeat });
+  for (const scenario of scenarios) for (const task of tasks) for (const arm of arms) for (let repeat = 1; repeat <= repeats; repeat += 1) units.push({ task, arm, repeat, scenario });
   const random = seededRandom(seed);
   for (let i = units.length - 1; i > 0; i -= 1) {
     const j = Math.floor(random() * (i + 1));
@@ -22,21 +22,25 @@ export function buildPlan({ tasks, arms, repeats, seed }) {
   return units;
 }
 
-export function unitKey(night, taskId, arm, repeat, model) {
-  return [night, taskId, arm, repeat, model].join('|');
+export function unitKey(night, taskId, arm, repeat, model, scenario = 'dev') {
+  return [night, taskId, arm, repeat, model, scenario].join('|');
 }
 
 export function finishedKeys(records) {
   const keys = new Set();
   for (const r of records) {
-    if (r.ok === true || (r.attempt ?? 1) >= 2) keys.add(unitKey(r.night, r.task, r.arm, r.repeat, r.model));
+    if (r.ok === true || (r.attempt ?? 1) >= 2) keys.add(unitKey(r.night, r.task, r.arm, r.repeat, r.model, r.scenario ?? 'dev'));
   }
   return keys;
 }
 
-export function nightCost(records, night) {
+export function nightCost(records, night, scenario) {
   let total = 0;
-  for (const r of records) if (r.night === night && typeof r.costUsd === 'number') total += r.costUsd;
+  for (const r of records) {
+    if (r.night !== night || typeof r.costUsd !== 'number') continue;
+    if (scenario !== undefined && (r.scenario ?? 'dev') !== scenario) continue;
+    total += r.costUsd;
+  }
   return total;
 }
 

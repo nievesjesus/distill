@@ -1,5 +1,18 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+
+function probeShims() {
+  const names = ['pdftotext', 'pdfinfo', 'pdftoppm', 'pdfimages', 'pdftohtml', 'mutool', 'qpdf', 'gs', 'textutil'];
+  const script = names.map((name) => `e=$(${name} --version 2>&1 >/dev/null); echo "${name}|$?|$e"`).join('\n');
+  const out = spawnSync('sh', ['-c', script], { encoding: 'utf8', env: process.env }).stdout ?? '';
+  const shims = {};
+  for (const line of out.trim().split('\n')) {
+    const [name, status, ...rest] = line.split('|');
+    shims[name] = { status: Number(status), stderr: rest.join('|').trim() };
+  }
+  return shims;
+}
 
 const cfg = JSON.parse(readFileSync(process.env.FAKE_CLAUDE_CFG, 'utf8'));
 const argv = process.argv.slice(2);
@@ -18,6 +31,8 @@ appendFileSync(
     cacheDir: process.env.DISTILL_CACHE_DIR ?? null,
     pluginPackage: process.env.DISTILL_PLUGIN_PACKAGE ?? null,
     pid: process.pid,
+    shims: probeShims(),
+    pathHead: (process.env.PATH ?? '').split(':')[0],
   })}\n`,
 );
 
@@ -54,6 +69,7 @@ if (behavior.kind === 'hang') {
     { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Read', input: {} }] } },
     { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Read', input: {} }] } },
   ];
+  for (const [index, use] of (behavior.uses ?? []).entries()) lines.push({ type: 'assistant', message: { content: [{ type: 'tool_use', id: `use${index}`, name: use.name, input: use.input }] } });
   if (behavior.distill) lines.push({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tu2', name: 'mcp__plugin_distill_distill__convert', input: {} }] } });
   if (behavior.kind === 'error') lines.push(result({ is_error: true, subtype: 'error_max_turns', result: '' }));
   else lines.push(result({ result: behavior.kind === 'noanswer' ? 'I could not tell.' : `Looked it up.\nANSWER: ${behavior.answer}` }));

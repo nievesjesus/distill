@@ -17,6 +17,13 @@ describe('buildPlan', () => {
     expect(new Set(plan.map((u: { task: { id: string }; arm: string; repeat: number }) => `${u.task.id}|${u.arm}|${u.repeat}`)).size).toBe(20);
   });
 
+  it('multiplies by scenarios and tags every unit', async () => {
+    const { buildPlan } = await load('plan.mjs');
+    const plan = buildPlan({ tasks, arms: ['baseline', 'distill'], repeats: 1, seed: 's', scenarios: ['dev', 'clean'] });
+    expect(plan).toHaveLength(20);
+    expect(plan.filter((u: { scenario: string }) => u.scenario === 'clean')).toHaveLength(10);
+  });
+
   it('is deterministic per seed and differs across seeds', async () => {
     const { buildPlan } = await load('plan.mjs');
     const ids = (seed: string) => buildPlan({ tasks, arms: ['baseline', 'distill'], repeats: 1, seed }).map((u: { task: { id: string }; arm: string }) => `${u.task.id}${u.arm[0]}`).join();
@@ -41,6 +48,8 @@ describe('resume and budget helpers', () => {
     expect(finishedKeys([{ ...base, ok: false, attempt: 1 }]).size).toBe(0);
     expect(finishedKeys([{ ...base, ok: true, attempt: 1 }]).has(unitKey('n', 't', 'baseline', 1, 'm'))).toBe(true);
     expect(finishedKeys([{ ...base, ok: false, attempt: 2 }]).has(unitKey('n', 't', 'baseline', 1, 'm'))).toBe(true);
+    expect(finishedKeys([{ ...base, ok: true, scenario: 'clean' }]).has(unitKey('n', 't', 'baseline', 1, 'm', 'clean'))).toBe(true);
+    expect(finishedKeys([{ ...base, ok: true, scenario: 'clean' }]).has(unitKey('n', 't', 'baseline', 1, 'm', 'dev'))).toBe(false);
   });
 
   it('sums cost per night and stops at the limit', async () => {
@@ -54,6 +63,8 @@ describe('resume and budget helpers', () => {
     expect(budgetReached(2, 2)).toBe(true);
     expect(budgetReached(1.99, 2)).toBe(false);
     expect(budgetReached(100, Number.POSITIVE_INFINITY)).toBe(false);
+    expect(nightCost([{ night: 'a', costUsd: 1, scenario: 'clean' }, { night: 'a', costUsd: 2 }], 'a', 'dev')).toBe(2);
+    expect(nightCost([{ night: 'a', costUsd: 1, scenario: 'clean' }, { night: 'a', costUsd: 2 }], 'a', 'clean')).toBe(1);
   });
 });
 
