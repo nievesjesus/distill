@@ -34,6 +34,7 @@ interface Heading {
 
 interface Marker {
   line: number;
+  page: number;
   label: string;
   visual?: VisualKind;
 }
@@ -69,7 +70,7 @@ function scan(lines: string[]): { headings: Heading[]; markers: Marker[] } {
     if (fence !== null) return;
     const marker = PAGE_MARKER.exec(text);
     if (marker) {
-      markers.push({ line: index + 1, label: marker[1], ...(marker[2] ? { visual: marker[2] as VisualKind } : {}) });
+      markers.push({ line: index + 1, page: markers.length + 1, label: marker[1], ...(marker[2] ? { visual: marker[2] as VisualKind } : {}) });
       return;
     }
     const heading = HEADING.exec(text);
@@ -79,7 +80,17 @@ function scan(lines: string[]): { headings: Heading[]; markers: Marker[] } {
 }
 
 export function figurePagesIn(markdown: string): string[] {
-  return scan(markdown.split('\n')).markers.filter((marker) => marker.visual === 'figure').map((marker) => marker.label);
+  return scan(markdown.split('\n')).markers.filter((marker) => marker.visual === 'figure').map((marker) => String(marker.page));
+}
+
+export interface PageMarker {
+  label: string;
+  line: number;
+  visual?: VisualKind;
+}
+
+export function pageMarkersIn(markdown: string): PageMarker[] {
+  return scan(markdown.split('\n')).markers.map((marker) => ({ label: marker.label, line: marker.line, ...(marker.visual ? { visual: marker.visual } : {}) }));
 }
 
 function pageAt(markers: Marker[], line: number): string | undefined {
@@ -98,6 +109,10 @@ function hasBody(lines: string[], from: number, to: number): boolean {
   return false;
 }
 
+function visualPageOf(marker: Marker, kind: VisualKind): VisualPage {
+  return { page: marker.page, ...(marker.label !== String(marker.page) ? { label: marker.label } : {}), kind };
+}
+
 function visualIn(lines: string[], markers: Marker[], from: number, to: number): VisualPage[] {
   const found: VisualPage[] = [];
   let current: Marker | undefined;
@@ -107,7 +122,7 @@ function visualIn(lines: string[], markers: Marker[], from: number, to: number):
   }
   const inRange = markers.filter((marker) => marker.line > from && marker.line <= to && hasBody(lines, marker.line + 1, to));
   for (const marker of current ? [current, ...inRange] : inRange) {
-    if (marker.visual) found.push({ page: marker.label, kind: marker.visual });
+    if (marker.visual) found.push(visualPageOf(marker, marker.visual));
   }
   return found;
 }
@@ -151,7 +166,7 @@ function pageEntries(lines: string[], markers: Marker[], maxEntries: number): Ou
     const last = group[group.length - 1];
     const following = markers[start + size];
     const endLine = following ? following.line - 1 : lines.length;
-    const visualPages = group.flatMap((marker) => (marker.visual ? [{ page: marker.label, kind: marker.visual }] : []));
+    const visualPages = group.flatMap((marker) => (marker.visual ? [visualPageOf(marker, marker.visual)] : []));
     entries.push({
       kind: 'page',
       level: 1,
@@ -206,7 +221,7 @@ export function buildOutline(markdown: string, opts: { maxEntries?: number } = {
 
 function visualSummary(pages: VisualPage[] | undefined): string {
   if (!pages) return '';
-  const list = (kind: VisualKind) => pages.filter((entry) => entry.kind === kind).map((entry) => entry.page);
+  const list = (kind: VisualKind) => pages.filter((entry) => entry.kind === kind).map((entry) => (entry.label === undefined ? String(entry.page) : `${entry.page} (${entry.label})`));
   const figures = list('figure');
   const scans = list('scan');
   return `${figures.length > 0 ? ` · figures p.${figures.join(', ')}` : ''}${scans.length > 0 ? ` · scans p.${scans.join(', ')}` : ''}`;

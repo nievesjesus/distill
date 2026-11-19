@@ -30,8 +30,8 @@ const linguaSchema = z
   .boolean()
   .optional()
   .describe('Optional LLMLingua-2 compression, lossy: it removes words. Only works when installed (see distill_capabilities); avoid it for contracts and other exact text');
-const visualPagesSchema = z.array(z.object({ page: z.string(), kind: z.enum(['figure', 'scan']) }));
-const VISUAL_HINT = 'Pages listed in visualPages contain charts or images that are not in the text; if the question depends on them, view the original page with distill_page_image.';
+const visualPagesSchema = z.array(z.object({ page: z.number().int().min(1), label: z.string().optional(), kind: z.enum(['figure', 'scan']) }));
+const VISUAL_HINT = 'Pages listed in visualPages contain charts or images that are not in the text; if the question depends on them, view the original page with distill_page_image. visualPages[].page is the physical page number (1-based position in the PDF); label is the printed page label, only present when it differs.';
 const entrySchema = z.object({
   kind: z.enum(['heading', 'page', 'start']),
   level: z.number(),
@@ -350,11 +350,11 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_page_image',
     {
       title: 'View one page of a PDF as an image',
-      description: `Render one page of a local PDF as a PNG image (about 100 dpi), or return an image file (PNG, JPG, WebP) itself. Read-only: never modifies or uploads the file. Use it only for pages listed in visualPages by distill_file or distill_outline, and only when the question depends on the chart or image on that page: it costs far more tokens than the Markdown. One page per call (page is 1-based). Fails with bad_request (other file types, page out of range), forbidden (outside allowed roots), too_large (over ${maxSize}), not_found or parse_failed.`,
+      description: `Render one page of a local PDF as a PNG image (about 100 dpi), or return an image file (PNG, JPG, WebP) itself. Read-only: never modifies or uploads the file. Use it only for pages listed in visualPages by distill_file or distill_outline, and only when the question depends on the chart or image on that page: it costs far more tokens than the Markdown. One page per call (page is the physical page number, 1-based, as listed in visualPages.page). Fails with bad_request (other file types, page out of range), forbidden (outside allowed roots), too_large (over ${maxSize}), not_found or parse_failed.`,
       annotations: READ_ONLY,
       inputSchema: {
         path: z.string().min(1).describe(PATH_HINT),
-        page: z.number().int().min(1).describe('Page number (1-based), as listed in visualPages; use 1 for an image file'),
+        page: z.number().int().min(1).describe('Physical page number (1-based position in the PDF), as listed in visualPages.page; use 1 for an image file'),
       },
       outputSchema: {
         page: z.number(),

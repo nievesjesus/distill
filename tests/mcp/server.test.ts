@@ -108,7 +108,7 @@ describe('createMcpServer', () => {
   });
 
   describe('visual pages', () => {
-    const visual = [{ page: '2', kind: 'figure' as const }];
+    const visual = [{ page: 2, label: 'ii', kind: 'figure' as const }];
     const withVisual = (): Distiller => ({
       ...fakeDistiller(),
       async distillFile(path) {
@@ -129,6 +129,15 @@ describe('createMcpServer', () => {
       const client = await connect({ distiller: withVisual() });
       const result = await client.callTool({ name: 'distill_outline', arguments: { path: '/x/doc.pdf' } });
       expect((result.structuredContent as { visualPages?: unknown }).visualPages).toEqual(visual);
+    });
+
+    it('describes page numbers as physical', async () => {
+      const client = await connect();
+      const tools = (await client.listTools()).tools;
+      const text = (name: string) => tools.find((tool) => tool.name === name)?.description ?? '';
+      expect(text('distill_page_image')).toContain('physical page number, 1-based, as listed in visualPages.page');
+      expect(text('distill_file')).toContain('physical page number');
+      expect(text('distill_outline')).toContain('label');
     });
 
     it('omits visualPages when there are none', async () => {

@@ -114,10 +114,9 @@ describe('handleClaudePreToolUse', () => {
     expect(await handleClaudePreToolUse(payload({ file_path: join(proj, 'b.png') }), async () => ({ path: '/c.md' }), deps())).toBeNull();
   });
 
-  it('passes through reads with pages', async () => {
+  it('steps aside for pages when the converted markdown is unavailable', async () => {
     const convert = vi.fn(async () => ({ path: '/c.md' }));
     expect(await handleClaudePreToolUse(payload({ file_path: pdf(), pages: '1-3' }), convert, deps())).toBeNull();
-    expect(convert).not.toHaveBeenCalled();
   });
 
   it('passes through images and other tools', async () => {
@@ -394,7 +393,7 @@ describe('large document index', () => {
     const ctx = context(result);
     expect(ctx).toContain(`distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`);
     expect(ctx).toContain(`This is a large document: ${lines.length} lines, ~${countTokens(markdown)} tokens. Only lines 1-${limit} were loaded.`);
-    expect(ctx).toContain(`Read on ${file} using offset and limit from this index:\n${renderOutline(buildOutline(markdown), { name: 'b.pdf' })}`);
+    expect(ctx).toContain(`Read on ${file} using offset and limit (for a PDF, pages works too) from this index:\n${renderOutline(buildOutline(markdown), { name: 'b.pdf' })}`);
   });
 
   it('keeps the savings note after the index', async () => {
@@ -612,7 +611,7 @@ describe('visual pages', () => {
     const markdown = doc('<!-- page 1 -->', '<!-- page 2 -->', figure('4'), figure('9'));
     const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', savings, markdown }), deps());
     expect(context(result)).toBe(
-      `${lead(file)}\nPages 4 and 9 contain charts or images that are not in this Markdown. If the question depends on them, Read the original with pages: "4".\n${savingsNote(savings)}`,
+      `${lead(file)}\nPages 3 and 4 contain charts or images that are not in this Markdown. If the question depends on them, Read the original with pages: "3".\n${savingsNote(savings)}`,
     );
   });
 
@@ -620,15 +619,15 @@ describe('visual pages', () => {
     const file = pdf();
     const markdown = doc('<!-- page 1 -->', figure('3'));
     const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', markdown }), deps());
-    expect(context(result)).toBe(`${lead(file)}\nPage 3 contains a chart or image that is not in this Markdown. If the question depends on it, Read the original with pages: "3".`);
+    expect(context(result)).toBe(`${lead(file)}\nPage 2 contains a chart or image that is not in this Markdown. If the question depends on it, Read the original with pages: "2".`);
   });
 
   it('lists more than two pages with commas', async () => {
     const file = pdf();
     const markdown = doc(figure('2'), figure('5'), figure('8'));
     const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', markdown }), deps());
-    expect(context(result)).toContain('Pages 2, 5 and 8 contain charts or images');
-    expect(context(result)).toContain('pages: "2"');
+    expect(context(result)).toContain('Pages 1, 2 and 3 contain charts or images');
+    expect(context(result)).toContain('pages: "1"');
   });
 
   it('says nothing for scans and plain pages', async () => {
@@ -648,10 +647,171 @@ describe('visual pages', () => {
   it('goes before the index of a large document', async () => {
     const file = pdf();
     const body = Array.from({ length: 400 }, (_, i) => `row ${i} alpha beta gamma delta`).join('\n');
-    const markdown = `<!-- page 1 -->\n\n${body}\n\n${figure('2')}\n\n${body}\n`;
+    const markdown = `<!-- page 1 -->\n\n${body}\n\n${figure('9')}\n\n${body}\n`;
     const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', markdown }), deps({ indexMinTokens: 100 }));
     const text = context(result);
     expect(text.indexOf('Page 2 contains a chart')).toBeGreaterThan(-1);
     expect(text.indexOf('Page 2 contains a chart')).toBeLessThan(text.indexOf('Index of'));
+  });
+});
+
+describe('reads with pages', () => {
+  const context = (result: unknown): string => (result as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+  const input = (result: unknown): Record<string, unknown> => (result as { hookSpecificOutput: { updatedInput: Record<string, unknown> } }).hookSpecificOutput.updatedInput;
+  const figure = (page: string) => `<!-- page ${page}: figure (chart or image not in this text; see the original page) -->`;
+  const scan = (page: string) => `<!-- page ${page}: scan (OCR text) -->`;
+  const markdown = [
+    '# b.pdf',
+    '',
+    '<!-- page 1 -->',
+    '',
+    'one',
+    '',
+    '<!-- page 2 -->',
+    '',
+    'two',
+    '',
+    figure('3'),
+    '',
+    'three',
+    '',
+    scan('4'),
+    '',
+    'four',
+    '',
+    '<!-- page 5 -->',
+    '',
+    'five',
+    '',
+    figure('6'),
+    '',
+    'six',
+  ].join('\n');
+  const lineOf = (text: string): number => markdown.split('\n').indexOf(text) + 1;
+  const total = markdown.split('\n').length;
+  const run1 = (pages: unknown, md: string | undefined = markdown, extra: Record<string, unknown> = {}, d = deps()) =>
+    handleClaudePreToolUse(payload({ file_path: pdf(), pages, ...extra }), async () => ({ path: '/c.md', ...(md === undefined ? {} : { markdown: md }) }), d);
+
+  it('windows a single page and removes pages', async () => {
+    const result = await run1('2');
+    expect(input(result)).toEqual({ file_path: '/c.md', offset: lineOf('<!-- page 2 -->'), limit: lineOf(figure('3')) - lineOf('<!-- page 2 -->') });
+    expect(input(result)).not.toHaveProperty('pages');
+    expect(context(result)).toContain(`distill converted pages 2 of b.pdf to Markdown (lines ${lineOf('<!-- page 2 -->')}-${lineOf(figure('3')) - 1} of the converted document). Original file:`);
+  });
+
+  it('windows a range, overriding offset and limit', async () => {
+    const result = await run1('4-5', markdown, { offset: 1, limit: 3 });
+    expect(input(result)).toEqual({ file_path: '/c.md', offset: lineOf(scan('4')), limit: lineOf(figure('6')) - lineOf(scan('4')) });
+  });
+
+  it('covers a comma list with the smallest window and is lenient with spaces', async () => {
+    const result = await run1(' 1 , 4 - 5 ');
+    expect(input(result)).toEqual({ file_path: '/c.md', offset: lineOf('<!-- page 1 -->'), limit: lineOf(figure('6')) - lineOf('<!-- page 1 -->') });
+  });
+
+  it('runs to the end of the file for the last page', async () => {
+    const result = await run1('5-6');
+    expect(input(result).offset).toBe(lineOf('<!-- page 5 -->'));
+    expect((input(result).offset as number) + (input(result).limit as number) - 1).toBe(total);
+  });
+
+  it('steps aside when every requested page is a figure', async () => {
+    expect(await run1('3')).toBeNull();
+    expect(await run1('3,6')).toBeNull();
+    expect(await run1('3-3')).toBeNull();
+  });
+
+  it('keeps scan pages in the conversion', async () => {
+    expect(await run1('4')).not.toBeNull();
+  });
+
+  it('adds the figure hint for figure pages in a mixed range', async () => {
+    const result = await run1('2-3');
+    expect(context(result)).toContain('Page 3 contains a chart or image that is not in this Markdown. If the question depends on it, Read the original with pages: "3".');
+  });
+
+  it('steps aside for an unknown page', async () => {
+    expect(await run1('7')).toBeNull();
+    expect(await run1('1-9')).toBeNull();
+  });
+
+  it('steps aside for unparseable specs', async () => {
+    for (const spec of ['', 'abc', '1-', '-3', '5-3', '1,,2', '1-2-3', 7, '1-99999']) expect(await run1(spec)).toBeNull();
+  });
+
+  it('uses the whole file when there are no page markers', async () => {
+    const plain = '# Title\n\nbody\nmore';
+    const result = await run1('1-3', plain);
+    expect(input(result)).toEqual({ file_path: '/c.md', offset: 1, limit: 4 });
+    expect(context(result)).toContain('(lines 1-4 of the converted document)');
+  });
+
+  it('notes savings for the slice and records once', async () => {
+    const recordUsage = vi.fn();
+    const file = pdf();
+    const result = await handleClaudePreToolUse(payload({ file_path: file, pages: '1-2' }), async () => ({ path: '/c.md', markdown }), deps({ recordUsage }));
+    const from = lineOf('<!-- page 1 -->');
+    const to = lineOf(figure('3')) - 1;
+    const tokens = countTokens(markdown.split('\n').slice(from - 1, to).join('\n'));
+    const savings = estimateSavings({ kind: 'PDF', pages: 2, tokens: { raw: tokens, out: tokens } });
+    expect(context(result).endsWith(`\n${savingsNote(savings)}`)).toBe(true);
+    expect(recordUsage).toHaveBeenCalledTimes(1);
+    expect(recordUsage).toHaveBeenCalledWith(file, savings);
+  });
+
+  it('still records when the note text is disabled', async () => {
+    const recordUsage = vi.fn();
+    const result = await run1('1', markdown, {}, deps({ savingsNote: false, recordUsage }));
+    expect(context(result)).not.toContain('[distill]');
+    expect(recordUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('records nothing when stepping aside', async () => {
+    const recordUsage = vi.fn();
+    await run1('3', markdown, {}, deps({ recordUsage }));
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+});
+
+describe('reads with pages and labelled markers', () => {
+  const markdown = ['# h', '', '<!-- page i -->', 'a', '<!-- page ii -->', 'b', '<!-- page 1 -->', 'c', '<!-- page 2: figure (x) -->', 'd', '<!-- page 3 -->', 'e'].join('\n');
+  const input = (result: unknown): Record<string, unknown> => (result as { hookSpecificOutput: { updatedInput: Record<string, unknown> } }).hookSpecificOutput.updatedInput;
+  const go = (pages: string) => handleClaudePreToolUse(payload({ file_path: pdf(), pages }), async () => ({ path: '/c.md', markdown }), deps());
+
+  it('maps pages to marker position, not label', async () => {
+    expect(input(await go('3'))).toEqual({ file_path: '/c.md', offset: 7, limit: 2 });
+    expect(input(await go('5'))).toEqual({ file_path: '/c.md', offset: 11, limit: 2 });
+    expect(input(await go('1-2'))).toEqual({ file_path: '/c.md', offset: 3, limit: 4 });
+  });
+
+  it('steps aside beyond the marker count and for a figure at that position', async () => {
+    expect(await go('6')).toBeNull();
+    expect(await go('4')).toBeNull();
+  });
+
+  it('names figure pages by physical number', async () => {
+    const result = (await go('3-4')) as { hookSpecificOutput: { additionalContext: string } };
+    expect(result.hookSpecificOutput.additionalContext).toContain('Page 4 contains a chart');
+    expect(result.hookSpecificOutput.additionalContext).toContain('pages: "4"');
+  });
+});
+
+describe('run hook claude pages', () => {
+  const pages = Array.from({ length: 6 }, (_, i) => `<!-- page ${i + 1} -->\n\nbody of page ${i + 1}`).join('\n\n');
+  it('windows the cached file for a pages read, fresh and cached', async () => {
+    const file = pdf();
+    for (const round of [0, 1]) {
+      const h = harness(JSON.stringify(payload({ file_path: file, pages: '3-4' })), {}, undefined, async () => ({ name: 'b.pdf', markdown: pages, tokens: { raw: 9, out: 9 } }) as never);
+      await run(['hook', 'claude'], h.deps);
+      const out = JSON.parse(h.stdout[0]).hookSpecificOutput;
+      expect(out.updatedInput.pages).toBeUndefined();
+      const cached = readFileSync(out.updatedInput.file_path, 'utf8').split('\n');
+      const slice = cached.slice(out.updatedInput.offset - 1, out.updatedInput.offset - 1 + out.updatedInput.limit).join('\n');
+      expect(slice).toContain('body of page 3');
+      expect(slice).toContain('body of page 4');
+      expect(slice).not.toContain('body of page 2');
+      expect(slice).not.toContain('body of page 5');
+      expect(h.openDistiller).toHaveBeenCalledTimes(round === 0 ? 1 : 0);
+    }
   });
 });

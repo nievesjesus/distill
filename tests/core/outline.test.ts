@@ -233,11 +233,19 @@ describe('outline visual pages', () => {
     expect(text).toContain('p.3 · scan ·');
   });
 
+  it('reports physical pages with the label when it differs', () => {
+    const md = ['<!-- page i -->', '# A', 'x', '<!-- page 1: figure (c) -->', 'y', '<!-- page 2: scan (OCR text) -->', '# B', 'z'].join('\n');
+    const o = buildOutline(md);
+    expect(o.entries[0].visualPages).toEqual([{ page: 2, label: '1', kind: 'figure' }]);
+    expect(o.entries[1].visualPages).toEqual([{ page: 3, label: '2', kind: 'scan' }]);
+    expect(renderOutline(o)).toContain('figures p.2 (1)');
+  });
+
   it('lists visual pages inside a heading range', () => {
     const md = ['<!-- page 1 -->', '# A', 'x', FIG, 'y', SCAN, '# B', 'z'].join('\n');
     const o = buildOutline(md);
-    expect(o.entries[0].visualPages).toEqual([{ page: '2', kind: 'figure' }]);
-    expect(o.entries[1].visualPages).toEqual([{ page: '3', kind: 'scan' }]);
+    expect(o.entries[0].visualPages).toEqual([{ page: 2, kind: 'figure' }]);
+    expect(o.entries[1].visualPages).toEqual([{ page: 3, kind: 'scan' }]);
     const text = renderOutline(o);
     expect(text).toContain('figures p.2');
     expect(text).toContain('scans p.3');

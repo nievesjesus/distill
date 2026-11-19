@@ -4,7 +4,7 @@ export interface BoosterMeta { id: BoosterId; name: string; hint: string; lossy:
 export type FileKind = 'PDF' | 'DOCX' | 'PPTX' | 'XLSX' | 'ODF' | 'IMG';
 export type ErrorCode = 'unsupported_type' | 'needs_libreoffice' | 'too_large' | 'password_protected' | 'timeout' | 'parse_failed' | 'bad_request' | 'not_found' | 'lingua_unavailable' | 'forbidden';
 export type VisualKind = 'figure' | 'scan';
-export interface VisualPage { page: string; kind: VisualKind }
+export interface VisualPage { page: number; label?: string; kind: VisualKind }
 export interface ApiError { code: ErrorCode; message: string }
 export interface ParseResponse { id: string; name: string; kind: FileKind; pages: number; markdown: string; ms: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[] }
 export type LinguaModel = 'tinybert' | 'mobilebert' | 'xlm-roberta';

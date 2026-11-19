@@ -64,7 +64,9 @@ export function visualPagesOf(pages: readonly PageText[]): VisualPage[] {
   const out: VisualPage[] = [];
   for (const page of pages) {
     const kind = kindOf(page);
-    if (kind) out.push({ page: labelOf(page), kind });
+    if (!kind) continue;
+    const label = labelOf(page);
+    out.push({ page: page.pageNum, ...(label !== String(page.pageNum) ? { label } : {}), kind });
   }
   return out;
 }

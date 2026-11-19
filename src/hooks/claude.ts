@@ -1,7 +1,7 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { buildOutline, figurePagesIn, fitLines, renderOutline } from '../core/outline';
-import { type SavingsEstimate, savingsNote } from '../core/savings';
+import { buildOutline, figurePagesIn, fitLines, pageMarkersIn, renderOutline } from '../core/outline';
+import { type SavingsEstimate, estimateSavings, savingsNote } from '../core/savings';
 import { countTokens } from '../core/tokens';
 import { isInside } from '../node/inside';
 import { isOwnCommand } from './install-claude';
@@ -30,6 +30,57 @@ function figureNote(pages: string[]): string {
   }
   const list = `${pages.slice(0, -1).join(', ')} and ${pages[pages.length - 1]}`;
   return `\nPages ${list} contain charts or images that are not in this Markdown. If the question depends on them, Read the original with pages: "${first}".`;
+}
+
+const MAX_PAGE_SPAN = 5000;
+const PAGE_NUMBER = /^\d+$/;
+
+function parsePages(spec: unknown): string[] | null {
+  if (typeof spec !== 'string') return null;
+  const labels: string[] = [];
+  for (const part of spec.split(',')) {
+    const text = part.replace(/\s+/g, '');
+    const range = /^(\d+)-(\d+)$/.exec(text);
+    if (range) {
+      const from = Number(range[1]);
+      const to = Number(range[2]);
+      if (to < from || to - from >= MAX_PAGE_SPAN) return null;
+      for (let page = from; page <= to; page++) labels.push(String(page));
+    } else if (PAGE_NUMBER.test(text)) {
+      labels.push(String(Number(text)));
+    } else {
+      return null;
+    }
+    if (labels.length > MAX_PAGE_SPAN) return null;
+  }
+  return labels.length === 0 ? null : [...new Set(labels)];
+}
+
+interface PageSlice {
+  from: number;
+  to: number;
+  text: string;
+  figures: string[];
+  count: number;
+}
+
+function sliceOfPages(markdown: string, physical: string[]): PageSlice | null {
+  const lines = markdown.split('\n');
+  const markers = pageMarkersIn(markdown);
+  if (markers.length === 0) return { from: 1, to: lines.length, text: markdown, figures: [], count: physical.length };
+  const indexes: number[] = [];
+  for (const label of physical) {
+    const index = Number(label) - 1;
+    if (index >= markers.length) return null;
+    indexes.push(index);
+  }
+  const first = Math.min(...indexes);
+  const last = Math.max(...indexes);
+  const from = markers[first].line;
+  const to = last + 1 < markers.length ? markers[last + 1].line - 1 : lines.length;
+  const figures = indexes.filter((index) => markers[index].visual === 'figure').map((index) => String(index + 1));
+  if (figures.length === indexes.length) return null;
+  return { from, to, text: lines.slice(from - 1, to).join('\n'), figures, count: physical.length };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -138,7 +189,9 @@ export async function handleClaudePreToolUse(
   try {
     if (!isRecord(payload) || payload.tool_name !== 'Read' || !isRecord(payload.tool_input)) return null;
     const toolInput = payload.tool_input;
-    if (toolInput.pages !== undefined || typeof toolInput.file_path !== 'string') return null;
+    if (typeof toolInput.file_path !== 'string') return null;
+    const pageLabels = toolInput.pages === undefined ? null : parsePages(toolInput.pages);
+    if (toolInput.pages !== undefined && pageLabels === null) return null;
     if (!isHookConvertible(toolInput.file_path)) return null;
     const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
     const original = isAbsolute(toolInput.file_path) ? toolInput.file_path : resolve(cwd, toolInput.file_path);
@@ -150,6 +203,29 @@ export async function handleClaudePreToolUse(
     if (await anyReadRestriction(files, candidates, ctx)) return null;
     if (deps.plugin === true && (await anyOwnHook(files))) return null;
     const converted = await convert(realOriginal);
+    if (pageLabels !== null) {
+      if (converted.markdown === undefined) return null;
+      const slice = sliceOfPages(converted.markdown, pageLabels);
+      if (slice === null) return null;
+      const { pages: _pages, ...rest } = toolInput;
+      const spec = String(toolInput.pages).trim();
+      const tokens = countTokens(slice.text);
+      const savings = estimateSavings({ kind: 'PDF', pages: slice.count, tokens: { raw: tokens, out: tokens } });
+      try {
+        deps.recordUsage?.(original, savings);
+      } catch {}
+      const note = deps.savingsNote !== false ? `\n${savingsNote(savings)}` : '';
+      const limit = slice.to - slice.from + 1;
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          updatedInput: { ...rest, file_path: converted.path, offset: slice.from, limit },
+          permissionDecision: 'allow',
+          permissionDecisionReason: 'distill: converted copy in its cache',
+          additionalContext: `distill converted pages ${spec} of ${basename(original)} to Markdown (lines ${slice.from}-${slice.to} of the converted document). Original file: ${original}.${figureNote(slice.figures)}${note}`,
+        },
+      };
+    }
     const paged = toolInput.offset !== undefined || toolInput.limit !== undefined;
     let note = '';
     const figures = !paged && converted.markdown !== undefined ? figureNote(figurePagesIn(converted.markdown)) : '';
@@ -174,7 +250,7 @@ export async function handleClaudePreToolUse(
             updatedInput: { ...toolInput, file_path: converted.path, offset: 1, limit },
             permissionDecision: 'allow',
             permissionDecisionReason: 'distill: converted copy in its cache',
-            additionalContext: `${lead} This is a large document: ${lines} lines, ~${tokens} tokens. Only lines 1-${limit} were loaded. Read the sections you need with Read on ${original} using offset and limit from this index:\n${index}${note}`,
+            additionalContext: `${lead} This is a large document: ${lines} lines, ~${tokens} tokens. Only lines 1-${limit} were loaded. Read the sections you need with Read on ${original} using offset and limit (for a PDF, pages works too) from this index:\n${index}${note}`,
           },
         };
       }
