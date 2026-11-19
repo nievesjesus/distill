@@ -5,7 +5,7 @@ export interface OfficeResult {
 }
 
 export function escapeCell(text: string): string {
-  return text.replace(/\|/g, '\\|').replace(/\r\n|\r|\n/g, ' ').trim();
+  return text.replace(/[\\|]/g, '\\$&').replace(/\r\n|\r|\n/g, ' ').trim();
 }
 
 export function gfmTable(rows: string[][]): string {
@@ -22,7 +22,7 @@ export function gfmTable(rows: string[][]): string {
 
 export function escapeText(text: string): string {
   return text
+    .replace(/[\\*]/g, '\\$&')
     .replace(/^(\s*)#/, '$1\\#')
-    .replace(/\*/g, '\\*')
     .replace(/(^|\W)_|_(?=\W|$)/g, (m) => m.replace('_', '\\_'));
 }
