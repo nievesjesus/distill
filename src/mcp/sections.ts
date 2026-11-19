@@ -8,6 +8,7 @@ export function normalizeTitle(text: string): string {
     .replace(/[#\s]+$/, '')
     .replace(/!?\[([^\]]*)\]\((?:[^()"]|\([^()]*\)|"[^"]*")*\)/g, '$1')
     .replace(/<[^>]+>/g, '')
+    .replace(/[<>]/g, '')
     .replace(/`/g, '')
     .replace(/\*\*|__/g, '')
     .replace(/(^|[\s(])[*_]+(?=\S)/g, '$1')
@@ -96,6 +97,7 @@ function cleanTitle(text: string): string {
     .replace(/[#\s]+$/, '')
     .replace(/!?\[([^\]]*)\]\((?:[^()"]|\([^()]*\)|"[^"]*")*\)/g, '$1')
     .replace(/<[^>]+>/g, '')
+    .replace(/[<>]/g, '')
     .replace(/[`*]|__/g, '')
     .replace(/\s+/g, ' ')
     .trim();

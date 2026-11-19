@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { closestHeadings, findSection } from '../../src/mcp/sections';
+import { closestHeadings, findSection, normalizeTitle } from '../../src/mcp/sections';
 
 const doc = [
   '# File system',
@@ -118,5 +118,18 @@ describe('closestHeadings', () => {
 
   it('returns clean titles without markup', () => {
     for (const title of closestHeadings(doc, 'bold')) expect(title).not.toMatch(/[`*#]/);
+  });
+});
+
+describe('angle brackets in headings', () => {
+  const hostile = '### <<script>script>alert(1)<</script>/script> Title\n\nbody\n';
+
+  it('leaves none in the suggested titles', () => {
+    for (const title of closestHeadings(hostile, 'alert')) expect(title).not.toMatch(/[<>]/);
+  });
+
+  it('matches a heading by its text once the markup is gone', () => {
+    expect(findSection(hostile, 'title')?.line).toBe(1);
+    expect(normalizeTitle('<<script>script>alert(1)<</script>/script>')).not.toMatch(/[<>]/);
   });
 });
