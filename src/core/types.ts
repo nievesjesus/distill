@@ -2,7 +2,7 @@ export type LocalBoosterId = 'dedupe' | 'media' | 'tables' | 'ws';
 export type BoosterId = LocalBoosterId | 'lingua';
 export interface BoosterMeta { id: BoosterId; name: string; hint: string; lossy: boolean; estimate: number }
 export type FileKind = 'PDF' | 'DOCX' | 'PPTX' | 'XLSX' | 'ODF' | 'IMG';
-export type ErrorCode = 'unsupported_type' | 'needs_libreoffice' | 'too_large' | 'password_protected' | 'timeout' | 'parse_failed' | 'bad_request' | 'not_found' | 'lingua_unavailable' | 'forbidden';
+export type ErrorCode = 'unsupported_type' | 'needs_libreoffice' | 'too_large' | 'password_protected' | 'timeout' | 'parse_failed' | 'bad_request' | 'not_found' | 'lingua_unavailable' | 'forbidden' | 'needs_javascript' | 'fetch_failed';
 export type VisualKind = 'figure' | 'scan';
 export interface VisualPage { page: number; label?: string; kind: VisualKind }
 export interface ApiError { code: ErrorCode; message: string }

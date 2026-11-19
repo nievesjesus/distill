@@ -50,6 +50,8 @@ const STATUS_BY_CODE: Record<ErrorCode, ContentfulStatusCode> = {
   timeout: 504,
   lingua_unavailable: 503,
   forbidden: 403,
+  needs_javascript: 422,
+  fetch_failed: 502,
 };
 
 function fail(c: Context, code: ErrorCode, message: string) {

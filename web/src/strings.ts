@@ -124,4 +124,6 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   not_found: 'This file is no longer available. Drop it again.',
   lingua_unavailable: 'The local compression model is not available.',
   forbidden: 'Requests from this origin are not allowed.',
+  needs_javascript: 'This page needs JavaScript to show its content.',
+  fetch_failed: 'The page could not be fetched.',
 };
