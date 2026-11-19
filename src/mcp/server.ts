@@ -468,8 +468,17 @@ export function createMcpServer(deps: McpDeps): McpServer {
           if (error instanceof SearchQueryError) throw new DistillError('bad_request', error.message);
           throw error;
         }
-        const body = found.hits.length === 0 ? NO_MATCHES : renderHits(found.hits);
-        const more = found.truncated ? `\n${found.total - found.hits.length} more not shown (${found.total} in total). Raise maxHits or narrow the query.` : '';
+        const shown: typeof found.hits = [];
+        let used = 0;
+        for (const hit of found.hits) {
+          const cost = countTokens(renderHits([hit])) + 1;
+          if (shown.length > 0 && used + cost > budget) break;
+          shown.push(hit);
+          used += cost;
+        }
+        const truncated = found.truncated || shown.length < found.hits.length;
+        const body = shown.length === 0 ? NO_MATCHES : renderHits(shown);
+        const more = truncated ? `\n${found.total - shown.length} more not shown (${found.total} in total). Raise maxHits or narrow the query.` : '';
         const text = `${body}${more}`;
         const hitTokens = countTokens(text);
         const savings = claimReport(key) ? estimateSearchSavings(result, hitTokens) : undefined;
@@ -481,9 +490,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
           content,
           structuredContent: {
             ...(note ? { note } : {}),
-            hits: found.hits,
+            hits: shown,
             total: found.total,
-            truncated: found.truncated,
+            truncated,
             tokens: { raw: result.tokens.out, out: hitTokens },
           },
         };

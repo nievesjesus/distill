@@ -46,8 +46,8 @@ afterEach(async () => {
   await Promise.all(clients.splice(0).map((client) => client.close()));
 });
 
-async function connect(distiller: Distiller, extra: { savingsNote?: boolean; recordUsage?: (kind: string, savings: unknown) => void } = {}) {
-  const server = createMcpServer({ distiller, health: () => HEALTH, resolvePath: async (p) => p, stat: async () => ({ size: 1, mtimeMs: 1 }), ...extra });
+async function connect(distiller: Distiller, extra: { maxResultTokens?: number; savingsNote?: boolean; recordUsage?: (kind: string, savings: unknown) => void } = {}) {
+  const server = createMcpServer({ distiller, health: () => HEALTH, resolvePath: async (p) => p, ...(extra.maxResultTokens === undefined ? {} : { maxResultTokens: extra.maxResultTokens }), stat: async () => ({ size: 1, mtimeMs: 1 }), ...extra });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test', version: '0.0.0' });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -62,6 +62,24 @@ interface Structured {
   tokens: { raw: number; out: number };
   note?: string;
 }
+
+describe('distill_search size cap', () => {
+  it('stops adding hits once the output would exceed maxResultTokens', async () => {
+    const markdown = Array.from({ length: 40 }, (_, i) => `hit ${i} ${'word '.repeat(60)}\n\n\n\n\n`).join('');
+    const distiller = fakeDistiller();
+    distiller.distillFile = async (path) => result(path, markdown);
+    const client = await connect(distiller, { maxResultTokens: 300 });
+    const out = await client.callTool({ name: 'distill_search', arguments: { path: '/x/doc.pdf', query: 'hit', context: 0, maxHits: 40 } });
+    const sc = out.structuredContent as Structured;
+    const text = (out.content as { text: string }[])[0].text;
+    expect(sc.hits.length).toBeGreaterThanOrEqual(1);
+    expect(sc.hits.length).toBeLessThan(40);
+    expect(sc.total).toBe(40);
+    expect(sc.truncated).toBe(true);
+    expect(text).toContain(`${40 - sc.hits.length} more not shown`);
+    expect(countTokens(text)).toBeLessThanOrEqual(300 + 60);
+  });
+});
 
 describe('distill_search', () => {
   it('is registered as read-only and routes agents away from whole reads and shell tools', async () => {

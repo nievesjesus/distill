@@ -79,6 +79,10 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function looseSource(query: string, opts: SearchOptions): string {
+  return opts.regex ? query : query.replace(/\s+/g, ' ').trim().split(' ').map(escapeRegex).join('\\s+');
+}
+
 function compile(query: string, opts: SearchOptions): RegExp {
   const flags = opts.caseSensitive ? 'g' : 'gi';
   if (opts.regex) {
@@ -94,8 +98,18 @@ function compile(query: string, opts: SearchOptions): RegExp {
   return new RegExp(escapeRegex(normalized), flags);
 }
 
-function cap(text: string): string {
-  return text.length > MAX_HIT_CHARS ? `${text.slice(0, MAX_HIT_CHARS - 1)}…` : text;
+function cap(text: string, anchor: number, matchLength: number): string {
+  if (text.length <= MAX_HIT_CHARS) return text;
+  const inner = MAX_HIT_CHARS - 2;
+  const start = Math.max(0, Math.min(anchor - Math.floor(Math.max(0, inner - matchLength) / 2), text.length - inner));
+  const adjusted = anchor + matchLength > start + inner ? anchor : start;
+  const end = Math.min(text.length, adjusted + inner);
+  return `${adjusted > 0 ? '…' : ''}${text.slice(adjusted, end)}${end < text.length ? '…' : ''}`;
+}
+
+function locate(text: string, lineOffset: number, loose: RegExp): { at: number; length: number } {
+  const found = loose.exec(text.slice(lineOffset));
+  return found ? { at: lineOffset + found.index, length: found[0].length } : { at: lineOffset, length: 0 };
 }
 
 function windowsOf(flat: Flat, pattern: RegExp, context: number, totalLines: number): Window[] {
@@ -119,6 +133,7 @@ function windowsOf(flat: Flat, pattern: RegExp, context: number, totalLines: num
 
 export function searchMarkdown(markdown: string, query: string, opts: SearchOptions = {}): SearchResult {
   const pattern = compile(query, opts);
+  const loose = new RegExp(looseSource(query, opts), opts.caseSensitive ? '' : 'i');
   const context = Math.max(0, Math.floor(opts.context ?? DEFAULT_CONTEXT));
   const maxHits = Math.max(1, Math.floor(opts.maxHits ?? DEFAULT_MAX_HITS));
   const lines = markdown.split('\n');
@@ -128,11 +143,14 @@ export function searchMarkdown(markdown: string, query: string, opts: SearchOpti
   const hits = windows.slice(0, maxHits).map((window): SearchHit => {
     const page = markers.filter((marker) => marker.line <= window.first).length;
     const heading = [...headings].reverse().find((candidate) => candidate.line <= window.first);
+    const body = lines.slice(window.from - 1, window.to);
+    const lineOffset = body.slice(0, window.first - window.from).reduce((sum, row) => sum + row.length + 1, 0);
+    const spot = locate(body.join('\n'), lineOffset, loose);
     return {
       line: window.first,
       ...(page > 0 ? { page } : {}),
       ...(heading ? { section: heading.title.replace(/^#+\s*/, '').replace(/\s+#+\s*$/, '').trim() } : {}),
-      text: cap(lines.slice(window.from - 1, window.to).join('\n')),
+      text: cap(body.join('\n'), spot.at, spot.length),
     };
   });
   return { hits, total: windows.length, truncated: windows.length > hits.length };

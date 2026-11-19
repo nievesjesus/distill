@@ -83,7 +83,22 @@ describe('searchMarkdown', () => {
   it('caps each hit text at 600 characters', () => {
     const md = `${'x'.repeat(2000)} needle\n`;
     const text = searchMarkdown(md, 'needle').hits[0].text;
-    expect(text.length).toBe(600);
+    expect(text.length).toBeLessThanOrEqual(600);
+    expect(text).toContain('needle');
+    expect(text.startsWith('…')).toBe(true);
+  });
+
+  it('keeps the match inside a capped window in the middle of a long line, and across a wrap', () => {
+    const md = `${'a'.repeat(1500)} deep  needle\nword ${'b'.repeat(1500)}\n`;
+    const mid = searchMarkdown(md, 'deep needle', { context: 0 }).hits[0].text;
+    expect(mid.length).toBeLessThanOrEqual(600);
+    expect(mid).toContain('deep  needle');
+    const wrapped = searchMarkdown(`${'c'.repeat(1500)} alpha\nbeta ${'d'.repeat(1500)}\n`, 'alpha beta', { context: 0 }).hits[0].text;
+    expect(wrapped.length).toBeLessThanOrEqual(600);
+    expect(wrapped).toContain('alpha');
+    const front = searchMarkdown(`needle ${'z'.repeat(2000)}\n`, 'needle').hits[0].text;
+    expect(front.startsWith('needle')).toBe(true);
+    expect(front.endsWith('…')).toBe(true);
   });
 
   it('treats the query literally unless regex is set', () => {
