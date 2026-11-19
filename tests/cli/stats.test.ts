@@ -20,6 +20,7 @@ afterEach(() => {
 
 function fakeDistiller(): Distiller {
   return {
+    distillUrl: async () => { throw new Error('unused'); },
     renderPage: async () => { throw new Error('unused'); },
     async distillFile(path) {
       const name = basename(path);

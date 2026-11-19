@@ -24,6 +24,7 @@ function fakeDistiller(calls: { path: string; opts: unknown }[] = []): Distiller
       if (name.startsWith('bad')) throw new DistillError('parse_failed', 'broken file');
       return { path, name, kind: 'PDF', pages: 2, markdown: `# ${name}\n`, tokens: { raw: 100, out: 60 }, ms: 5 };
     },
+    distillUrl: async () => { throw new Error('unused'); },
     renderPage: async () => ({ image: Buffer.from('PNGDATA'), mimeType: 'image/png', width: 850, height: 1100 }),
     health: () => HEALTH,
     close: () => {},
@@ -53,6 +54,7 @@ function bigDistiller(lineCounts: Record<string, number>, calls: string[] = []):
       const count = lineCounts[name] ?? 1;
       return { path, name, kind: 'PDF', pages: 2, markdown: LINE.repeat(count), tokens: { raw: 100 * count, out: 60 * count }, ms: 5 };
     },
+    distillUrl: async () => { throw new Error('unused'); },
     renderPage: async () => ({ image: Buffer.from('PNGDATA'), mimeType: 'image/png', width: 850, height: 1100 }),
     health: () => HEALTH,
     close: () => {},
@@ -83,12 +85,12 @@ afterEach(async () => {
 });
 
 describe('createMcpServer', () => {
-  it('lists the five tools, all read-only with a title', async () => {
+  it('lists the six tools, all read-only with a title', async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image']);
+    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image', 'distill_url']);
     for (const tool of tools) {
-      expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+      expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: tool.name === 'distill_url' });
       expect(tool.title?.length).toBeGreaterThan(0);
     }
   });
@@ -350,6 +352,7 @@ describe('paging', () => {
   it('hard-cuts a single overlong line and flags it', async () => {
     const long = `${'word '.repeat(200)}\nshort\n`;
     const distiller: Distiller = {
+      distillUrl: async () => { throw new Error('unused'); },
       renderPage: async () => { throw new Error('unused'); },
       async distillFile(path) {
         return { path, name: 'long.pdf', kind: 'PDF', pages: 1, markdown: long, tokens: { raw: 10, out: 10 }, ms: 1 };
@@ -446,6 +449,7 @@ describe('paging', () => {
 describe('outline and sections', () => {
   const DOC = ['# Intro', 'intro line', '## Alpha', 'alpha 1', 'alpha 2', '## Beta', 'beta 1', ''].join('\n');
   const docDistiller = (markdown: string): Distiller => ({
+    distillUrl: async () => { throw new Error('unused'); },
     renderPage: async () => { throw new Error('unused'); },
     async distillFile(path) {
       return { path, name: 'doc.pdf', kind: 'PDF', pages: 3, markdown, tokens: { raw: 100, out: 60 }, ms: 1 };

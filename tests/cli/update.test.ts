@@ -114,6 +114,7 @@ describe('updateNotice', () => {
 
 function convertDeps(h: ReturnType<typeof harness>, checker: UpdateChecker) {
   const distiller: Distiller = {
+    distillUrl: async () => { throw new Error('unused'); },
     renderPage: async () => { throw new Error('unused'); },
     async distillFile(path) {
       return { path, name: 'a.pdf', kind: 'PDF', pages: 1, markdown: '# a\n', tokens: { raw: 10, out: 5 }, ms: 1 };

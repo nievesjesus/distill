@@ -1,7 +1,7 @@
 export type LocalBoosterId = 'dedupe' | 'media' | 'tables' | 'ws';
 export type BoosterId = LocalBoosterId | 'lingua';
 export interface BoosterMeta { id: BoosterId; name: string; hint: string; lossy: boolean; estimate: number }
-export type FileKind = 'PDF' | 'DOCX' | 'PPTX' | 'XLSX' | 'ODF' | 'IMG';
+export type FileKind = 'PDF' | 'DOCX' | 'PPTX' | 'XLSX' | 'ODF' | 'IMG' | 'HTML';
 export type ErrorCode = 'unsupported_type' | 'needs_libreoffice' | 'too_large' | 'password_protected' | 'timeout' | 'parse_failed' | 'bad_request' | 'not_found' | 'lingua_unavailable' | 'forbidden' | 'needs_javascript' | 'fetch_failed';
 export type VisualKind = 'figure' | 'scan';
 export interface VisualPage { page: number; label?: string; kind: VisualKind }
@@ -21,7 +21,7 @@ export interface LinguaStatus {
   modelError?: string;
 }
 export interface Health { version: string; liteparseVersion: string; libreoffice: boolean; lingua: LinguaStatus; maxBytes: number }
-export interface DistillResult { path: string; name: string; kind: FileKind; pages: number; markdown: string; tokens: { raw: number; out: number }; ms: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[] }
+export interface DistillResult { path: string; name: string; kind: FileKind; pages: number; markdown: string; tokens: { raw: number; out: number }; ms: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[]; markdownServed?: boolean }
 export type InstallMethod = 'npm-global' | 'npx' | 'docker' | 'desktop' | 'source';
 export interface UpdateCheck { current: string; latest: string | null; available: boolean; method: InstallMethod; enabled: boolean; disabledBy: 'env' | 'setting' | null; checkedAt: string | null }
 export interface UpdateInstallStatus { state: 'idle' | 'running' | 'done' | 'failed'; version?: string; error?: string }

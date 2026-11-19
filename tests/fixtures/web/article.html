@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Using the Widget API - Example Docs</title>
+<meta name="description" content="How to call the Widget API.">
+<meta property="og:title" content="Using the Widget API">
+<link rel="stylesheet" href="/static/site.css">
+<style>.banner { display: block; }</style>
+<script>window.dataLayer = window.dataLayer || [];</script>
+</head>
+<body>
+<header class="site-header">
+  <a href="/" class="logo">Example Docs</a>
+  <nav class="main-nav"><ul><li><a href="/guide">Guide</a></li><li><a href="/reference">Reference</a></li><li><a href="/blog">Blog</a></li><li><a href="/pricing">Pricing</a></li></ul></nav>
+</header>
+<div class="cookie-banner" id="cookie-consent">We use cookies. <button>Accept all</button> <button>Reject</button></div>
+<div class="layout">
+<aside class="sidebar sidebar-nav"><ul><li><a href="/guide/start">Getting started</a></li><li><a href="/guide/auth">Authentication</a></li><li><a href="/guide/limits">Rate limits</a></li></ul></aside>
+<main>
+<article>
+<h1>Using the Widget API</h1>
+<p>The Widget API lets you create, list and delete widgets from any language. It is a plain <a href="/reference/rest">REST interface</a> that speaks JSON, and every request needs an API key sent in the <code>Authorization</code> header.</p>
+<p aria-hidden="true">ARIA-HIDDEN-MARKER decorative duplicate of the intro that screen readers skip.</p>
+<div style="display: none">DISPLAY-NONE-MARKER text that is never shown to a reader.</div>
+<p hidden>HIDDEN-ATTRIBUTE-MARKER paragraph that is never shown to a reader.</p>
+<span style="visibility:hidden">VISIBILITY-MARKER span that is never shown to a reader</span>
+<div style="font-size:0">FONT-SIZE-MARKER text that is never shown to a reader</div>
+<h2 id="create">Creating a widget</h2>
+<p>Send a <code>POST</code> request to <code>/v1/widgets</code> with a JSON body. The service answers with the new widget and its identifier, which you will need for later calls. Widget names must be unique inside a project, and they may contain letters, digits and dashes only.</p>
+<pre><code class="language-js">const res = await fetch("https://api.example.com/v1/widgets", {
+  method: "POST",
+  headers: { Authorization: `Bearer ${key}` },
+  body: JSON.stringify({ name: "demo" }),
+});
+console.log(await res.json());</code></pre>
+<h2 id="limits">Limits</h2>
+<p>Each key may make a limited number of calls. The table below shows the defaults for every plan, and you can ask support to raise them when your traffic grows beyond what the plan allows.</p>
+<table>
+<thead><tr><th>Plan</th><th>Calls per minute</th><th>Widgets</th></tr></thead>
+<tbody>
+<tr><td>Free</td><td>60</td><td>10</td></tr>
+<tr><td>Team</td><td>600</td><td>1,000</td></tr>
+<tr><td>Scale</td><td>6,000</td><td>Unlimited</td></tr>
+</tbody>
+</table>
+<h2 id="errors">Errors</h2>
+<p>When something goes wrong the API answers with a 4xx or 5xx status and a JSON error object. Read the <a href="https://status.example.com/incidents?filter=(open)">status page</a> before you retry, because a retry storm only makes an outage longer for everybody who depends on the service.</p>
+<ul><li>400: the body was not valid JSON.</li><li>401: the key is missing or wrong.</li><li>429: slow down and retry later.</li></ul>
+<p><img src="/img/diagram.png" alt="Request flow diagram"></p>
+</article>
+</main>
+</div>
+<footer><p>Copyright Example Inc. All rights reserved. <a href="/privacy">Privacy</a> <a href="/terms">Terms</a></p></footer>
+<script src="/static/analytics.js"></script>
+</body>
+</html>

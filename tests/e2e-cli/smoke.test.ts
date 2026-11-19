@@ -1,6 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -62,6 +65,66 @@ describe('distill-llm convert', () => {
   });
 });
 
+function runCliAsync(args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolveRun) => {
+    const child = spawn(process.execPath, [CLI, ...args], { env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+    child.on('close', (status) => resolveRun({ status, stdout, stderr }));
+  });
+}
+
+describe('distill-llm convert <url>', () => {
+  let server: Server;
+  let base: string;
+
+  beforeAll(async () => {
+    const html = readFileSync(resolve('tests/fixtures/web/article.html'));
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(html);
+    });
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/guide/widgets`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((done) => server.close(() => done()));
+  });
+
+  it('refuses a cloud metadata address', () => {
+    const result = runCli(['convert', '--stdout', 'http://169.254.169.254/latest/meta-data/']);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('forbidden');
+    expect(result.stdout).toBe('');
+  });
+
+  it('refuses a private address unless allowed', async () => {
+    const result = await runCliAsync(['convert', '--stdout', base]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('forbidden');
+  });
+
+  it('converts a page with the bundled extractor when private access is allowed', async () => {
+    const result = await runCliAsync(['convert', '--stdout', '--allow-private', base]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('# Using the Widget API');
+    expect(result.stdout).toContain('## Creating a widget');
+    expect(result.stdout).not.toContain('DISPLAY-NONE-MARKER');
+    expect(result.stderr).toContain('vs the raw page');
+  });
+
+  it('reports tokens as json', async () => {
+    const result = await runCliAsync(['convert', '--json', '--allow-private', '--out', work, base]);
+    expect(result.status).toBe(0);
+    const entry = JSON.parse(result.stdout)[0];
+    expect(entry.tokens.raw).toBeGreaterThan(entry.tokens.out);
+    expect(entry.output.endsWith('widgets.md')).toBe(true);
+  });
+});
+
 describe('distill-llm hook claude', () => {
   it('rewrites a pdf read to a cached markdown file and hits the cache on rerun', () => {
     for (let i = 0; i < 2; i++) {
@@ -96,7 +159,7 @@ describe('distill-llm mcp', () => {
         stderr += String(chunk);
       });
       const { tools } = await client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image']);
+      expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image', 'distill_url']);
       const result = await client.callTool({ name: 'distill_file', arguments: { path: pdf } });
       expect(result.isError).toBeFalsy();
       const structured = result.structuredContent as { tokens: { raw: number; out: number } };

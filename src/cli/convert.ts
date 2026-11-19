@@ -23,11 +23,15 @@ export interface ConvertOptions {
   limit?: number;
   maxTokens?: number;
   maxSize: number;
+  allowPrivate?: boolean;
+  allowHost?: string[];
 }
 
 export interface OutlineOptions {
   json?: boolean;
   maxSize: number;
+  allowPrivate?: boolean;
+  allowHost?: string[];
 }
 
 export interface ConvertIo {
@@ -66,6 +70,31 @@ export function parsePositiveInt(value: string): number {
 }
 
 const HEAD_TOKENS = 2000;
+const URL_PREFIX = /^[a-z][a-z0-9+.-]*:\/\//i;
+const MAX_URL_BASE = 80;
+
+export function isUrlInput(input: string): boolean {
+  return URL_PREFIX.test(input);
+}
+
+function urlBase(input: string): string {
+  let base = 'page';
+  try {
+    const url = new URL(input);
+    const segment = url.pathname.split('/').filter((part) => part !== '').pop();
+    base = segment ? decodeURIComponent(segment).replace(/\.[A-Za-z0-9]{1,5}$/, '') : url.hostname;
+  } catch {}
+  const clean = base.replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, MAX_URL_BASE);
+  return clean === '' ? 'page' : clean;
+}
+
+function webOptions(options: { allowPrivate?: boolean; allowHost?: string[] }) {
+  return {
+    robots: 'ignore' as const,
+    ...(options.allowPrivate ? { allowPrivate: true } : {}),
+    ...(options.allowHost && options.allowHost.length > 0 ? { allowHosts: options.allowHost } : {}),
+  };
+}
 
 function usageError(options: ConvertOptions, files: string[]): string | undefined {
   if (options.boosters !== undefined && !options.optimize) return '--boosters cannot be combined with --no-optimize';
@@ -80,8 +109,9 @@ function usageError(options: ConvertOptions, files: string[]): string | undefine
 function planDestinations(files: string[], out: string | undefined): string[] {
   const taken = new Set<string>();
   return files.map((file) => {
-    const base = basename(file, extname(file));
-    const folder = out ?? dirname(file);
+    const web = isUrlInput(file);
+    const base = web ? urlBase(file) : basename(file, extname(file));
+    const folder = out ?? (web ? '.' : dirname(file));
     let candidate = join(folder, `${base}.md`);
     for (let n = 2; taken.has(candidate.toLowerCase()); n++) candidate = join(folder, `${base}-${n}.md`);
     taken.add(candidate.toLowerCase());
@@ -129,7 +159,8 @@ export async function runConvert(files: string[], options: ConvertOptions, io: C
   async function convertOne(index: number): Promise<void> {
     const input = files[index];
     try {
-      const result = await distiller.distillFile(input, { boosters, lingua: options.lingua ?? false, rate: options.rate });
+      const settings = { boosters, lingua: options.lingua ?? false, rate: options.rate };
+      const result = isUrlInput(input) ? await distiller.distillUrl(input, { ...settings, ...webOptions(options) }) : await distiller.distillFile(input, settings);
       try {
         io.recordUsage?.(result.kind, estimateSavings(result));
       } catch {}
@@ -178,7 +209,7 @@ export async function runOutline(file: string, options: OutlineOptions, io: Conv
     return 1;
   }
   try {
-    const result = await distiller.distillFile(file, { lingua: false });
+    const result = isUrlInput(file) ? await distiller.distillUrl(file, { lingua: false, ...webOptions(options) }) : await distiller.distillFile(file, { lingua: false });
     const outline = buildOutline(result.markdown);
     if (options.json) {
       io.stdout(JSON.stringify({ kind: result.kind, pages: result.pages, lines: outline.lines, tokens: outline.tokens, entries: outline.entries }));

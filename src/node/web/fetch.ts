@@ -148,6 +148,10 @@ function parseUrl(raw: string): URL {
   return url;
 }
 
+export function normalizeUrl(raw: string): string {
+  return parseUrl(raw).href;
+}
+
 const refused = (host: string): DistillError =>
   new DistillError('forbidden', `Refused: ${host} is a private, loopback or link-local address, and distill only fetches public web pages`);
 
