@@ -2,7 +2,8 @@ import { stat } from 'node:fs/promises';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { BOOSTER_ORDER } from '../core/boosters/pipeline';
-import { type Outline, buildOutline, renderOutline } from '../core/outline';
+import { buildOutline, renderOutline } from '../core/outline';
+import { closestHeadings, findSection } from './sections';
 import { type SavingsEstimate, estimateSavings, savingsNote, sumSavings } from '../core/savings';
 import { countTokens } from '../core/tokens';
 import type { DistillResult, Health, LocalBoosterId } from '../core/types';
@@ -46,17 +47,6 @@ const entrySchema = z.object({
 
 function formatLimit(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
-function stripHashes(text: string): string {
-  return text.replace(/^[#\s]+/, '').trim().toLowerCase();
-}
-
-function findSection(outline: Outline, section: string): { line: number; endLine: number } | null {
-  const wanted = stripHashes(section);
-  const titles = outline.entries.map((entry) => ({ entry, title: stripHashes(entry.title) }));
-  const match = titles.find((item) => item.title === wanted) ?? titles.find((item) => wanted !== '' && item.title.includes(wanted));
-  return match ? { line: match.entry.line, endLine: match.entry.endLine } : null;
 }
 
 const tokensSchema = z.object({ raw: z.number(), out: z.number() });
@@ -204,9 +194,13 @@ export function createMcpServer(deps: McpDeps): McpServer {
     let offset = args.offset ?? 1;
     let limit = args.limit;
     if (args.section !== undefined) {
-      const found = findSection(buildOutline(result.markdown), args.section);
+      const found = findSection(result.markdown, args.section);
       if (found === null) {
-        throw new DistillError('bad_request', `No section matches "${args.section}". Call distill_outline to list sections.`);
+        const near = closestHeadings(result.markdown, args.section)
+          .map((title) => `"${title}"`)
+          .join('; ');
+        const hint = tool === 'distill_url' ? 'Use a heading from the outline of the first read.' : 'Call distill_outline to list sections.';
+        throw new DistillError('bad_request', `No section matches "${args.section}". Closest headings: ${near === '' ? '(none)' : near}. ${hint}`);
       }
       offset = found.line;
       limit = found.endLine - found.line + 1;

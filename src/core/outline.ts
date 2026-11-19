@@ -79,6 +79,10 @@ function scan(lines: string[]): { headings: Heading[]; markers: Marker[] } {
   return { headings, markers };
 }
 
+export function headingsOf(markdown: string): { level: number; line: number; title: string }[] {
+  return scan(markdown.split('\n')).headings;
+}
+
 export function figurePagesIn(markdown: string): string[] {
   return scan(markdown.split('\n')).markers.filter((marker) => marker.visual === 'figure').map((marker) => String(marker.page));
 }

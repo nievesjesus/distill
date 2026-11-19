@@ -189,3 +189,27 @@ describe('distill_url paging', () => {
     expect(result.content).toEqual([{ type: 'text', text: SMALL }]);
   });
 });
+
+describe('distill_url sections on a big API page', () => {
+  const API = `<!-- distill: x -->\n\n# File system\n\n${Array.from({ length: 300 }, (_, i) => `#### \`fs.method${i}(path[, options], callback)\`\n\nAdded in: v${i}.0.0\n`).join('\n')}`;
+
+  it('finds a deep heading that the capped outline leaves out', async () => {
+    const client = await connect(fakeDistiller([], () => page(API)), { maxResultTokens: 5000 });
+    const result = await client.callTool({ name: 'distill_url', arguments: { url: 'https://a.example/', section: 'fs.method250(' } });
+    expect(result.isError).toBeFalsy();
+    const md = (result.structuredContent as { markdown: string }).markdown;
+    expect(md).toContain('#### `fs.method250(path[, options], callback)`');
+    expect(md).toContain('Added in: v250.0.0');
+    expect(md).not.toContain('fs.method251');
+  });
+
+  it('suggests close headings when nothing matches', async () => {
+    const client = await connect(fakeDistiller([], () => page(API)));
+    const result = await client.callTool({ name: 'distill_url', arguments: { url: 'https://a.example/', section: 'fs.methodX options' } });
+    expect(result.isError).toBe(true);
+    const text = (result.content as { text: string }[])[0]?.text ?? '';
+    expect(text).toContain('No section matches "fs.methodX options". Closest headings: "fs.method0(path[, options], callback)"');
+    expect(text.split('"; "')).toHaveLength(5);
+    expect(text).toContain('outline of the first read');
+  });
+});

@@ -518,7 +518,7 @@ describe('outline and sections', () => {
     const client = await connect({ distiller: docDistiller(DOC) });
     const none = await file(client, { section: 'Gamma' });
     expect(none.isError).toBe(true);
-    expect(none.content).toEqual([{ type: 'text', text: 'bad_request: No section matches "Gamma". Call distill_outline to list sections.' }]);
+    expect(none.content).toEqual([{ type: 'text', text: 'bad_request: No section matches "Gamma". Closest headings: "Intro"; "Alpha"; "Beta". Call distill_outline to list sections.' }]);
     const both = await file(client, { section: 'Alpha', offset: 2 });
     expect(both.isError).toBe(true);
     expect((both.content as { text: string }[])[0]?.text).toMatch(/^bad_request:/);
