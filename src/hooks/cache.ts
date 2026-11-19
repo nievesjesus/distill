@@ -49,7 +49,7 @@ function isSavingsEstimate(value: unknown): value is SavingsEstimate {
     typeof v.out === 'number' &&
     typeof v.saved === 'number' &&
     typeof v.percent === 'number' &&
-    (v.basis === 'pdf-pages' || v.basis === 'raw-text')
+    (v.basis === 'pdf-pages' || v.basis === 'raw-text' || v.basis === 'raw-html' || v.basis === 'served-markdown')
   );
 }
 

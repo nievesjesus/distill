@@ -18,6 +18,17 @@ const KIND_BY_EXTENSION: Record<string, FileKind> = {
   tif: 'IMG',
   tiff: 'IMG',
   webp: 'IMG',
+  html: 'HTML',
+  htm: 'HTML',
+  xhtml: 'HTML',
+  mhtml: 'HTML',
+  mht: 'HTML',
+  epub: 'EPUB',
+  eml: 'EMAIL',
+  msg: 'EMAIL',
+  xml: 'FEED',
+  rss: 'FEED',
+  atom: 'FEED',
 };
 
 const LEGACY_OFFICE_EXTENSIONS: ReadonlySet<string> = new Set(['doc', 'xls', 'ppt', 'odt', 'ods', 'odp']);

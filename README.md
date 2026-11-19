@@ -50,6 +50,7 @@ On top of that, distill's lossless boosters trim another 10% from LiteParse's Ma
 
 - **One engine, many doors.** The same local pipeline behind a web app, a desktop app, a Docker image, a CLI, an MCP server and hooks for Claude Code and OpenCode.
 - **Real parsing.** [LiteParse](https://github.com/run-llama/liteparse) by LlamaIndex reads PDFs and images (with OCR). DOCX, PPTX, XLSX and CSV use a built-in reader, or LiteParse through LibreOffice when it is installed; legacy Office and ODF go through LibreOffice.
+- **Web pages, books and mail.** `distill-llm convert <url>` and the MCP tool `distill_url` turn a public page into clean Markdown; saved `.html`, `.mhtml`, `.epub`, `.eml`, `.msg` and RSS/Atom files work too. See [Web pages](#web-pages).
 - **Lossless boosters.** Small, deterministic passes drop repeated boilerplate, image paths and link targets, table padding and extra whitespace. Content words stay.
 - **Optional LLMLingua-2.** A local model for when you want to go further and accept a lossy result. Off by default, installed on demand.
 - **Honest numbers.** Every file's before and after token counts come from a real tokenizer, live in the UI.
@@ -73,7 +74,7 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 
 ### MCP server
 
-Give any MCP client five tools: `distill_file`, `distill_files`, `distill_outline`, `distill_page_image` and `distill_capabilities`. All of them are read-only and say so in their annotations. From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`. Results end with a `[distill] tokens saved ≈ …` line telling the model how many tokens distill saved (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
+Give any MCP client six tools: `distill_file`, `distill_files`, `distill_outline`, `distill_page_image`, `distill_url` and `distill_capabilities`. All of them are read-only and say so in their annotations (`distill_url` also says it reaches the internet). From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`. Results end with a `[distill] tokens saved ≈ …` line telling the model how many tokens distill saved (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
 
 Results are capped at 10,000 tokens (`DISTILL_MCP_MAX_TOKENS` changes it) so they fit an agent's tool-result limit. A larger document comes back one page at a time: pass the `nextOffset` from the previous `distill_file` result as `offset` to continue, and `distill_files` returns what fits and tells the model which files to request on their own.
 
@@ -132,7 +133,7 @@ distill-llm hooks install --claude     # Claude Code
 distill-llm hooks install --opencode   # OpenCode
 ```
 
-- **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or your personal `.claude/settings.local.json` with `--project`). When Claude reads a PDF inside the project it is working in, the hook converts it once, caches it by content hash in `~/.cache/distill-llm/out/` (private to your user) and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distill-llm/out/**)` so those reads do not prompt. Claude Code refuses Office files before any hook runs (checked on Claude Code 2.1.296), so the installer also writes the skill `distill-office-documents` to `~/.claude/skills/` (or `.claude/skills/` with `--project`). It has Claude run `distill-llm convert --stdout` through Bash for `.docx`, `.doc`, `.xlsx`, `.xls`, `.pptx`, `.ppt`, `.odt`, `.ods` and `.odp` files. Claude Code asks before each of those Bash calls unless you allow it; distill does not add that permission, because Bash is not subject to `Read` deny rules. A `SKILL.md` you wrote yourself is left alone.
+- **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or your personal `.claude/settings.local.json` with `--project`). When Claude reads a PDF (or a saved `.mhtml`, `.epub`, `.eml` or `.msg` file) inside the project it is working in, the hook converts it once, caches it by content hash in `~/.cache/distill-llm/out/` (private to your user) and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distill-llm/out/**)` so those reads do not prompt. Claude Code refuses Office files before any hook runs (checked on Claude Code 2.1.296), so the installer also writes the skill `distill-office-documents` to `~/.claude/skills/` (or `.claude/skills/` with `--project`). It has Claude run `distill-llm convert --stdout` through Bash for `.docx`, `.doc`, `.xlsx`, `.xls`, `.pptx`, `.ppt`, `.odt`, `.ods` and `.odp` files. Claude Code asks before each of those Bash calls unless you allow it; distill does not add that permission, because Bash is not subject to `Read` deny rules. A `SKILL.md` you wrote yourself is left alone.
 - **Reads with `pages`:** Claude Code asks for `pages` on longer PDFs. Those reads get just those pages as Markdown; figure-only pages are read from the original.
 - **Large documents:** when the Markdown is over 8,000 tokens and the read has no `offset` or `limit`, the hook loads the first part (about 2,000 tokens) and adds an index of the whole document to the context: line ranges, pages and tokens per section. Claude then reads the sections it needs with `offset` and `limit` (or `pages`, for a PDF). When a multi-page PDF has figure pages (charts or images that are not in the text), the hook's context also names them and tells Claude to Read those pages of the original with `pages`; scanned pages are not flagged this way. `DISTILL_INDEX_MIN_TOKENS` changes the threshold; `0` turns the index off. LiteParse can emit a whole page as one very long line, which Claude Code's Read truncates, so the cached Markdown wraps lines longer than 1,500 characters (never table rows or code).
 - **OpenCode** (experimental): writes a plugin to `~/.config/opencode/plugins/distill.js` (or `.opencode/plugins/` with `--project`) that does the same on `tool.execute.before` for `read`. OpenCode's plugin API is changing; if the plugin does not apply, OpenCode simply reads the original file.
@@ -221,6 +222,8 @@ npx distill-llm convert report.pdf deck.pptx --out md/
 | `--stdout` | Print the Markdown of a single file instead of writing it |
 | `--offset <n>` `--limit <n>` | With `--stdout`: print only these lines (1-based) |
 | `--max-tokens <n>` | With `--stdout`: if the document is larger than this, print an index and the first lines instead of everything |
+| `--full` | For a web page or saved HTML: keep the whole page instead of extracting the main content |
+| `--allow-private` `--allow-host <host>` | For a URL only: allow addresses that resolve to private, loopback or link-local ranges (everything, or just that host; repeatable). See [Web pages](#web-pages) |
 
 Multi-page PDFs carry a `<!-- page N -->` marker before each page (it uses the page label when the PDF has one), so an agent can cite pages and the index can list them.
 
@@ -231,6 +234,35 @@ Multi-page PDFs carry a `<!-- page N -->` marker before each page (it uses the p
 `distill-llm update [--yes]` checks for a newer version right away. A global npm install updates after a y/N question (or straight away with `--yes`); other installs print the command to run. After `convert` on a terminal, and when the web app starts, a one-line notice goes to stderr if a newer version exists (never with `--json` or `--stdout`).
 
 Each file prints a summary such as `report.pdf → report.md  5.7k → 4.6k tokens (−19%)`. The exit code is 1 if any file failed; the others are still converted.
+
+## Web pages
+
+```bash
+distill-llm convert --stdout https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
+distill-llm convert --json --out md/ https://react.dev/learn https://nodejs.org/api/fs.html
+```
+
+`convert` and `outline` accept `http(s)` URLs next to file paths, with the same `--stdout`, `--max-tokens`, `--offset`/`--limit` and `--json` options. The page is fetched with a plain GET, the main content is extracted (navigation, ads, cookie banners and hidden text are dropped; code fences with their language, tables and footnotes are kept) and the usual boosters run on the result. Pages served as Markdown (Cloudflare's "Markdown for Agents" and similar) pass through untouched, and PDFs, Office files, EPUBs and feeds served at a URL are converted like local files.
+
+In an MCP client, `distill_url({ url, section?, offset?, limit?, boosters? })` does the same with the same paging, outline and savings note as `distill_file`. Use it instead of a generic web fetch when the model needs the whole page rather than a summary: a long page comes back with an index first, and the model reads only the sections it needs.
+
+**Missing something?** The default extraction keeps the main content and drops sidebars and small metadata blocks (for example the "Added in" and history notes of the Node.js docs). `distill-llm convert --full <url>` (also for saved `.html`/`.mhtml` files) and `distill_url({ url, mode: 'full' })` skip the extraction and convert the whole page, with hidden text still removed. It costs more tokens, so use it when something seems to be missing.
+
+**Savings.** On seven real pages (BBC, GitHub, the React docs and MDN among them) the Markdown was 86% to 99% smaller than the raw HTML an agent would get from `curl`, counted with `o200k_base`. The savings note says "vs the raw page" for that reason. That baseline is different from the PDF numbers above; against a plain whole-page HTML-to-Markdown conversion the gain is smaller (34% to 71% on the same pages). Measure your own pages with `distill-llm convert --json <url>`.
+
+**Safety.** Fetching is the one place where distill talks to the internet because you asked it to, so it is conservative:
+
+- Only `http` and `https`; URLs with a user name or password are refused.
+- Every address a name resolves to must be a public one. Loopback, private (RFC 1918), link-local and cloud-metadata (`169.254.169.254`), carrier-grade NAT, multicast and reserved ranges are refused, including their IPv6 and IPv4-mapped or NAT64 forms. The connection goes to the address that was checked, with no second DNS lookup, and the same checks run again on every redirect (at most 5).
+- A 20 second total timeout and a 10 MB cap on the decompressed body. No cookies and no credentials are ever sent.
+- `robots.txt` is honoured for `distill_url` (start the server with `--ignore-robots-txt` to turn that off) and not checked for a single page you pass to the CLI.
+- The MCP server can never be pointed at private addresses. On the CLI you can opt in with `--allow-private`, or `--allow-host intranet.corp` for one host.
+- The text of a page is untrusted. Every result starts with a comment naming the source URL and fetch time, and text hidden with `hidden`, `aria-hidden` or inline styles such as `display:none` is removed before extraction, so a page cannot slip invisible instructions to the model.
+- The extractor never makes network requests of its own.
+
+Results are cached in `~/.cache/distill-llm/web/` by URL, converter version and boosters, and revalidated with `ETag` / `Last-Modified`; `Cache-Control: no-store` is honoured and pages fetched with the private-address overrides are never cached.
+
+**Limits.** There is no JavaScript rendering yet. A page that only paints itself in the browser (a single-page app shell) fails with `needs_javascript`; save it from your browser as `.mhtml` or `.html` and convert the file instead. Sites that block automated clients, or pages behind a login, fail the same way a plain `curl` would.
 
 ## Desktop app and Docker
 
@@ -290,12 +322,17 @@ LLMLingua-2 is optional and experimental. It needs Apple Silicon, Windows x64 or
 | PNG, JPG, TIFF, WebP | nothing else (OCR built in; English data is downloaded once, about 15 MB) |
 | DOCX, PPTX, XLSX, CSV | nothing else (built-in reader); with [LibreOffice](https://www.libreoffice.org/download/) on your `PATH` distill uses it instead, for higher fidelity on layout-heavy files |
 | DOC, XLS, PPT, ODT, ODS, ODP | [LibreOffice](https://www.libreoffice.org/download/) on your `PATH` (`soffice`); included in Docker |
+| Web pages (`http(s)` URL) | nothing else; see [Web pages](#web-pages) |
+| HTML, XHTML, MHTML / MHT | nothing else (a page saved from your browser; MHTML snapshots keep their original URL) |
+| EPUB | nothing else (chapters in reading order with titles from the table of contents; DRM-protected books are refused) |
+| EML, MSG | nothing else (headers, body and a list of attachments; attachment contents are not converted) |
+| RSS, Atom (`.xml`, `.rss`, `.atom`) | nothing else (a list of entries with date, link and summary) |
 
 Password-protected PDFs are reported as an error. Parsing quality is whatever LiteParse gives you: it varies on dense tables and complex scans, and distill does not try to hide that.
 
 ## Privacy
 
-Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. distill makes at most three one-time downloads, all of data and never of your documents: the Tesseract English data for the first OCR (skip it with `DISTILL_TESSDATA` or `TESSDATA_PREFIX`; `DISTILL_OCR_LANG` sets the language), and, only if you enable LLMLingua-2, its runtime from npm and its model from Hugging Face.
+Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. distill makes at most three one-time downloads, all of data and never of your documents (the only other network traffic is fetching a web page when you or your agent pass a URL, see [Web pages](#web-pages)): the Tesseract English data for the first OCR (skip it with `DISTILL_TESSDATA` or `TESSDATA_PREFIX`; `DISTILL_OCR_LANG` sets the language), and, only if you enable LLMLingua-2, its runtime from npm and its model from Hugging Face.
 
 Once a day distill also asks `registry.npmjs.org` for the latest `distill-llm` version, sending only its own version in the User-Agent, and caches the answer in `~/.cache/distill-llm/update-check.json`. Turn it off with `DISTILL_NO_UPDATE_CHECK=1` or in the web app (click the version in the header, then "Check for updates daily"). The desktop app does not ask `registry.npmjs.org`; it asks `github.com` for its release manifest instead, with the same toggle. The hooks and the MCP server never check.
 
@@ -317,13 +354,13 @@ The app and the CLI count with `o200k_base` (via `gpt-tokenizer`). Claude and Ge
 
 **Is it free?** Yes. Apache-2.0, no account, no paid tier.
 
-**Does anything leave my machine?** Your documents never do. See [Privacy](#privacy) for the optional one-time data downloads and the daily version check you can turn off.
+**Does anything leave my machine?** Your documents never do. A URL you ask for is fetched with a plain GET that carries nothing but the address. See [Privacy](#privacy) for the optional one-time data downloads and the daily version check you can turn off.
 
 **How do I update?** The web app and the CLI tell you when a new version exists. With a global npm install, click **Update** in the web app (loopback only) or run `distill-llm update`, then restart distill. With npx, run `npx distill-llm@latest`. With Docker, run `docker pull ghcr.io/nievesjesus/distill`. With the desktop app, use the banner (or the version menu). Installs from before 0.2.0 have no updater: download the new installer once from [GitHub Releases](https://github.com/nievesjesus/distill/releases).
 
 **Why not just give the PDF to the model?** You can, and for charts and layout-heavy pages you sometimes should. For text, the same content as Markdown costs a fraction of the tokens: about a third on our demo files.
 
-**Will the hook break my agent?** No. It only touches PDF reads inside your project (Office files go through the skill and a Bash call you approve), never blocks a read, steps aside when a `Read` deny or ask rule could match, and falls back to the original file on any error.
+**Will the hook break my agent?** No. It only touches reads of PDFs, saved MHTML pages, EPUBs and emails inside your project (Office files go through the skill and a Bash call you approve), never blocks a read, steps aside when a `Read` deny or ask rule could match, and falls back to the original file on any error.
 
 **Is LLMLingua-2 safe to use on contracts?** It is lossy by design: it removes words. Keep it off when every word matters.
 

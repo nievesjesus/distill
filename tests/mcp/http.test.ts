@@ -26,6 +26,7 @@ async function start(allowedHosts: string[] = []) {
     createServer: () =>
       createMcpServer({
         distiller: {
+          distillUrl: async () => { throw new Error('unused'); },
           renderPage: async () => { throw new Error('unused'); },
           async distillFile() {
             throw new Error('unused');

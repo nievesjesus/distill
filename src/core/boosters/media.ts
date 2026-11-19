@@ -1,7 +1,8 @@
 import { mapProse } from './segments';
 
-const IMAGE = /!\[([^\]]*)\]\([^)]*\)/g;
-const LINK = /\[([^\]]+)\]\([^)]*\)/g;
+const TARGET = String.raw`\((?:[^()"]|\([^()]*\)|"[^"]*")*\)`;
+const IMAGE = new RegExp(String.raw`!\[([^\]]*)\]${TARGET}`, 'g');
+const LINK = new RegExp(String.raw`\[((?:[^\[\]]|\[[^\[\]]*\])+)\]${TARGET}`, 'g');
 const UNDERLINE = /<\/?u\s*>/gi;
 
 function stripUnderline(text: string): string {

@@ -74,6 +74,8 @@ function gitCheckIgnore(cwd: string, file: string): boolean | null {
 
 const BYTES_PER_MB = 1024 * 1024;
 
+const collectHost = (value: string, previous: string[]): string[] => [...previous, value];
+
 function parsePrice(value: string): number {
   const price = Number(value);
   if (value.trim() === '' || !Number.isFinite(price) || price < 0) throw new InvalidArgumentError('must be a non-negative number');
@@ -204,6 +206,7 @@ interface McpOptions {
   host: string;
   root?: string[];
   allowedHosts?: string[];
+  ignoreRobotsTxt?: boolean;
 }
 
 interface WebOptions {
@@ -332,8 +335,8 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   program
     .command('convert')
-    .description('Convert documents to optimized Markdown')
-    .argument('<files...>', 'files to convert')
+    .description('Convert documents and web pages to optimized Markdown')
+    .argument('<files...>', 'files or http(s) URLs to convert')
     .option('--out <dir>', 'write the Markdown files into this directory')
     .option('--no-optimize', 'skip all boosters')
     .option('--boosters <list>', 'comma-separated boosters: dedupe, media, tables, ws', parseBoosters)
@@ -345,6 +348,9 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--limit <n>', 'with --stdout: number of lines to print', parsePositiveInt)
     .option('--max-tokens <n>', 'with --stdout: print an index and the first lines when the document is larger than this', parsePositiveInt)
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
+    .option('--allow-private', 'allow URLs that resolve to private, loopback or link-local addresses')
+    .option('--allow-host <host>', 'allow this host even if it resolves to a private address (repeatable)', collectHost, [])
+    .option('--full', 'for web pages and HTML files: keep the whole page instead of extracting the main content')
     .action(async (files: string[], options: ConvertOptions) => {
       const code = await runConvert(files, options, {
         stdout,
@@ -359,10 +365,12 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   program
     .command('outline')
-    .description('Print an index of a document with line ranges and token counts')
-    .argument('<file>', 'file to index')
+    .description('Print an index of a document or web page with line ranges and token counts')
+    .argument('<file>', 'file or http(s) URL to index')
     .option('--json', 'print the index as JSON')
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
+    .option('--allow-private', 'allow URLs that resolve to private, loopback or link-local addresses')
+    .option('--allow-host <host>', 'allow this host even if it resolves to a private address (repeatable)', collectHost, [])
     .action(async (file: string, options: OutlineOptions) => {
       const code = await runOutline(file, options, { stdout, stderr, openDistiller });
       if (code !== 0) exit(code);
@@ -439,6 +447,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--host <h>', 'host to bind (with --http)', '127.0.0.1')
     .option('--root <dir>', 'directory the HTTP server may read from (repeatable, default: cwd)', (value: string, previous: string[] = []) => [...previous, value])
     .option('--allowed-hosts <list>', 'comma-separated hostnames accepted when bound to a non-loopback host', parseHostList)
+    .option('--ignore-robots-txt', 'let distill_url fetch pages that robots.txt disallows')
     .action(async (options: McpOptions) => {
       let distiller: Distiller;
       try {
@@ -456,6 +465,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           health: () => distiller.health(),
           resolvePath,
           savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
+          ...(options.ignoreRobotsTxt ? { ignoreRobotsTxt: true } : {}),
           recordUsage: (kind, savings) => recordUsage({ source: 'mcp', kind, savings }, { cacheDir, env }),
           ...(maxResultTokens === undefined ? {} : { maxResultTokens }),
         });

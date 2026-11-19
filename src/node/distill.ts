@@ -17,6 +17,12 @@ import { createLinguaInstaller } from './lingua-install';
 import { withBuiltinOffice } from './office';
 import { createParser } from './parse';
 import type { Parser } from './parse';
+import { createWebCache } from './web/cache';
+import { createUrlDistiller } from './web/distill-url';
+import type { UrlOptions } from './web/distill-url';
+import { fetchUrl } from './web/fetch';
+import type { FetchOptions, FetchResult } from './web/fetch';
+import { withSavedFormats } from './web/saved';
 
 const DEFAULT_RATE = 0.5;
 const PAGE_IMAGE_DPI = 100;
@@ -25,9 +31,16 @@ const NO_LINGUA: LinguaStatus = { installed: false, installable: false, model: '
 const LINGUA_NOT_INSTALLED = 'LLMLingua-2 is not installed. Install it once from the web app (npx distill-llm).';
 
 export interface DistillOptions {
+  mode?: 'clean' | 'full';
   boosters?: ReadonlySet<LocalBoosterId>;
   lingua?: boolean;
   rate?: number;
+}
+
+export interface DistillUrlOptions extends DistillOptions {
+  allowPrivate?: boolean;
+  allowHosts?: readonly string[];
+  robots?: 'ignore' | 'respect';
 }
 
 export interface RenderedPage {
@@ -39,6 +52,7 @@ export interface RenderedPage {
 
 export interface Distiller {
   distillFile(path: string, opts?: DistillOptions): Promise<DistillResult>;
+  distillUrl(url: string, opts?: DistillUrlOptions): Promise<DistillResult>;
   renderPage(path: string, page: number): Promise<RenderedPage>;
   health(): Health;
   close(): void;
@@ -51,8 +65,23 @@ export function createDistiller(deps: {
   maxBytes?: number;
   version?: string;
   liteparseVersion?: string;
+  fetchUrl?: (url: string, options: FetchOptions) => Promise<FetchResult>;
+  webCacheDir?: string;
+  now?: () => number;
 }): Distiller {
   const maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
+
+  function linguaFor(opts: DistillOptions) {
+    const lingua = opts.lingua ? deps.lingua : undefined;
+    if (opts.lingua && !lingua?.status().installed) throw new DistillError('lingua_unavailable', lingua?.status().unsupportedReason ?? LINGUA_NOT_INSTALLED);
+    return lingua;
+  }
+
+  async function polish(markdown: string, opts: DistillOptions): Promise<string> {
+    const boosted = runBoosters(markdown, opts.boosters ?? DEFAULT_ACTIVE);
+    const lingua = linguaFor(opts);
+    return lingua ? await lingua.compress(boosted, { rate: opts.rate ?? DEFAULT_RATE }) : boosted;
+  }
 
   async function sizeOf(path: string): Promise<number> {
     try {
@@ -64,7 +93,17 @@ export function createDistiller(deps: {
     throw new DistillError('not_found', `Not a file: ${path}`);
   }
 
-  return {
+  const distillUrlImpl = createUrlDistiller({
+    fetch: deps.fetchUrl ?? fetchUrl,
+    ...(deps.webCacheDir ? { cache: createWebCache(deps.webCacheDir) } : {}),
+    version: deps.version ?? '',
+    now: deps.now ?? Date.now,
+    checkLingua: (opts: UrlOptions) => void linguaFor(opts),
+    polish: (markdown: string, opts: UrlOptions) => polish(markdown, opts),
+    distillDocument: (path: string, opts: UrlOptions) => distiller.distillFile(path, opts),
+  });
+
+  const distiller: Distiller = {
     async distillFile(path, opts = {}) {
       const size = await sizeOf(path);
       const name = basename(path);
@@ -74,25 +113,24 @@ export function createDistiller(deps: {
       if (needsLibreOfficeFor(name) && !deps.libreoffice) {
         throw new DistillError('needs_libreoffice', 'LibreOffice is required to read this file type');
       }
-      const lingua = opts.lingua ? deps.lingua : undefined;
-      if (opts.lingua && !lingua?.status().installed) throw new DistillError('lingua_unavailable', lingua?.status().unsupportedReason ?? LINGUA_NOT_INSTALLED);
+      linguaFor(opts);
 
       const started = performance.now();
-      const parsed = await deps.parser.toMarkdown(path);
-      const boosted = runBoosters(parsed.markdown, opts.boosters ?? DEFAULT_ACTIVE);
-      const markdown = lingua ? await lingua.compress(boosted, { rate: opts.rate ?? DEFAULT_RATE }) : boosted;
+      const parsed = await deps.parser.toMarkdown(path, opts.mode ? { mode: opts.mode } : undefined);
+      const markdown = await polish(parsed.markdown, opts);
       return {
         path,
         name,
         kind,
         pages: parsed.pages,
         markdown,
-        tokens: { raw: countTokens(parsed.markdown), out: countTokens(markdown) },
+        tokens: { raw: parsed.rawTokens ?? countTokens(parsed.markdown), out: countTokens(markdown) },
         ms: Math.round(performance.now() - started),
         ...(parsed.engine ? { engine: parsed.engine } : {}),
         ...(parsed.visualPages ? { visualPages: parsed.visualPages } : {}),
       };
     },
+    distillUrl: (url, opts = {}) => distillUrlImpl(url, opts),
     async renderPage(path, page) {
       if (!Number.isInteger(page) || page < 1) throw new DistillError('bad_request', 'page must be a whole number from 1');
       const size = await sizeOf(path);
@@ -120,6 +158,7 @@ export function createDistiller(deps: {
     }),
     close: () => deps.parser.close(),
   };
+  return distiller;
 }
 
 function readVersion(packageJsonPath: string): string {
@@ -133,13 +172,13 @@ export async function openDistiller(maxBytes?: number): Promise<Distiller> {
   const version = readVersion(join(packageRoot, 'package.json'));
   const liteparseVersion = readVersion(require.resolve('@llamaindex/liteparse/package.json'));
   const libreoffice = await exposeLibreOffice();
-  const parser = withBuiltinOffice(createParser(), { libreoffice });
+  const parser = withSavedFormats(withBuiltinOffice(createParser(), { libreoffice }));
   try {
     const cacheDir = join(homedir(), '.cache', 'distill-llm');
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
     const lingua = createLingua({ cacheDir, installer });
     await lingua.probe();
-    return createDistiller({ parser, lingua, libreoffice, maxBytes, version, liteparseVersion });
+    return createDistiller({ parser, lingua, libreoffice, maxBytes, version, liteparseVersion, webCacheDir: join(cacheDir, 'web') });
   } catch (error) {
     parser.close();
     throw error;

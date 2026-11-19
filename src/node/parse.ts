@@ -4,7 +4,7 @@ import type { VisualKind, VisualPage } from '../core/types';
 import { DistillError } from './errors';
 
 export interface Parser {
-  toMarkdown(path: string): Promise<{ markdown: string; pages: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[] }>;
+  toMarkdown(path: string, opts?: { mode?: 'clean' | 'full' }): Promise<{ markdown: string; pages: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[]; rawTokens?: number }>;
   toJson(path: string): Promise<unknown>;
   renderPage(path: string, page: number, opts: { dpi: number }): Promise<RenderedPng>;
   close(): void;
