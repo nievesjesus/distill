@@ -20,6 +20,7 @@ function fakeDistiller(fail: Set<string> = new Set(), markdown?: string) {
   const calls: { path: string; opts: unknown }[] = [];
   const close = vi.fn();
   const distiller: Distiller = {
+    renderPage: async () => { throw new Error('unused'); },
     async distillFile(path, opts) {
       calls.push({ path, opts });
       const name = basename(path);

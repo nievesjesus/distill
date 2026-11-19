@@ -51,6 +51,18 @@ describe('createParser', () => {
     await expect(parser.toMarkdown(bad)).rejects.toMatchObject({ code: 'parse_failed' });
   }, 30_000);
 
+  it('renders a pdf page to a png at 100 dpi', async () => {
+    const p = await writeTmp('render.pdf', makeSamplePdf(['Quarterly Report']));
+    const page = await parser.renderPage(p, 1, { dpi: 100 });
+    expect(page.png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+    expect([page.width, page.height]).toEqual([850, 1100]);
+  }, 30_000);
+
+  it('maps a missing page to bad_request', async () => {
+    const p = await writeTmp('render-oob.pdf', makeSamplePdf(['Quarterly Report']));
+    await expect(parser.renderPage(p, 9, { dpi: 100 })).rejects.toMatchObject({ code: 'bad_request' });
+  }, 30_000);
+
   it('maps timeouts to timeout', async () => {
     await expect(slow.toMarkdown(bigPdfPath)).rejects.toMatchObject({ code: 'timeout' });
   }, 30_000);

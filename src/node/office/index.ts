@@ -46,6 +46,7 @@ export function withBuiltinOffice(
       if (type === null) return parser.toJson(path);
       return (await read(type, await load(path))).json;
     },
+    renderPage: (path, page, opts) => parser.renderPage(path, page, opts),
     close: () => parser.close(),
   };
 }

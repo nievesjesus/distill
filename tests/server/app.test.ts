@@ -51,6 +51,7 @@ function setup(
       jsonPaths.push(path);
       return { pages: [{ n: 1 }] };
     },
+    renderPage: async () => { throw new Error('unused'); },
     close() {},
     ...opts.parser,
   };

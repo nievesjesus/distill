@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -19,6 +19,8 @@ import { createParser } from './parse';
 import type { Parser } from './parse';
 
 const DEFAULT_RATE = 0.5;
+const PAGE_IMAGE_DPI = 100;
+const IMAGE_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
 const NO_LINGUA: LinguaStatus = { installed: false, installable: false, model: 'tinybert', state: 'idle', progress: 0 };
 const LINGUA_NOT_INSTALLED = 'LLMLingua-2 is not installed. Install it once from the web app (npx distill-llm).';
 
@@ -28,8 +30,16 @@ export interface DistillOptions {
   rate?: number;
 }
 
+export interface RenderedPage {
+  image: Buffer;
+  mimeType: string;
+  width?: number;
+  height?: number;
+}
+
 export interface Distiller {
   distillFile(path: string, opts?: DistillOptions): Promise<DistillResult>;
+  renderPage(path: string, page: number): Promise<RenderedPage>;
   health(): Health;
   close(): void;
 }
@@ -82,6 +92,24 @@ export function createDistiller(deps: {
         ...(parsed.engine ? { engine: parsed.engine } : {}),
         ...(parsed.visualPages ? { visualPages: parsed.visualPages } : {}),
       };
+    },
+    async renderPage(path, page) {
+      if (!Number.isInteger(page) || page < 1) throw new DistillError('bad_request', 'page must be a whole number from 1');
+      const size = await sizeOf(path);
+      const name = basename(path);
+      const kind = detectKind(name);
+      if (!kind) throw new DistillError('unsupported_type', 'Unsupported file type');
+      if (size > maxBytes) throw new DistillError('too_large', `File exceeds the ${maxBytes} byte limit`);
+      if (kind === 'PDF') {
+        const rendered = await deps.parser.renderPage(path, page, { dpi: PAGE_IMAGE_DPI });
+        return { image: rendered.png, mimeType: 'image/png', width: rendered.width, height: rendered.height };
+      }
+      const mimeType = IMAGE_MIME[name.slice(name.lastIndexOf('.') + 1).toLowerCase()];
+      if (kind !== 'IMG' || mimeType === undefined) {
+        throw new DistillError('bad_request', 'Only PDF pages and PNG, JPG or WebP images can be shown');
+      }
+      if (page !== 1) throw new DistillError('bad_request', 'An image has a single page: pass page 1');
+      return { image: await readFile(path), mimeType };
     },
     health: () => ({
       version: deps.version ?? '',

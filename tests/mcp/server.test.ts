@@ -24,6 +24,7 @@ function fakeDistiller(calls: { path: string; opts: unknown }[] = []): Distiller
       if (name.startsWith('bad')) throw new DistillError('parse_failed', 'broken file');
       return { path, name, kind: 'PDF', pages: 2, markdown: `# ${name}\n`, tokens: { raw: 100, out: 60 }, ms: 5 };
     },
+    renderPage: async () => ({ image: Buffer.from('PNGDATA'), mimeType: 'image/png', width: 850, height: 1100 }),
     health: () => HEALTH,
     close: () => {},
   };
@@ -52,6 +53,7 @@ function bigDistiller(lineCounts: Record<string, number>, calls: string[] = []):
       const count = lineCounts[name] ?? 1;
       return { path, name, kind: 'PDF', pages: 2, markdown: LINE.repeat(count), tokens: { raw: 100 * count, out: 60 * count }, ms: 5 };
     },
+    renderPage: async () => ({ image: Buffer.from('PNGDATA'), mimeType: 'image/png', width: 850, height: 1100 }),
     health: () => HEALTH,
     close: () => {},
   };
@@ -81,10 +83,10 @@ afterEach(async () => {
 });
 
 describe('createMcpServer', () => {
-  it('lists the four tools, all read-only with a title', async () => {
+  it('lists the five tools, all read-only with a title', async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline']);
+    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image']);
     for (const tool of tools) {
       expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
       expect(tool.title?.length).toBeGreaterThan(0);
@@ -100,6 +102,73 @@ describe('createMcpServer', () => {
     expect(description('distill_file')).toContain('1 KB');
     expect(description('distill_outline')).toContain('distill_file');
     expect(description('distill_files')).toContain('distill_file');
+    expect(description('distill_file')).toContain('visualPages');
+    expect(description('distill_outline')).toContain('visualPages');
+    expect(description('distill_page_image')).toContain('visualPages');
+  });
+
+  describe('visual pages', () => {
+    const visual = [{ page: '2', kind: 'figure' as const }];
+    const withVisual = (): Distiller => ({
+      ...fakeDistiller(),
+      async distillFile(path) {
+        const name = path.split('/').pop() as string;
+        return { path, name, kind: 'PDF', pages: 2, markdown: `# ${name}\n`, tokens: { raw: 100, out: 60 }, ms: 5, visualPages: visual };
+      },
+    });
+
+    it('distill_file reports visualPages on the first page of a read', async () => {
+      const client = await connect({ distiller: withVisual() });
+      const first = await client.callTool({ name: 'distill_file', arguments: { path: '/x/doc.pdf' } });
+      expect((first.structuredContent as { visualPages?: unknown }).visualPages).toEqual(visual);
+      const later = await client.callTool({ name: 'distill_file', arguments: { path: '/x/doc.pdf', offset: 1, limit: 1 } });
+      expect((later.structuredContent as { visualPages?: unknown }).visualPages).toBeUndefined();
+    });
+
+    it('distill_outline reports visualPages', async () => {
+      const client = await connect({ distiller: withVisual() });
+      const result = await client.callTool({ name: 'distill_outline', arguments: { path: '/x/doc.pdf' } });
+      expect((result.structuredContent as { visualPages?: unknown }).visualPages).toEqual(visual);
+    });
+
+    it('omits visualPages when there are none', async () => {
+      const client = await connect();
+      const result = await client.callTool({ name: 'distill_outline', arguments: { path: '/x/doc.pdf' } });
+      expect(Object.keys(result.structuredContent as object)).not.toContain('visualPages');
+    });
+  });
+
+  describe('distill_page_image', () => {
+    it('returns the page as an image block with sizes and no bytes in structuredContent', async () => {
+      const client = await connect();
+      const result = await client.callTool({ name: 'distill_page_image', arguments: { path: '/x/doc.pdf', page: 2 } });
+      expect(result.isError).toBeFalsy();
+      expect(result.content).toEqual([{ type: 'image', data: Buffer.from('PNGDATA').toString('base64'), mimeType: 'image/png' }]);
+      expect(result.structuredContent).toEqual({ page: 2, width: 850, height: 1100, bytes: 7 });
+    });
+
+    it('resolves the path with the shared rules', async () => {
+      const seen: string[] = [];
+      const distiller = { ...fakeDistiller(), renderPage: async (path: string) => { seen.push(path); return { image: Buffer.from('x'), mimeType: 'image/png' }; } };
+      const client = await connect({ distiller, resolvePath: async (p) => `/root/${p}` });
+      const result = await client.callTool({ name: 'distill_page_image', arguments: { path: 'doc.pdf', page: 1 } });
+      expect(seen).toEqual(['/root/doc.pdf']);
+      expect(result.structuredContent).toEqual({ page: 1, bytes: 1 });
+    });
+
+    it('reports errors with their code', async () => {
+      const distiller = { ...fakeDistiller(), renderPage: async () => { throw new DistillError('bad_request', 'Only PDFs and images can be shown'); } };
+      const client = await connect({ distiller });
+      const result = await client.callTool({ name: 'distill_page_image', arguments: { path: '/x/a.docx', page: 1 } });
+      expect(result.isError).toBe(true);
+      expect(result.content).toEqual([{ type: 'text', text: 'bad_request: Only PDFs and images can be shown' }]);
+    });
+
+    it('rejects a page below 1', async () => {
+      const client = await connect();
+      const result = await client.callTool({ name: 'distill_page_image', arguments: { path: '/x/doc.pdf', page: 0 } }).catch((e: unknown) => ({ isError: true, e }));
+      expect(result.isError).toBe(true);
+    });
   });
 
   it('distill_file returns markdown text and structured tokens', async () => {
@@ -272,6 +341,7 @@ describe('paging', () => {
   it('hard-cuts a single overlong line and flags it', async () => {
     const long = `${'word '.repeat(200)}\nshort\n`;
     const distiller: Distiller = {
+      renderPage: async () => { throw new Error('unused'); },
       async distillFile(path) {
         return { path, name: 'long.pdf', kind: 'PDF', pages: 1, markdown: long, tokens: { raw: 10, out: 10 }, ms: 1 };
       },
@@ -367,6 +437,7 @@ describe('paging', () => {
 describe('outline and sections', () => {
   const DOC = ['# Intro', 'intro line', '## Alpha', 'alpha 1', 'alpha 2', '## Beta', 'beta 1', ''].join('\n');
   const docDistiller = (markdown: string): Distiller => ({
+    renderPage: async () => { throw new Error('unused'); },
     async distillFile(path) {
       return { path, name: 'doc.pdf', kind: 'PDF', pages: 3, markdown, tokens: { raw: 100, out: 60 }, ms: 1 };
     },

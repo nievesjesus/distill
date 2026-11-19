@@ -29,6 +29,8 @@ const linguaSchema = z
   .boolean()
   .optional()
   .describe('Optional LLMLingua-2 compression, lossy: it removes words. Only works when installed (see distill_capabilities); avoid it for contracts and other exact text');
+const visualPagesSchema = z.array(z.object({ page: z.string(), kind: z.enum(['figure', 'scan']) }));
+const VISUAL_HINT = 'Pages listed in visualPages contain charts or images that are not in the text; if the question depends on them, view the original page with distill_page_image.';
 const entrySchema = z.object({
   kind: z.enum(['heading', 'page', 'start']),
   level: z.number(),
@@ -181,7 +183,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_file',
     {
       title: 'Read a document as Markdown',
-      description: `Read one local document (PDF, DOCX, PPTX, XLSX, ODT/ODS/ODP, CSV, PNG/JPG/TIFF/WebP) as token-lean Markdown. Read-only: never modifies or uploads the file. Use distill_files for several files at once and distill_outline first for long documents, then pass \`section\` or \`offset\`/\`limit\`. Output is capped at about ${budget} tokens per call; follow \`nextOffset\`. Fails with password_protected, needs_libreoffice (legacy .doc/.xls/.ppt and OpenDocument), forbidden (outside allowed roots), too_large (over ${maxSize}) or parse_failed. Tables and scans are only as faithful as the parser; check charts in the original.`,
+      description: `Read one local document (PDF, DOCX, PPTX, XLSX, ODT/ODS/ODP, CSV, PNG/JPG/TIFF/WebP) as token-lean Markdown. Read-only: never modifies or uploads the file. Use distill_files for several files at once and distill_outline first for long documents, then pass \`section\` or \`offset\`/\`limit\`. Output is capped at about ${budget} tokens per call; follow \`nextOffset\`. Fails with password_protected, needs_libreoffice (legacy .doc/.xls/.ppt and OpenDocument), forbidden (outside allowed roots), too_large (over ${maxSize}) or parse_failed. Tables and scans are only as faithful as the parser. ${VISUAL_HINT}`,
       annotations: READ_ONLY,
       inputSchema: {
         path: z.string().min(1).describe(PATH_HINT),
@@ -214,6 +216,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         truncated: z.boolean().optional(),
         tokens: tokensSchema,
         savings: savingsSchema.optional(),
+        visualPages: visualPagesSchema.optional(),
         outline: z.string().optional(),
         markdown: z.string(),
       },
@@ -241,7 +244,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
         }
         const more = page.to < page.end;
         const continuation = more ? continuationFor(page, limit !== undefined) : undefined;
-        const savings = offset === 1 && args.limit === undefined && args.section === undefined ? estimateSavings(result) : undefined;
+        const firstRead = offset === 1 && args.limit === undefined && args.section === undefined;
+        const savings = firstRead ? estimateSavings(result) : undefined;
+        const visualPages = firstRead && result.visualPages && result.visualPages.length > 0 ? result.visualPages : undefined;
         if (savings) track(result.kind, savings);
         const note = withNote && savings ? savingsNote(savings) : undefined;
         const partialStart = args.offset === undefined && args.limit === undefined && args.section === undefined && page.to < page.total;
@@ -263,6 +268,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
             ...(page.truncated ? { truncated: true } : {}),
             tokens: result.tokens,
             ...(savings ? { savings } : {}),
+            ...(visualPages ? { visualPages } : {}),
             ...(outline ? { outline } : {}),
             markdown: page.markdown,
           },
@@ -278,7 +284,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_outline',
     {
       title: 'Index a document by section',
-      description: `Index one local document (same formats as distill_file) without reading it: a table of contents with line ranges, page numbers and token counts per section. Read-only: never modifies or uploads the file. Call it first for long documents, then read only what you need with distill_file using \`section\` or \`offset\`/\`limit\`. Line numbers refer to the converted Markdown, not to the original file. Small and unstructured documents get a single entry. Fails like distill_file (password_protected, needs_libreoffice, forbidden, too_large over ${maxSize}, parse_failed).`,
+      description: `Index one local document (same formats as distill_file) without reading it: a table of contents with line ranges, page numbers and token counts per section. Read-only: never modifies or uploads the file. Call it first for long documents, then read only what you need with distill_file using \`section\` or \`offset\`/\`limit\`. Line numbers refer to the converted Markdown, not to the original file. Small and unstructured documents get a single entry. ${VISUAL_HINT} Fails like distill_file (password_protected, needs_libreoffice, forbidden, too_large over ${maxSize}, parse_failed).`,
       annotations: READ_ONLY,
       inputSchema: {
         path: z.string().min(1).describe(PATH_HINT),
@@ -293,6 +299,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         lines: z.number(),
         tokens: z.number(),
         entries: z.array(entrySchema),
+        visualPages: visualPagesSchema.optional(),
       },
     },
     async (args) => {
@@ -315,6 +322,44 @@ export function createMcpServer(deps: McpDeps): McpServer {
             lines: outline.lines,
             tokens: outline.tokens,
             entries: outline.entries,
+            ...(result.visualPages && result.visualPages.length > 0 ? { visualPages: result.visualPages } : {}),
+          },
+        };
+      } catch (error) {
+        const { code, message } = describeError(error);
+        return { isError: true, content: [{ type: 'text' as const, text: `${code}: ${message}` }] };
+      }
+    },
+  );
+
+  server.registerTool(
+    'distill_page_image',
+    {
+      title: 'View one page of a PDF as an image',
+      description: `Render one page of a local PDF as a PNG image (about 100 dpi), or return an image file (PNG, JPG, WebP) itself. Read-only: never modifies or uploads the file. Use it only for pages listed in visualPages by distill_file or distill_outline, and only when the question depends on the chart or image on that page: it costs far more tokens than the Markdown. One page per call (page is 1-based). Fails with bad_request (other file types, page out of range), forbidden (outside allowed roots), too_large (over ${maxSize}), not_found or parse_failed.`,
+      annotations: READ_ONLY,
+      inputSchema: {
+        path: z.string().min(1).describe(PATH_HINT),
+        page: z.number().int().min(1).describe('Page number (1-based), as listed in visualPages; use 1 for an image file'),
+      },
+      outputSchema: {
+        page: z.number(),
+        width: z.number().optional(),
+        height: z.number().optional(),
+        bytes: z.number(),
+      },
+    },
+    async (args) => {
+      try {
+        const resolved = await deps.resolvePath(args.path);
+        const rendered = await deps.distiller.renderPage(resolved, args.page);
+        return {
+          content: [{ type: 'image' as const, data: rendered.image.toString('base64'), mimeType: rendered.mimeType }],
+          structuredContent: {
+            page: args.page,
+            ...(rendered.width === undefined ? {} : { width: rendered.width }),
+            ...(rendered.height === undefined ? {} : { height: rendered.height }),
+            bytes: rendered.image.length,
           },
         };
       } catch (error) {

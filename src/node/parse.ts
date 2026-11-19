@@ -6,7 +6,14 @@ import { DistillError } from './errors';
 export interface Parser {
   toMarkdown(path: string): Promise<{ markdown: string; pages: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[] }>;
   toJson(path: string): Promise<unknown>;
+  renderPage(path: string, page: number, opts: { dpi: number }): Promise<RenderedPng>;
   close(): void;
+}
+
+export interface RenderedPng {
+  png: Buffer;
+  width: number;
+  height: number;
 }
 
 export interface PageComplexity {
@@ -113,6 +120,15 @@ export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {
 
   const markdownParser = build('markdown');
   let jsonParser: LiteParse | null = null;
+  const renderers = new Map<number, LiteParse>();
+  const rendererFor = (dpi: number): LiteParse => {
+    let renderer = renderers.get(dpi);
+    if (!renderer) {
+      renderer = new LiteParse({ dpi, ocrEnabled: false, quiet: true, poolSize: 1, parseTimeoutMs });
+      renderers.set(dpi, renderer);
+    }
+    return renderer;
+  };
 
   return {
     async toMarkdown(path) {
@@ -132,9 +148,21 @@ export function createParser(opts: { poolSize?: number; timeoutMs?: number } = {
         throw mapError(error, path);
       }
     },
+    async renderPage(path, page, opts) {
+      try {
+        const [shot] = await rendererFor(opts.dpi).screenshot(path, [page]);
+        if (!shot) throw new DistillError('parse_failed', `Page ${page} could not be rendered`);
+        return { png: shot.imageBuffer, width: shot.width, height: shot.height };
+      } catch (error) {
+        const mapped = mapError(error, path);
+        if (/out of range/i.test(mapped.message)) throw new DistillError('bad_request', mapped.message, { cause: error });
+        throw mapped;
+      }
+    },
     close() {
       markdownParser.close();
       jsonParser?.close();
+      for (const renderer of renderers.values()) renderer.close();
     },
   };
 }
