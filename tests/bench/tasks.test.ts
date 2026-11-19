@@ -59,6 +59,19 @@ describe('validate', () => {
     expect(errors.length).toBe(5);
   });
 
+  it('validates facts expectations', async () => {
+    const { validate } = await load('tasks.mjs');
+    const ok = { ...task, id: 'f', tags: ['summary'], expected: { type: 'facts', value: ['a', 'b', 3], min: 2 } };
+    expect(validate([doc], [ok])).toEqual([]);
+    const bad = [
+      { ...ok, id: 'f1', expected: { type: 'facts', value: ['a'], min: 1 } },
+      { ...ok, id: 'f2', expected: { type: 'facts', value: ['a', 'b'], min: 3 } },
+      { ...ok, id: 'f3', expected: { type: 'facts', value: ['a', 'b'] } },
+      { ...ok, id: 'f4', expected: { type: 'facts', value: ['a', ''], min: 1 } },
+    ];
+    expect(validate([doc], bad).length).toBe(4);
+  });
+
   it('flags bad sha256, non-https url and bad local reference', async () => {
     const { validate } = await load('tasks.mjs');
     const errors = validate(

@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from './paths.mjs';
 
-export const TAGS = ['simple', 'deep', 'table', 'chart', 'office', 'multi'];
-const EXPECTED_TYPES = ['number', 'text', 'oneOf'];
+export const TAGS = ['simple', 'deep', 'table', 'chart', 'office', 'multi', 'summary', 'table-reasoning'];
+const EXPECTED_TYPES = ['number', 'text', 'oneOf', 'facts'];
 
 export function loadJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -62,6 +62,10 @@ export function validate(corpus, tasks) {
       if (expected.tolerance !== undefined && (typeof expected.tolerance !== 'number' || expected.tolerance < 0)) errors.push(`task ${id}: bad tolerance`);
     } else if (expected.type === 'text') {
       if (typeof expected.value !== 'string' || expected.value === '') errors.push(`task ${id}: text value required`);
+    } else if (expected.type === 'facts') {
+      const facts = expected.value;
+      if (!Array.isArray(facts) || facts.length < 2 || facts.some((v) => (typeof v !== 'string' && typeof v !== 'number') || String(v) === '')) errors.push(`task ${id}: facts needs at least two non-empty strings or numbers`);
+      else if (!Number.isInteger(expected.min) || expected.min < 1 || expected.min > facts.length) errors.push(`task ${id}: facts min must be between 1 and ${facts.length}`);
     } else if (!Array.isArray(expected.value) || expected.value.length === 0 || expected.value.some((v) => typeof v !== 'string' || v === '')) {
       errors.push(`task ${id}: oneOf needs a non-empty string array`);
     }

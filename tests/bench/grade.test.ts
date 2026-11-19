@@ -87,6 +87,22 @@ describe('gradeAnswer', () => {
     expect(gradeAnswer('United 175', expected)).toBe(false);
   });
 
+  it('grades facts by how many appear in the answer', async () => {
+    const { gradeAnswer } = await load();
+    const expected = { type: 'facts', value: ['2036', '174.70', 'Part B'], min: 2 };
+    expect(gradeAnswer('The HI fund is depleted in 2036 and the premium is $174.70', expected)).toBe(true);
+    expect(gradeAnswer('Depleted in 2036', expected)).toBe(false);
+    expect(gradeAnswer('2036, 174.70, Part B', { ...expected, min: 3 })).toBe(true);
+    expect(gradeAnswer('2036, 174.70', { ...expected, min: 3 })).toBe(false);
+  });
+
+  it('matches numeric facts across thousands separators and case', async () => {
+    const { gradeAnswer, countFacts } = await load();
+    expect(countFacts('Median income was $74,580', [74580, 'median'])).toBe(2);
+    expect(countFacts('income 74580 dollars', ['74,580'])).toBe(1);
+    expect(gradeAnswer('NOTHING relevant', { type: 'facts', value: ['a1', 'b2'], min: 1 })).toBe(false);
+  });
+
   it('returns null when there is no answer', async () => {
     const { gradeAnswer } = await load();
     expect(gradeAnswer(null, { type: 'number', value: 1 })).toBeNull();

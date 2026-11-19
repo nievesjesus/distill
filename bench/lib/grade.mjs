@@ -62,6 +62,15 @@ export function normalizeText(text) {
     .trim();
 }
 
+function normalizeFact(text) {
+  return normalizeText(String(text)).replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
+}
+
+export function countFacts(answer, facts) {
+  const haystack = normalizeFact(answer);
+  return facts.filter((fact) => haystack.includes(normalizeFact(fact))).length;
+}
+
 export function gradeAnswer(answer, expected) {
   if (answer === null || answer === undefined || answer === '') return null;
   if (expected.type === 'number') {
@@ -69,6 +78,7 @@ export function gradeAnswer(answer, expected) {
     const slack = Math.max(tolerance, Math.abs(expected.value) * 1e-9);
     return parseNumbers(answer).some((value) => Math.abs(value - expected.value) <= slack);
   }
+  if (expected.type === 'facts') return countFacts(answer, expected.value) >= (expected.min ?? expected.value.length);
   const haystack = normalizeText(answer);
   const accepted = expected.type === 'oneOf' ? expected.value : [expected.value];
   return accepted.some((value) => haystack.includes(normalizeText(value)));

@@ -6,6 +6,8 @@ export function parseStream(raw) {
   let malformed = 0;
   let distillUsed = false;
   const toolCalls = {};
+  const toolUses = [];
+  let converted = false;
   const seen = new Set();
   for (const line of raw.split('\n')) {
     const trimmed = line.trim();
@@ -28,6 +30,7 @@ export function parseStream(raw) {
     if (event.type === 'system' && event.subtype === 'hook_response' && typeof event.hook_name === 'string' && event.hook_name.startsWith('PreToolUse')) {
       const output = `${event.output ?? ''}${event.stdout ?? ''}`;
       if (DISTILL.test(output)) distillUsed = true;
+      if (output.includes('distill converted')) converted = true;
       continue;
     }
     if (event.type === 'assistant' && Array.isArray(event.message?.content)) {
@@ -39,6 +42,7 @@ export function parseStream(raw) {
             seen.add(block.id);
           }
           toolCalls[block.name] = (toolCalls[block.name] ?? 0) + 1;
+          toolUses.push({ name: block.name, input: block.input ?? {} });
           if (DISTILL.test(block.name)) distillUsed = true;
           if (block.name === 'Skill' && DISTILL.test(JSON.stringify(block.input ?? {}))) distillUsed = true;
         }
@@ -49,10 +53,11 @@ export function parseStream(raw) {
       for (const block of event.message.content) {
         const content = typeof block?.content === 'string' ? block.content : Array.isArray(block?.content) ? block.content.map((c) => c?.text ?? '').join('') : '';
         if (content.includes('[distill]')) distillUsed = true;
+        if (content.includes('distill converted')) converted = true;
       }
     }
   }
-  return { result, lastText, malformed, toolCalls, distillUsed };
+  return { result, lastText, malformed, toolCalls, toolUses, converted, distillUsed };
 }
 
 export function summarizeResult(parsed) {
