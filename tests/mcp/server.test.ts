@@ -473,20 +473,29 @@ describe('outline and sections', () => {
 });
 
 describe('usage recording', () => {
-  it('records distill_file from the start only', async () => {
+  it('records distill_file wherever it returns savings, never for a section or a later offset', async () => {
     const recorded: unknown[][] = [];
     const client = await connect({ recordUsage: (...args) => recorded.push(args), stat: fixedStat });
     await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
-    await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', offset: 1, limit: 1 } });
+    await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', offset: 2 } });
     await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', section: 'a.pdf' } });
     expect(recorded).toEqual([['PDF', SAVINGS]]);
   });
 
-  it('never records distill_outline and records each distill_files result', async () => {
+  it('records distill_outline once, even with the note disabled', async () => {
     const recorded: unknown[][] = [];
     const client = await connect({ recordUsage: (...args) => recorded.push(args), stat: fixedStat });
     await client.callTool({ name: 'distill_outline', arguments: { path: '/x/a.pdf' } });
-    expect(recorded).toEqual([]);
+    expect(recorded).toEqual([['PDF', SAVINGS]]);
+    const quiet: unknown[][] = [];
+    const silent = await connect({ recordUsage: (...args) => quiet.push(args), stat: fixedStat, savingsNote: false });
+    await silent.callTool({ name: 'distill_outline', arguments: { path: '/x/a.pdf' } });
+    expect(quiet).toEqual([['PDF', SAVINGS]]);
+  });
+
+  it('records each distill_files result', async () => {
+    const recorded: unknown[][] = [];
+    const client = await connect({ recordUsage: (...args) => recorded.push(args), stat: fixedStat });
     await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/bad.pdf', '/x/a.pdf', '/x/b.pdf'] } });
     expect(recorded).toEqual([['PDF', SAVINGS], ['PDF', SAVINGS]]);
   });

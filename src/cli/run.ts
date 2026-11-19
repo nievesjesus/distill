@@ -545,15 +545,12 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           try {
             const converted = await convertViaCache(getDistiller, absPath);
             const markdown = readFileSync(converted.mdPath, 'utf8');
-            if (converted.savings !== null) {
-              recordUsage({ source: 'hook', kind: extname(absPath).slice(1).toUpperCase() || 'unknown', savings: converted.savings }, { cacheDir, env });
-            }
             return converted.savings === null ? { path: converted.mdPath, markdown } : { path: converted.mdPath, savings: converted.savings, markdown };
           } catch (error) {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS) });
+        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);

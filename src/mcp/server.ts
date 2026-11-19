@@ -242,7 +242,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         const more = page.to < page.end;
         const continuation = more ? continuationFor(page, limit !== undefined) : undefined;
         const savings = offset === 1 && args.section === undefined ? estimateSavings(result) : undefined;
-        if (savings && args.limit === undefined) track(result.kind, savings);
+        if (savings) track(result.kind, savings);
         const note = withNote && savings ? savingsNote(savings) : undefined;
         const partialStart = args.offset === undefined && args.limit === undefined && args.section === undefined && page.to < page.total;
         const outline = partialStart ? renderOutline(buildOutline(result.markdown), { name: result.name }) : undefined;
@@ -300,7 +300,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
         const result = await distillOne(args.path, args);
         const outline = buildOutline(result.markdown);
         const text = renderOutline(outline, { name: result.name });
-        const note = withNote ? savingsNote(estimateSavings(result)) : undefined;
+        const savings = estimateSavings(result);
+        track(result.kind, savings);
+        const note = withNote ? savingsNote(savings) : undefined;
         const content: { type: 'text'; text: string }[] = [{ type: 'text', text }];
         if (note) content.push({ type: 'text', text: note });
         return {

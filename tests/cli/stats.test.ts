@@ -76,6 +76,16 @@ describe('stats recording', () => {
     expect(h.stdout.join('')).toContain('updatedInput');
     expect(readStats(cacheDir)).toMatchObject([{ source: 'hook', kind: 'PDF', out: 300 }]);
   });
+
+  it('does not record a hook read with offset or limit', async () => {
+    const file = join(dir, 'report.pdf');
+    writeFileSync(file, 'x');
+    const payload = JSON.stringify({ tool_name: 'Read', tool_input: { file_path: file, offset: 5, limit: 20 }, cwd: dir });
+    const h = harness({ DISTILL_NO_UPDATE_CHECK: '1' }, { readStdin: async () => payload });
+    await run(['hook', 'claude'], h.deps).catch(() => {});
+    expect(h.stdout.join('')).toContain('updatedInput');
+    expect(readStats(cacheDir)).toEqual([]);
+  });
 });
 
 describe('stats command', () => {

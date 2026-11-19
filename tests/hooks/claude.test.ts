@@ -76,6 +76,30 @@ describe('handleClaudePreToolUse', () => {
       expect(context(result)).toBe(`distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`);
     });
 
+    it('records usage once together with the note', async () => {
+      const file = pdf();
+      const recordUsage = vi.fn();
+      await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', savings }), deps({ recordUsage }));
+      expect(recordUsage).toHaveBeenCalledTimes(1);
+      expect(recordUsage).toHaveBeenCalledWith(file, savings);
+    });
+
+    it('records usage even when the note text is disabled', async () => {
+      const recordUsage = vi.fn();
+      await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => ({ path: '/c.md', savings }), deps({ savingsNote: false, recordUsage }));
+      expect(recordUsage).toHaveBeenCalledTimes(1);
+    });
+
+    it('adds no note and records nothing for reads with offset or limit', async () => {
+      for (const extra of [{ offset: 3 }, { limit: 10 }, { offset: 3, limit: 10 }]) {
+        const file = pdf();
+        const recordUsage = vi.fn();
+        const result = await handleClaudePreToolUse(payload({ file_path: file, ...extra }), async () => ({ path: '/c.md', savings }), deps({ recordUsage }));
+        expect(context(result)).toBe(`distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`);
+        expect(recordUsage).not.toHaveBeenCalled();
+      }
+    });
+
     it('omits the note when convert reports no savings', async () => {
       const result = await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => ({ path: '/c.md' }), deps());
       expect(context(result)).not.toContain('[distill]');

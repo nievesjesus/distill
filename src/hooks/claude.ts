@@ -15,6 +15,7 @@ export interface ClaudeHookDeps {
   platform?: NodeJS.Platform;
   plugin?: boolean;
   savingsNote?: boolean;
+  recordUsage?: (path: string, savings: SavingsEstimate) => void;
   indexMinTokens?: number;
 }
 
@@ -139,11 +140,17 @@ export async function handleClaudePreToolUse(
     if (await anyReadRestriction(files, candidates, ctx)) return null;
     if (deps.plugin === true && (await anyOwnHook(files))) return null;
     const converted = await convert(realOriginal);
-    const note = converted.savings !== undefined && deps.savingsNote !== false ? `\n${savingsNote(converted.savings)}` : '';
+    const paged = toolInput.offset !== undefined || toolInput.limit !== undefined;
+    let note = '';
+    if (!paged && converted.savings !== undefined) {
+      try {
+        deps.recordUsage?.(original, converted.savings);
+      } catch {}
+      if (deps.savingsNote !== false) note = `\n${savingsNote(converted.savings)}`;
+    }
     const lead = `distill converted ${basename(original)} to Markdown to save tokens. Original file: ${original}.`;
     const indexMin = deps.indexMinTokens ?? DEFAULT_INDEX_MIN_TOKENS;
     const markdown = converted.markdown;
-    const paged = toolInput.offset !== undefined || toolInput.limit !== undefined;
     if (!paged && markdown !== undefined && indexMin > 0) {
       const tokens = countTokens(markdown);
       if (tokens > indexMin) {
