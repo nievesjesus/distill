@@ -15,5 +15,6 @@ distill-llm convert --stdout --max-tokens 8000 "<path>"
 - Read the Markdown the command prints.
 - If the output starts with an index ("Index of ..."), the document is large: read only the sections you need by running the command again with `--offset <line> --limit <lines>` instead of `--max-tokens`, using the line numbers from the index.
 - Convert one file per call.
+- Pages marked figure in the Markdown contain charts or images that are not in the text; if the question depends on them, look at that page in the original.
 - Exit code 1 means the conversion failed; the message on stderr says why (for example the file is password-protected, or it is a .doc, .xls, .ppt or OpenDocument file and LibreOffice is missing).
 - For PDFs just use Read; the distill hook handles them.

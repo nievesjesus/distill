@@ -78,6 +78,10 @@ function scan(lines: string[]): { headings: Heading[]; markers: Marker[] } {
   return { headings, markers };
 }
 
+export function figurePagesIn(markdown: string): string[] {
+  return scan(markdown.split('\n')).markers.filter((marker) => marker.visual === 'figure').map((marker) => marker.label);
+}
+
 function pageAt(markers: Marker[], line: number): string | undefined {
   let label: string | undefined;
   for (const marker of markers) {
