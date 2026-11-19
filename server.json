@@ -8,13 +8,13 @@
     "source": "github"
   },
   "websiteUrl": "https://nievesjesus.github.io/distill/",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "distill-llm",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

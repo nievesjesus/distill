@@ -135,6 +135,15 @@ describe("release automation workflows", () => {
   });
 });
 
+describe("ci workflow", () => {
+  it("checks the lockfile with the npm 12 that publish uses", () => {
+    const text = read(".github/workflows/ci.yml");
+    expect(text).toContain("name: Check the lockfile with npm 12 (used by publish)");
+    expect(text).toContain("run: npx -y npm@12 ci --ignore-scripts --dry-run");
+    expect(text.indexOf("npx -y npm@12 ci")).toBeGreaterThan(text.indexOf("- run: npm ci"));
+  });
+});
+
 describe("mcp registry workflow", () => {
   const wf = () => read(".github/workflows/mcp-registry.yml");
   const COSIGN = "756fe2d284c7292c4e9b62c8a28f1e5629c59532";
