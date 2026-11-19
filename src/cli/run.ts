@@ -30,6 +30,7 @@ import { readLiteparseVersion } from '../node/versions';
 import { findPackageRoot } from '../node/lingua';
 import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
 import type { UpdateChecker } from '../node/update-check';
+import { cacheDirFromEnv } from '../node/cache-dir';
 import { createGlobalUpdater } from '../node/update-install';
 import type { GlobalUpdater } from '../node/update-install';
 import type { InstallMethod, UpdateCheck } from '../core/types';
@@ -225,8 +226,8 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const handleSignals = deps.handleSignals ?? true;
   const env = deps.env ?? process.env;
   const readStdin = deps.readStdin ?? defaultReadStdin;
-  const cacheDir = deps.cacheDir ?? join(homedir(), '.cache', 'distill-llm');
   const homeDir = deps.homeDir ?? homedir();
+  const cacheDir = deps.cacheDir ?? cacheDirFromEnv(env) ?? join(homeDir, '.cache', 'distill-llm');
   const cwd = deps.cwd ?? process.cwd();
   const which = deps.which ?? ((bin: string) => findOnPath(bin, env.PATH));
   const isTTY = deps.isTTY ?? Boolean(process.stdin.isTTY);
@@ -242,7 +243,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     checker = createUpdateChecker({
       current: readVersion(),
       method: detectInstallMethod({ packageRoot, env }),
-      cacheDir: join(homeDir, '.cache', 'distill-llm'),
+      cacheDir,
       env,
     });
     return checker;
@@ -572,7 +573,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
+        }, { homeDir, cacheDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);

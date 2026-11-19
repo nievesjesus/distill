@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, isAbsolute, join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../../src/cli/run';
 import type { Distiller } from '../../src/node/distill';
@@ -86,6 +86,23 @@ describe('stats recording', () => {
     await run(['hook', 'claude'], h.deps).catch(() => {});
     expect(h.stdout.join('')).toContain('updatedInput');
     expect(readStats(cacheDir)).toEqual([]);
+  });
+});
+
+describe('DISTILL_CACHE_DIR', () => {
+  it('moves the cache and the stats there', async () => {
+    const file = join(dir, 'report.pdf');
+    writeFileSync(file, 'x');
+    const override = join(dir, 'override');
+    const payload = JSON.stringify({ tool_name: 'Read', tool_input: { file_path: file }, cwd: dir });
+    const h = harness({ DISTILL_NO_UPDATE_CHECK: '1', DISTILL_CACHE_DIR: override }, { readStdin: async () => payload, cacheDir: undefined });
+    await run(['hook', 'claude'], h.deps).catch(() => {});
+    const output = JSON.parse(h.stdout.join(''));
+    const converted = realpathSync.native(output.hookSpecificOutput.updatedInput.file_path);
+    const rel = relative(realpathSync.native(join(override, 'out')), converted);
+    expect(rel.startsWith('..')).toBe(false);
+    expect(isAbsolute(rel)).toBe(false);
+    expect(readStats(override)).toMatchObject([{ source: 'hook', kind: 'PDF' }]);
   });
 });
 
