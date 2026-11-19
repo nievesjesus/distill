@@ -708,6 +708,7 @@
       "type": "facts",
       "value": [
         "Empirical",
+        "ESAero",
         "Joby",
         "Electric Power",
         "Electra"
@@ -718,7 +719,7 @@
       "summary",
       "office"
     ],
-    "source": "pptx slide 5: Empirical Systems Aerospace, Joby Aviation, Electric Power Systems, Electra.Aero"
+    "source": "pptx slide 5: Empirical Systems Aerospace (ESAero, named so on slide 2), Joby Aviation, Electric Power Systems, Electra.Aero; any four of the five names count"
   },
   {
     "id": "sum-access-needs",
