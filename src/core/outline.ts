@@ -82,6 +82,16 @@ export function figurePagesIn(markdown: string): string[] {
   return scan(markdown.split('\n')).markers.filter((marker) => marker.visual === 'figure').map((marker) => marker.label);
 }
 
+export interface PageMarker {
+  label: string;
+  line: number;
+  visual?: VisualKind;
+}
+
+export function pageMarkersIn(markdown: string): PageMarker[] {
+  return scan(markdown.split('\n')).markers.map((marker) => ({ label: marker.label, line: marker.line, ...(marker.visual ? { visual: marker.visual } : {}) }));
+}
+
 function pageAt(markers: Marker[], line: number): string | undefined {
   let label: string | undefined;
   for (const marker of markers) {
