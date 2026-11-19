@@ -209,7 +209,7 @@ flowchart LR
 | Booster | What it does | Loss |
 |---|---|---|
 | Drop repeated boilerplate | Removes identical running header/footer lines (4+ words, 25+ chars, 3+ repeats) and page-number lines such as `Page 3 of 12`. Lines that differ in any character are kept. | None |
-| Slim images and links | `![alt](path)` becomes `[alt]`, `[text](url)` becomes `text` | Drops image paths and URLs |
+| Slim images and links | `![alt](path)` becomes `[alt]`, `[text](url)` becomes `text`, `<u>text</u>` becomes `text` | Drops image paths, URLs and underline tags |
 | Compact tables | Removes alignment padding from GFM tables | None |
 | Collapse whitespace | Collapses blank-line runs, trailing and double spaces outside code | None |
 | LLMLingua-2 | A local model removes low-value words | **Lossy**, off by default |
