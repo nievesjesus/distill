@@ -145,6 +145,50 @@ The hooks respect your permissions and never block a read:
 
 Set `DISTILL_HOOK=off` to disable the Claude Code hook for a session. Conversions, fresh or served from the cache, end the hook's context with a `[distill] tokens saved ≈ …` line (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), `distill-llm convert --stdout` prints the same line on stderr, and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
 
+### Other agents: one command
+
+```bash
+npm i -g distill-llm
+distill-llm agents install --codex --cursor     # or --all for every agent it finds
+distill-llm agents status
+distill-llm agents uninstall --codex --cursor
+```
+
+`agents install` registers the distill MCP server and adds a portable skill, `distill-documents`, that tells the agent to run `distill-llm convert --stdout` for PDF, Office and OpenDocument files. The skill goes to `~/.agents/skills/` (or `.agents/skills/` with `--project`), which Codex, Gemini CLI, Cursor, OpenCode and OpenClaw all read; Hermes reads `~/.hermes/skills/`. It shows each change, asks before writing (`--yes` skips the question, `--dry-run` only prints what would change), leaves a `SKILL.md` or config entry you wrote yourself alone, and `agents uninstall` removes only what it added (the shared skill stays while another agent still uses it). It refuses to register a temporary `npx` command: install globally first.
+
+| Agent | What `agents install` sets up | Read hook |
+|---|---|---|
+| `--codex` (Codex CLI, also the ChatGPT desktop app) | `codex mcp add distill -- distill-llm mcp`, plus the skill | no: Codex has no Read tool |
+| `--gemini` | `gemini mcp add -s user --timeout 60000 distill distill-llm mcp` (`-s project` with `--project`), plus the skill | no |
+| `--cursor` | `mcpServers.distill` in `~/.cursor/mcp.json` (`.cursor/mcp.json` with `--project`), plus the skill | no |
+| `--opencode` | `mcp.distill` in `~/.config/opencode/opencode.json` on OpenCode 1.x, the read plugin from `hooks install --opencode`, plus the skill; on 2.x it prints the config to add by hand | yes (plugin) |
+| `--claude-desktop` | `mcpServers.distill` in `claude_desktop_config.json`; restart Claude Desktop afterwards | no |
+| `--hermes` | `hermes mcp add distill --command distill-llm --args mcp`, plus the skill in `~/.hermes/skills/` | no |
+| `--openclaw` | `openclaw mcp set distill '{"command":"distill-llm","args":["mcp"]}'`, plus the skill | no |
+
+For Claude Code use the [plugin](#claude-code-plugin) or `hooks install --claude`. `agents status` shows, for each agent, whether it was detected, whether the MCP server and the skill are in place and whether the read hook is installed.
+
+When an agent's CLI is not installed, or a config file is not plain JSON, the command prints the exact snippet and the file to edit and marks it `manual` instead of guessing at TOML, YAML or JSON5. Details per agent:
+
+- **Codex** has no flag for the startup timeout or for forwarding environment variables, and it starts MCP servers with a sanitized environment. After `agents install --codex`, add these two lines to the `[mcp_servers.distill]` table in `~/.codex/config.toml` (the installer prints them too):
+
+  ```toml
+  startup_timeout_sec = 60
+  env_vars = ["DISTILL_NO_SAVINGS_NOTE", "DISTILL_MCP_MAX_TOKENS", "DISTILL_INDEX_MIN_TOKENS", "DISTILL_NO_STATS"]
+  ```
+
+  Codex has no project-scoped MCP registration, so `--project` only installs the skill. The ChatGPT desktop app shares `~/.codex/config.toml`, so `--codex` covers it.
+- **Cursor:** the installer also prints a one-click link (`cursor://anysphere.cursor-deeplink/mcp/install?name=distill&config=…`, with the config as base64 of `{"command":"distill-llm","args":["mcp"]}`) that opens Cursor's own install prompt.
+- **OpenCode** 1.19 and 2.x ask for permission before reading outside the project, and distill's converted Markdown lives in `~/.cache/distill-llm/out/`. If the plugin's reads prompt, allow that folder with the `external_directory` permission in `opencode.json`:
+
+  ```json
+  { "permission": { "external_directory": { "~/.cache/distill-llm/out/**": "allow" } } }
+  ```
+- **Claude Desktop** only loads servers at start-up: quit and reopen it after installing. The config lives in `~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows and `~/.config/Claude/` on Linux.
+- **ChatGPT on the web** only talks to remote MCP servers. OpenAI's Secure MCP Tunnel (`tunnel-client`, needs a Platform organization) can reach a local one: start it with `--mcp-command "distill-llm mcp"`. Paths then resolve on the machine that runs the tunnel, not on your laptop, so keep the documents there. See also the HTTP notes in [MCP server](#mcp-server).
+
+Hermes and OpenClaw support is configuration only: the commands above are written from their documentation and have not been run against those agents.
+
 ### CLI
 
 ```bash
