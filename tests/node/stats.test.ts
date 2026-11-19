@@ -20,7 +20,7 @@ describe('recordUsage', () => {
     const lines = readFileSync(file, 'utf8').trimEnd().split('\n');
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0] as string)).toEqual({ t: '2026-11-19T10:00:00.000Z', source: 'hook', kind: 'PDF', baseline: 1000, out: 300, saved: 700 });
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it('does nothing when DISTILL_NO_STATS is 1', () => {
