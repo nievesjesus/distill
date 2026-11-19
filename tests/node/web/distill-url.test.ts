@@ -159,6 +159,28 @@ describe('distillUrl for a web page', () => {
   });
 });
 
+describe('distillUrl full mode', () => {
+  it('converts the whole page and costs more than clean mode', async () => {
+    const { distiller } = setup(() => reply());
+    const clean = await distiller.distillUrl(URL_PAGE);
+    const full = await distiller.distillUrl(URL_PAGE, { mode: 'full' });
+    expect(full.markdown).toContain('Getting started');
+    expect(clean.markdown).not.toContain('Getting started');
+    expect(full.tokens.out).toBeGreaterThan(clean.tokens.out);
+  });
+
+  it('keeps cached clean and full results apart', async () => {
+    const { distiller, calls } = setup(() => reply({ etag: '"v1"', cacheControl: 'max-age=600' }));
+    await distiller.distillUrl(URL_PAGE);
+    const full = await distiller.distillUrl(URL_PAGE, { mode: 'full' });
+    expect(calls).toHaveLength(2);
+    expect(full.markdown).toContain('Getting started');
+    const again = await distiller.distillUrl(URL_PAGE, { mode: 'full' });
+    expect(calls).toHaveLength(2);
+    expect(again.markdown).toBe(full.markdown);
+  });
+});
+
 describe('distillUrl for documents', () => {
   it('hands a PDF to the document distiller and cleans up', async () => {
     const pdf = Buffer.from('%PDF-1.7 fake');

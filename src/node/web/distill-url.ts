@@ -17,6 +17,7 @@ export interface UrlOptions {
   allowPrivate?: boolean;
   allowHosts?: readonly string[];
   robots?: 'ignore' | 'respect';
+  mode?: 'clean' | 'full';
 }
 
 export interface UrlDistillerDeps {
@@ -70,7 +71,7 @@ export function createUrlDistiller(deps: UrlDistillerDeps): (rawUrl: string, opt
     let name: string;
     let markdown: string;
     if (route.type === 'html') {
-      const extracted = await extractWeb(text, fetched.finalUrl, { now: () => stamp });
+      const extracted = await extractWeb(text, fetched.finalUrl, { now: () => stamp, ...(opts.mode ? { mode: opts.mode } : {}) });
       markdown = extracted.markdown;
       name = extracted.title || nameOf(fetched.finalUrl);
     } else {
@@ -102,6 +103,7 @@ export function createUrlDistiller(deps: UrlDistillerDeps): (rawUrl: string, opt
             version: deps.version,
             boosters: [...(opts.boosters ?? DEFAULT_ACTIVE)],
             lingua: opts.lingua ?? false,
+            mode: opts.mode ?? 'clean',
             ...(opts.rate === undefined ? {} : { rate: opts.rate }),
           })
         : null;

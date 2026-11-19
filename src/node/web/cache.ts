@@ -21,8 +21,8 @@ export interface WebCache {
   write(key: string, entry: Omit<WebCacheEntry, 'v'>): Promise<void>;
 }
 
-export function webCacheKey(parts: { url: string; version: string; boosters: readonly string[]; lingua: boolean; rate?: number }): string {
-  const payload = JSON.stringify([FORMAT_VERSION, parts.url, parts.version, [...parts.boosters].sort(), parts.lingua, parts.lingua ? (parts.rate ?? null) : null]);
+export function webCacheKey(parts: { url: string; version: string; boosters: readonly string[]; lingua: boolean; rate?: number; mode?: string }): string {
+  const payload = JSON.stringify([FORMAT_VERSION, parts.url, parts.version, [...parts.boosters].sort(), parts.lingua, parts.lingua ? (parts.rate ?? null) : null, parts.mode ?? 'clean']);
   return createHash('sha256').update(payload).digest('hex').slice(0, KEY_LENGTH);
 }
 

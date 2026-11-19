@@ -25,6 +25,7 @@ export interface ConvertOptions {
   maxSize: number;
   allowPrivate?: boolean;
   allowHost?: string[];
+  full?: boolean;
 }
 
 export interface OutlineOptions {
@@ -159,7 +160,7 @@ export async function runConvert(files: string[], options: ConvertOptions, io: C
   async function convertOne(index: number): Promise<void> {
     const input = files[index];
     try {
-      const settings = { boosters, lingua: options.lingua ?? false, rate: options.rate };
+      const settings = { boosters, lingua: options.lingua ?? false, rate: options.rate, ...(options.full ? { mode: 'full' as const } : {}) };
       const result = isUrlInput(input) ? await distiller.distillUrl(input, { ...settings, ...webOptions(options) }) : await distiller.distillFile(input, settings);
       try {
         io.recordUsage?.(result.kind, estimateSavings(result));

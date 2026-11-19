@@ -28,12 +28,26 @@ export interface ExtractDeps {
   now?: () => Date;
   verb?: 'fetched' | 'converted';
   label?: string;
+  mode?: 'clean' | 'full';
 }
 
 interface Prepared {
   document: Document;
   shell: boolean;
   words: number;
+}
+
+function contentBody(doc: Document): Element | null {
+  let best: Element | null = null;
+  let size = -1;
+  for (const body of Array.from(doc.querySelectorAll('body'))) {
+    const length = (body.textContent ?? '').length;
+    if (length > size) {
+      best = body;
+      size = length;
+    }
+  }
+  return best;
 }
 
 const words = (text: string): number => text.split(/\s+/).filter((part) => part !== '').length;
@@ -87,7 +101,7 @@ function prepare(html: string, url: string): Prepared {
   for (const element of Array.from(document.querySelectorAll(NOISE))) element.remove();
   stripHidden(document);
   absolutize(document, baseOf(document, url));
-  const count = words(document.body?.textContent ?? '');
+  const count = words(contentBody(document)?.textContent ?? '');
   return { document, shell: count < SHELL_MAX_WORDS && (mount || scripts >= 2 || noscriptHint), words: count };
 }
 
@@ -155,7 +169,7 @@ function viaReadability(html: string, url: string): Extracted | null {
 function wholePage(html: string, url: string): Extracted {
   const { document } = prepare(html, url);
   const title = titleOf(document);
-  const body = turndown().turndown(document.body?.innerHTML ?? '').trim();
+  const body = turndown().turndown(contentBody(document)?.innerHTML ?? '').trim();
   return { markdown: withTitle(title, body), title, engine: 'turndown' };
 }
 
@@ -165,15 +179,16 @@ export function sourceHeader(url: string, when: Date, verb: 'fetched' | 'convert
 
 export function htmlFragmentToMarkdown(html: string): string {
   const { document } = prepare(/<body[\s>]/i.test(html) ? html : `<html><body>${html}</body></html>`, 'about:blank');
-  return turndown().turndown(document.body?.innerHTML ?? '').trim();
+  return turndown().turndown(contentBody(document)?.innerHTML ?? '').trim();
 }
 
 export async function extractWeb(html: string, url: string, deps: ExtractDeps = {}): Promise<Extracted> {
   if (prepare(html, url).shell) throw new DistillError('needs_javascript', NEEDS_JAVASCRIPT);
   const run = deps.defuddle ?? (Defuddle as unknown as DefuddleLike);
-  const primary = await viaDefuddle(html, url, run);
+  const full = deps.mode === 'full';
+  const primary = full ? null : await viaDefuddle(html, url, run);
   let picked = primary !== null && words(primary.markdown) >= MIN_WORDS ? primary : null;
-  if (picked === null) {
+  if (picked === null && !full) {
     const secondary = viaReadability(html, url);
     if (secondary !== null && words(secondary.markdown) >= MIN_WORDS) picked = secondary;
   }

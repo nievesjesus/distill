@@ -42,13 +42,15 @@ interface Read {
   rawTokens?: number;
 }
 
-async function readHtml(bytes: Uint8Array, label: string, now: () => Date): Promise<Read> {
+type Mode = 'clean' | 'full' | undefined;
+
+async function readHtml(bytes: Uint8Array, label: string, now: () => Date, mode: Mode): Promise<Read> {
   const html = decodeText(bytes, undefined);
-  const extracted = await extractWeb(html, 'about:blank', { now, verb: 'converted', label });
+  const extracted = await extractWeb(html, 'about:blank', { now, verb: 'converted', label, ...(mode ? { mode } : {}) });
   return { markdown: extracted.markdown, pages: 1, rawTokens: countTokens(html), json: { format: 'html', title: extracted.title, markdown: extracted.markdown } };
 }
 
-async function readMhtml(bytes: Uint8Array, label: string, now: () => Date): Promise<Read> {
+async function readMhtml(bytes: Uint8Array, label: string, now: () => Date, mode: Mode): Promise<Read> {
   let email: Awaited<ReturnType<typeof PostalMime.parse>>;
   try {
     email = await PostalMime.parse(bytes);
@@ -59,17 +61,17 @@ async function readMhtml(bytes: Uint8Array, label: string, now: () => Date): Pro
   if (html.trim() === '') throw new DistillError('parse_failed', 'The MHTML file has no HTML page in it');
   const source = email.headers.find((header) => header.key === 'snapshot-content-location' || header.key === 'content-location')?.value.trim();
   const original = source && /^https?:\/\//i.test(source) ? source : null;
-  const extracted = await extractWeb(html, original ?? 'about:blank', { now, verb: 'converted', label: original ?? label });
+  const extracted = await extractWeb(html, original ?? 'about:blank', { now, verb: 'converted', label: original ?? label, ...(mode ? { mode } : {}) });
   return { markdown: extracted.markdown, pages: 1, rawTokens: countTokens(html), json: { format: 'mhtml', title: extracted.title, markdown: extracted.markdown } };
 }
 
-async function read(format: SavedFormat, bytes: Uint8Array, path: string, now: () => Date): Promise<Read> {
+async function read(format: SavedFormat, bytes: Uint8Array, path: string, now: () => Date, mode?: Mode): Promise<Read> {
   const label = basename(path);
   switch (format) {
     case 'html':
-      return readHtml(bytes, label, now);
+      return readHtml(bytes, label, now, mode);
     case 'mhtml':
-      return readMhtml(bytes, label, now);
+      return readMhtml(bytes, label, now, mode);
     case 'epub':
       return readEpub(bytes, { now, label });
     case 'eml':
@@ -85,10 +87,10 @@ export function withSavedFormats(parser: Parser, deps: SavedDeps = {}): Parser {
   const load = deps.readFile ?? readFile;
   const now = deps.now ?? (() => new Date());
   return {
-    async toMarkdown(path) {
+    async toMarkdown(path, opts) {
       const format = savedFormat(path);
-      if (format === null) return parser.toMarkdown(path);
-      const { markdown, pages, rawTokens } = await read(format, await load(path), path, now);
+      if (format === null) return parser.toMarkdown(path, opts);
+      const { markdown, pages, rawTokens } = await read(format, await load(path), path, now, opts?.mode);
       return { markdown, pages, engine: 'builtin', ...(rawTokens === undefined ? {} : { rawTokens }) };
     },
     async toJson(path) {

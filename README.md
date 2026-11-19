@@ -222,6 +222,7 @@ npx distill-llm convert report.pdf deck.pptx --out md/
 | `--stdout` | Print the Markdown of a single file instead of writing it |
 | `--offset <n>` `--limit <n>` | With `--stdout`: print only these lines (1-based) |
 | `--max-tokens <n>` | With `--stdout`: if the document is larger than this, print an index and the first lines instead of everything |
+| `--full` | For a web page or saved HTML: keep the whole page instead of extracting the main content |
 | `--allow-private` `--allow-host <host>` | For a URL only: allow addresses that resolve to private, loopback or link-local ranges (everything, or just that host; repeatable). See [Web pages](#web-pages) |
 
 Multi-page PDFs carry a `<!-- page N -->` marker before each page (it uses the page label when the PDF has one), so an agent can cite pages and the index can list them.
@@ -244,6 +245,8 @@ distill-llm convert --json --out md/ https://react.dev/learn https://nodejs.org/
 `convert` and `outline` accept `http(s)` URLs next to file paths, with the same `--stdout`, `--max-tokens`, `--offset`/`--limit` and `--json` options. The page is fetched with a plain GET, the main content is extracted (navigation, ads, cookie banners and hidden text are dropped; code fences with their language, tables and footnotes are kept) and the usual boosters run on the result. Pages served as Markdown (Cloudflare's "Markdown for Agents" and similar) pass through untouched, and PDFs, Office files, EPUBs and feeds served at a URL are converted like local files.
 
 In an MCP client, `distill_url({ url, section?, offset?, limit?, boosters? })` does the same with the same paging, outline and savings note as `distill_file`. Use it instead of a generic web fetch when the model needs the whole page rather than a summary: a long page comes back with an index first, and the model reads only the sections it needs.
+
+**Missing something?** The default extraction keeps the main content and drops sidebars and small metadata blocks (for example the "Added in" and history notes of the Node.js docs). `distill-llm convert --full <url>` (also for saved `.html`/`.mhtml` files) and `distill_url({ url, mode: 'full' })` skip the extraction and convert the whole page, with hidden text still removed. It costs more tokens, so use it when something seems to be missing.
 
 **Savings.** On seven real pages (BBC, GitHub, the React docs and MDN among them) the Markdown was 86% to 99% smaller than the raw HTML an agent would get from `curl`, counted with `o200k_base`. The savings note says "vs the raw page" for that reason. That baseline is different from the PDF numbers above; against a plain whole-page HTML-to-Markdown conversion the gain is smaller (34% to 71% on the same pages). Measure your own pages with `distill-llm convert --json <url>`.
 

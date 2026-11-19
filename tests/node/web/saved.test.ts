@@ -119,6 +119,16 @@ describe('withSavedFormats', () => {
     expect(markdown).toContain('日本語');
   });
 
+  it('converts the whole saved page in full mode', async () => {
+    const parser = withSavedFormats(inner(), { now: NOW });
+    const path = save('full.html', html);
+    const clean = await parser.toMarkdown(path);
+    const full = await parser.toMarkdown(path, { mode: 'full' });
+    expect(full.markdown).toContain('Getting started');
+    expect(clean.markdown).not.toContain('Getting started');
+    expect(full.markdown).not.toContain('DISPLAY-NONE-MARKER');
+  });
+
   it('reads the html part of an MHTML snapshot and uses the original URL', async () => {
     const result = await withSavedFormats(inner(), { now: NOW }).toMarkdown(save('snap.mhtml', mhtml(mhtmlBody)));
     expect(result.markdown.split('\n')[0]).toBe('<!-- distill: https://blog.example.com/post/1 converted 2026-01-02T03:04:05.000Z; untrusted web content -->');

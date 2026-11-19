@@ -130,6 +130,31 @@ describe('convert with a URL', () => {
   });
 });
 
+describe('convert --full', () => {
+  it('asks for the whole page when converting a URL', async () => {
+    const h = harness();
+    await run(['convert', '--stdout', '--full', 'https://docs.example.com/a'], h.deps);
+    expect(h.urlCalls[0]?.opts?.mode).toBe('full');
+  });
+
+  it('leaves clean mode as the default', async () => {
+    const h = harness();
+    await run(['convert', '--stdout', 'https://docs.example.com/a'], h.deps);
+    expect(h.urlCalls[0]?.opts?.mode).toBeUndefined();
+  });
+
+  it('passes full to a local file too', async () => {
+    const h = harness();
+    const seen: unknown[] = [];
+    h.distiller.distillFile = async (path, opts) => {
+      seen.push(opts);
+      return { path, name: 'p.html', kind: 'HTML', pages: 1, markdown: 'x', tokens: { raw: 2, out: 1 }, ms: 1 };
+    };
+    await run(['convert', '--stdout', '--full', '/tmp/p.html'], h.deps);
+    expect(seen[0]).toMatchObject({ mode: 'full' });
+  });
+});
+
 describe('outline with a URL', () => {
   it('indexes a web page', async () => {
     const h = harness();

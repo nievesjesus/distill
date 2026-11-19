@@ -129,3 +129,53 @@ describe('app shells', () => {
     expect(result.markdown).toContain('Plenty of rendered words');
   });
 });
+
+describe('extractWeb full mode', () => {
+  const meta = `<html><head><title>Docs</title></head><body><nav><a href="/a">Sidebar link alpha</a></nav><main><article><h1>Docs page</h1><p>${'This paragraph explains how the function behaves in detail. '.repeat(10)}</p><h2>fs.cp</h2><div class="api_metadata"><span>Added in: v16.7.0</span></div><p>${'More explanation of the copy function and its options. '.repeat(8)}</p></article></main><footer>Footer text omega</footer></body></html>`;
+
+  it('keeps sidebars and metadata blocks that clean mode drops', async () => {
+    const full = await extractWeb(meta, 'https://x.example/docs', { now: NOW, mode: 'full' });
+    expect(full.engine).toBe('turndown');
+    expect(full.markdown).toContain('Added in: v16.7.0');
+    expect(full.markdown).toContain('Sidebar link alpha');
+    expect(full.markdown).toContain('Footer text omega');
+    const clean = await extractWeb(meta, 'https://x.example/docs', { now: NOW });
+    expect(clean.markdown).not.toContain('Sidebar link alpha');
+  });
+
+  it('does not run the article extractors', async () => {
+    let called = false;
+    const spy: DefuddleLike = async () => {
+      called = true;
+      return { content: 'x', title: 'x' };
+    };
+    await extractWeb(fixture('article.html'), URL_ARTICLE, { defuddle: spy, now: NOW, mode: 'full' });
+    expect(called).toBe(false);
+  });
+
+  it('still strips hidden text and keeps the header', async () => {
+    const { markdown } = await extractWeb(fixture('article.html'), URL_ARTICLE, { now: NOW, mode: 'full' });
+    for (const marker of MARKERS) expect(markdown, marker).not.toContain(marker);
+    expect(markdown.split('\n')[0]).toContain('untrusted web content');
+    expect(markdown).toContain('| Plan | Calls per minute | Widgets |');
+  });
+
+  it('still reports an app shell', async () => {
+    await expect(extractWeb(fixture('shell.html'), 'https://app.example.com/', { now: NOW, mode: 'full' })).rejects.toMatchObject({ code: 'needs_javascript' });
+  });
+});
+
+describe('pages without a head element', () => {
+  const headless = `<!doctype html><html lang=en><meta charset=utf-8><title>Headless docs</title><script async src=a.js></script><script src=b.js></script><body class=doc><div id=root><h1>Headless docs</h1><p>${'Content that follows a document with no explicit head element. '.repeat(10)}</p><h4>fs.cp</h4><div class=api_metadata><span>Added in: v16.7.0</span></div></div>`;
+
+  it('converts the whole page in full mode', async () => {
+    const { markdown } = await extractWeb(headless, 'https://nodejs.example/api', { now: NOW, mode: 'full' });
+    expect(markdown).toContain('Content that follows a document');
+    expect(markdown).toContain('Added in: v16.7.0');
+  });
+
+  it('is not mistaken for an app shell', async () => {
+    const { markdown } = await extractWeb(headless, 'https://nodejs.example/api', { now: NOW });
+    expect(markdown).toContain('Content that follows a document');
+  });
+});

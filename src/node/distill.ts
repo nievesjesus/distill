@@ -31,6 +31,7 @@ const NO_LINGUA: LinguaStatus = { installed: false, installable: false, model: '
 const LINGUA_NOT_INSTALLED = 'LLMLingua-2 is not installed. Install it once from the web app (npx distill-llm).';
 
 export interface DistillOptions {
+  mode?: 'clean' | 'full';
   boosters?: ReadonlySet<LocalBoosterId>;
   lingua?: boolean;
   rate?: number;
@@ -115,7 +116,7 @@ export function createDistiller(deps: {
       linguaFor(opts);
 
       const started = performance.now();
-      const parsed = await deps.parser.toMarkdown(path);
+      const parsed = await deps.parser.toMarkdown(path, opts.mode ? { mode: opts.mode } : undefined);
       const markdown = await polish(parsed.markdown, opts);
       return {
         path,

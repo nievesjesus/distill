@@ -128,6 +128,32 @@ describe('distill_url', () => {
   });
 });
 
+describe('distill_url mode', () => {
+  it('tells the model how to recover missing content', async () => {
+    const client = await connect(fakeDistiller([], () => page(SMALL)));
+    const { tools } = await client.listTools();
+    const description = tools.find((tool) => tool.name === 'distill_url')?.description ?? '';
+    expect(description).toContain("If something seems missing (version notes, sidebars, metadata), call again with mode: 'full'");
+  });
+
+  it('passes mode through and keeps clean and full copies apart', async () => {
+    const calls: UrlCall[] = [];
+    const client = await connect(fakeDistiller(calls, () => page(SMALL)));
+    await client.callTool({ name: 'distill_url', arguments: { url: 'https://a.example/' } });
+    await client.callTool({ name: 'distill_url', arguments: { url: 'https://a.example/', mode: 'full' } });
+    await client.callTool({ name: 'distill_url', arguments: { url: 'https://a.example/', mode: 'full' } });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.opts?.mode).toBeUndefined();
+    expect(calls[1]?.opts?.mode).toBe('full');
+  });
+
+  it('rejects an unknown mode', async () => {
+    const client = await connect(fakeDistiller([], () => page(SMALL)));
+    const result = await client.callTool({ name: 'distill_url', arguments: { url: 'https://a.example/', mode: 'weird' } });
+    expect(result.isError).toBe(true);
+  });
+});
+
 describe('distill_url paging', () => {
   const LONG = `<!-- distill: x -->\n\n# Big guide\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\n${`Line of text for part ${i + 1}.\n`.repeat(6)}`).join('\n')}`;
 

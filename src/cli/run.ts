@@ -349,6 +349,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
     .option('--allow-private', 'allow URLs that resolve to private, loopback or link-local addresses')
     .option('--allow-host <host>', 'allow this host even if it resolves to a private address (repeatable)', collectHost, [])
+    .option('--full', 'for web pages and HTML files: keep the whole page instead of extracting the main content')
     .action(async (files: string[], options: ConvertOptions) => {
       const code = await runConvert(files, options, {
         stdout,
