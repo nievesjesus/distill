@@ -79,10 +79,25 @@ afterEach(async () => {
 });
 
 describe('createMcpServer', () => {
-  it('lists the three tools', async () => {
+  it('lists the four tools, all read-only with a title', async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files']);
+    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline']);
+    for (const tool of tools) {
+      expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+      expect(tool.title?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('describes the real limits and routes between tools', async () => {
+    const client = await connect({ maxResultTokens: 7777 });
+    const { tools } = await client.listTools();
+    const description = (name: string) => tools.find((tool) => tool.name === name)?.description ?? '';
+    expect(description('distill_file')).toContain('7777');
+    expect(description('distill_file')).toContain('distill_outline');
+    expect(description('distill_file')).toContain('1 KB');
+    expect(description('distill_outline')).toContain('distill_file');
+    expect(description('distill_files')).toContain('distill_file');
   });
 
   it('distill_file returns markdown text and structured tokens', async () => {
@@ -195,7 +210,7 @@ describe('createMcpServer', () => {
   it('distill_capabilities returns the health object', async () => {
     const client = await connect();
     const result = await client.callTool({ name: 'distill_capabilities', arguments: {} });
-    expect(result.structuredContent).toEqual(HEALTH);
+    expect(result.structuredContent).toEqual({ ...HEALTH, maxResultTokens: 10000 });
   });
 });
 
@@ -215,9 +230,11 @@ describe('paging', () => {
     expect(data.continuation).toBe('Showing lines 1-10 of 25. Call distill_file again with offset 11 to continue.');
     expect(data.savings).toEqual(savings);
     expect(data.note).toBe(savingsNote(savings));
-    expect(Object.keys(data)).toEqual(['continuation', 'note', 'kind', 'pages', 'lines', 'nextOffset', 'tokens', 'savings', 'markdown']);
+    expect(Object.keys(data)).toEqual(['continuation', 'note', 'kind', 'pages', 'lines', 'nextOffset', 'tokens', 'savings', 'outline', 'markdown']);
+    expect(data.outline).toContain('Index of big.pdf: 26 lines');
     expect(result.content).toEqual([
       { type: 'text', text: data.continuation },
+      { type: 'text', text: data.outline },
       { type: 'text', text: LINE.repeat(10) },
       { type: 'text', text: savingsNote(savings) },
     ]);
@@ -342,5 +359,113 @@ describe('paging', () => {
     const result = await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/a.pdf', '/x/b.pdf'] } });
     expect(result.structuredContent).not.toHaveProperty('continuation');
     expect(result.content as unknown[]).toHaveLength(2);
+  });
+});
+
+describe('outline and sections', () => {
+  const DOC = ['# Intro', 'intro line', '## Alpha', 'alpha 1', 'alpha 2', '## Beta', 'beta 1', ''].join('\n');
+  const docDistiller = (markdown: string): Distiller => ({
+    async distillFile(path) {
+      return { path, name: 'doc.pdf', kind: 'PDF', pages: 3, markdown, tokens: { raw: 100, out: 60 }, ms: 1 };
+    },
+    health: () => HEALTH,
+    close: () => {},
+  });
+  const file = (client: Client, args: Record<string, unknown>) => client.callTool({ name: 'distill_file', arguments: { path: '/x/doc.pdf', ...args } });
+  type Structured = Record<string, unknown>;
+
+  it('distill_outline returns the rendered index and the structured entries in order', async () => {
+    const client = await connect({ distiller: docDistiller(DOC) });
+    const result = await client.callTool({ name: 'distill_outline', arguments: { path: '/x/doc.pdf' } });
+    expect(result.isError).toBeFalsy();
+    const data = result.structuredContent as Structured;
+    const savings = estimateSavings({ kind: 'PDF', pages: 3, tokens: { raw: 100, out: 60 } });
+    expect(Object.keys(data)).toEqual(['note', 'outline', 'kind', 'pages', 'lines', 'tokens', 'entries']);
+    expect(data.note).toBe(savingsNote(savings));
+    expect(data.outline).toContain('Index of doc.pdf: 8 lines');
+    expect(data.kind).toBe('PDF');
+    expect(data.pages).toBe(3);
+    expect(data.lines).toBe(8);
+    expect(data.tokens).toBe(countTokens(DOC));
+    expect((data.entries as { title: string; line: number; endLine: number }[]).map((e) => [e.title, e.line, e.endLine])).toEqual([
+      ['# Intro', 1, 8],
+      ['## Alpha', 3, 5],
+      ['## Beta', 6, 8],
+    ]);
+    expect((result.content as { text: string }[])[0]?.text).toBe(data.outline);
+  });
+
+  it('distill_outline omits the note when disabled and reports errors', async () => {
+    const client = await connect({ distiller: fakeDistiller(), savingsNote: false });
+    const ok = await client.callTool({ name: 'distill_outline', arguments: { path: '/x/doc.pdf' } });
+    expect(ok.structuredContent).not.toHaveProperty('note');
+    const bad = await client.callTool({ name: 'distill_outline', arguments: { path: '/x/bad.pdf' } });
+    expect(bad.isError).toBe(true);
+    expect(bad.content).toEqual([{ type: 'text', text: 'parse_failed: broken file' }]);
+  });
+
+  it('section matches a title exactly, ignoring case and hashes', async () => {
+    const client = await connect({ distiller: docDistiller(DOC) });
+    const data = (await file(client, { section: 'ALPHA' })).structuredContent as Structured;
+    expect(data.markdown).toBe('## Alpha\nalpha 1\nalpha 2\n');
+    expect(data.lines).toEqual({ from: 3, to: 5, total: 7 });
+    expect(data).not.toHaveProperty('nextOffset');
+    expect(data).not.toHaveProperty('outline');
+    expect(Object.keys(data).at(-1)).toBe('markdown');
+  });
+
+  it('section falls back to the first substring match, clamped to the document', async () => {
+    const client = await connect({ distiller: docDistiller(DOC) });
+    const data = (await file(client, { section: 'bet' })).structuredContent as Structured;
+    expect(data.markdown).toBe('## Beta\nbeta 1\n');
+    expect(data.lines).toEqual({ from: 6, to: 7, total: 7 });
+  });
+
+  it('prefers an exact title over an earlier substring match', async () => {
+    const md = ['# Top', '## Alpha beta', 'x', '## Beta', 'y', ''].join('\n');
+    const client = await connect({ distiller: docDistiller(md) });
+    const data = (await file(client, { section: 'beta' })).structuredContent as Structured;
+    expect(data.markdown).toBe('## Beta\ny\n');
+  });
+
+  it('rejects an unknown section and section combined with offset', async () => {
+    const client = await connect({ distiller: docDistiller(DOC) });
+    const none = await file(client, { section: 'Gamma' });
+    expect(none.isError).toBe(true);
+    expect(none.content).toEqual([{ type: 'text', text: 'bad_request: No section matches "Gamma". Call distill_outline to list sections.' }]);
+    const both = await file(client, { section: 'Alpha', offset: 2 });
+    expect(both.isError).toBe(true);
+    expect((both.content as { text: string }[])[0]?.text).toMatch(/^bad_request:/);
+  });
+
+  it('limit windows the read and paging stays inside the window', async () => {
+    const PAGE = LINE_COST * 10;
+    const client = await connect({ distiller: bigDistiller({ 'big.pdf': 25 }), maxResultTokens: PAGE });
+    const first = (await file(client, { path: '/x/big.pdf', offset: 5, limit: 12 })).structuredContent as Structured;
+    expect(first.lines).toEqual({ from: 5, to: 14, total: 25 });
+    expect(first.nextOffset).toBe(15);
+    expect(first.continuation).toBe('Showing lines 5-14 of 25. Call distill_file again with offset 15 and limit 2 to continue.');
+    expect(first).not.toHaveProperty('outline');
+    const second = (await file(client, { path: '/x/big.pdf', offset: 15, limit: 2 })).structuredContent as Structured;
+    expect(second.lines).toEqual({ from: 15, to: 16, total: 25 });
+    expect(second).not.toHaveProperty('nextOffset');
+    expect(second).not.toHaveProperty('continuation');
+    const fromStart = (await file(client, { path: '/x/big.pdf', limit: 3 })).structuredContent as Structured;
+    expect(fromStart.lines).toEqual({ from: 1, to: 3, total: 25 });
+    expect(fromStart).toHaveProperty('savings');
+    expect(fromStart).not.toHaveProperty('outline');
+  });
+
+  it('adds the outline only to a partial first page without offset, limit or section', async () => {
+    const PAGE = LINE_COST * 10;
+    const client = await connect({ distiller: bigDistiller({ 'big.pdf': 25 }), maxResultTokens: PAGE });
+    const first = (await file(client, { path: '/x/big.pdf' })).structuredContent as Structured;
+    expect(first.outline).toContain('Index of big.pdf');
+    const later = (await file(client, { path: '/x/big.pdf', offset: 11 })).structuredContent as Structured;
+    expect(later).not.toHaveProperty('outline');
+    const whole = (await file(client, { path: '/x/big.pdf', offset: 1, limit: 25 })).structuredContent as Structured;
+    expect(whole).not.toHaveProperty('outline');
+    const small = (await file(client, {})).structuredContent as Structured;
+    expect(small).not.toHaveProperty('outline');
   });
 });

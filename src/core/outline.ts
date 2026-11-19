@@ -34,8 +34,16 @@ interface Marker {
   label: string;
 }
 
+const EMPHASIS_PAIR = /\*\*|__/g;
+const EMPHASIS_OPEN = /(^|[\s(])[*_]+(?=\S)/g;
+const EMPHASIS_CLOSE = /(?<=\S)[*_]+(?=$|[\s).,;:!?])/g;
+
+function stripEmphasis(text: string): string {
+  return text.replace(EMPHASIS_PAIR, '').replace(EMPHASIS_OPEN, '$1').replace(EMPHASIS_CLOSE, '');
+}
+
 function cleanTitle(text: string): string {
-  const cleaned = text.replace(TITLE_PREFIX, '').trim();
+  const cleaned = stripEmphasis(text.replace(TITLE_PREFIX, '')).trim();
   return cleaned.length > MAX_TITLE ? `${cleaned.slice(0, MAX_TITLE - 1)}…` : cleaned;
 }
 

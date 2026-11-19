@@ -57,6 +57,19 @@ describe('buildOutline heading mode', () => {
   });
 });
 
+describe('page titles without emphasis markers', () => {
+  const titleOf = (first: string) => buildOutline(['<!-- page 1 -->', '', first, 'x', '<!-- page 2 -->', '', 'y'].join('\n')).entries[0].title;
+
+  it('drops bold, italic and underscore emphasis but keeps snake_case and bullets', () => {
+    expect(titleOf('**Bold** text')).toBe('Bold text');
+    expect(titleOf('__Bold__ text')).toBe('Bold text');
+    expect(titleOf('*Italic* and _more_ words')).toBe('Italic and more words');
+    expect(titleOf('## **Chapter 1**')).toBe('Chapter 1');
+    expect(titleOf('use my_var_name here')).toBe('use my_var_name here');
+    expect(titleOf('2 * 3 = 6')).toBe('2 * 3 = 6');
+  });
+});
+
 describe('buildOutline page mode', () => {
   const md = ['<!-- page 1 -->', '', '- Contract for services', 'text', '<!-- page 2 -->', '', '| Item | Qty |', 'row', '<!-- page 3 -->', '', 'last'].join('\n');
 
