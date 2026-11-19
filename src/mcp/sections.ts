@@ -2,13 +2,23 @@ import { buildOutline, headingsOf } from '../core/outline';
 
 const MAX_SUGGESTIONS = 5;
 
+function stripTags(text: string): string {
+  let previous: string;
+  let current = text;
+  do {
+    previous = current;
+    current = current.replace(/<[^<>]*>/g, '');
+  } while (current !== previous);
+  return current.replace(/[<>]/g, '');
+}
+
 export function normalizeTitle(text: string): string {
-  return text
-    .replace(/^[#\s]+/, '')
-    .replace(/[#\s]+$/, '')
-    .replace(/!?\[([^\]]*)\]\((?:[^()"]|\([^()]*\)|"[^"]*")*\)/g, '$1')
-    .replace(/<[^>]+>/g, '')
-    .replace(/[<>]/g, '')
+  return stripTags(
+    text
+      .replace(/^[#\s]+/, '')
+      .replace(/[#\s]+$/, '')
+      .replace(/!?\[([^\]]*)\]\((?:[^()"]|\([^()]*\)|"[^"]*")*\)/g, '$1'),
+  )
     .replace(/`/g, '')
     .replace(/\*\*|__/g, '')
     .replace(/(^|[\s(])[*_]+(?=\S)/g, '$1')
@@ -92,12 +102,12 @@ export function closestHeadings(markdown: string, section: string): string[] {
 }
 
 function cleanTitle(text: string): string {
-  return text
-    .replace(/^[#\s]+/, '')
-    .replace(/[#\s]+$/, '')
-    .replace(/!?\[([^\]]*)\]\((?:[^()"]|\([^()]*\)|"[^"]*")*\)/g, '$1')
-    .replace(/<[^>]+>/g, '')
-    .replace(/[<>]/g, '')
+  return stripTags(
+    text
+      .replace(/^[#\s]+/, '')
+      .replace(/[#\s]+$/, '')
+      .replace(/!?\[([^\]]*)\]\((?:[^()"]|\([^()]*\)|"[^"]*")*\)/g, '$1'),
+  )
     .replace(/[`*]|__/g, '')
     .replace(/\s+/g, ' ')
     .trim();

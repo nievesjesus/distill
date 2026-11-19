@@ -132,4 +132,12 @@ describe('angle brackets in headings', () => {
     expect(findSection(hostile, 'title')?.line).toBe(1);
     expect(normalizeTitle('<<script>script>alert(1)<</script>/script>')).not.toMatch(/[<>]/);
   });
+
+  it('strips nested tags until stable and leaves no angle brackets', () => {
+    expect(normalizeTitle('<<b>b>x<</b>/b>')).toBe('x');
+    for (const raw of ['<<b>b>x<</b>/b>', '<a <b>c', 'x <unclosed', 'a > b <', '<<<>>>y']) {
+      expect(normalizeTitle(raw)).not.toMatch(/[<>]/);
+      expect(closestHeadings(`### ${raw}\n\nbody\n`, 'x').join('')).not.toMatch(/[<>]/);
+    }
+  });
 });
