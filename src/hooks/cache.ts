@@ -4,6 +4,7 @@ import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/pro
 import { join } from 'node:path';
 import { BOOSTER_ORDER, DEFAULT_ACTIVE } from '../core/boosters/pipeline';
 import { type SavingsEstimate, estimateSavings } from '../core/savings';
+import { wrapLongLines } from '../core/wrap';
 import type { Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
 import { DEFAULT_MAX_BYTES } from '../node/limits';
@@ -24,6 +25,7 @@ export interface CachedConversion {
 }
 
 const KEY_LENGTH = 32;
+const FORMAT_VERSION = '2';
 const ACTIVE_BOOSTERS = BOOSTER_ORDER.filter((id) => DEFAULT_ACTIVE.has(id)).join(',');
 
 const EMPTY_MESSAGE = 'Conversion produced no text';
@@ -34,7 +36,7 @@ function isEmptyMarkdown(markdown: string): boolean {
 }
 
 async function cacheKey(version: string, liteparseVersion: string, path: string): Promise<string> {
-  const hash = createHash('sha256').update(version).update('\0').update(liteparseVersion).update('\0').update(ACTIVE_BOOSTERS).update('\0');
+  const hash = createHash('sha256').update(version).update('\0').update(liteparseVersion).update('\0').update(ACTIVE_BOOSTERS).update('\0').update(FORMAT_VERSION).update('\0');
   for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
   return hash.digest('hex').slice(0, KEY_LENGTH);
 }
@@ -106,7 +108,7 @@ export async function convertCached(path: string, deps: CacheDeps): Promise<Cach
 
   const tmpPath = `${mdPath}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`;
   try {
-    await writeFile(tmpPath, `${header}\n\n${result.markdown}`, { mode: 0o600 });
+    await writeFile(tmpPath, `${header}\n\n${wrapLongLines(result.markdown)}`, { mode: 0o600 });
     await rename(tmpPath, mdPath);
   } catch (error) {
     await rm(tmpPath, { force: true });

@@ -1,9 +1,12 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../../src/cli/run';
+import { buildOutline, renderOutline } from '../../src/core/outline';
 import { estimateSavings, savingsNote } from '../../src/core/savings';
+import { countTokens } from '../../src/core/tokens';
 import { handleClaudePreToolUse } from '../../src/hooks/claude';
 
 let base: string;
@@ -344,6 +347,89 @@ describe('plugin mode', () => {
     const convert = vi.fn(async () => ({ path: '/c.md' }));
     expect(await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps())).not.toBeNull();
     expect(convert).toHaveBeenCalled();
+  });
+});
+
+const bigMarkdown = (sections = 40): string =>
+  Array.from({ length: sections }, (_, i) => `## Section ${i + 1}\n\n${`Paragraph about topic ${i + 1} with enough words to count. `.repeat(40)}`).join('\n\n');
+
+describe('large document index', () => {
+  const context = (result: unknown): string => (result as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+  const input = (result: unknown): Record<string, unknown> => (result as { hookSpecificOutput: { updatedInput: Record<string, unknown> } }).hookSpecificOutput.updatedInput;
+
+  it('adds offset, limit and the index for a large document', async () => {
+    const file = pdf();
+    const markdown = bigMarkdown();
+    const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', markdown }), deps());
+    const lines = markdown.split('\n');
+    const limit = input(result).limit as number;
+    expect(input(result).offset).toBe(1);
+    expect(limit).toBeGreaterThanOrEqual(1);
+    expect(countTokens(lines.slice(0, limit).join('\n'))).toBeLessThanOrEqual(2000);
+    expect(countTokens(lines.slice(0, limit + 1).join('\n'))).toBeGreaterThan(2000);
+    const ctx = context(result);
+    expect(ctx).toContain(`distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`);
+    expect(ctx).toContain(`This is a large document: ${lines.length} lines, ~${countTokens(markdown)} tokens. Only lines 1-${limit} were loaded.`);
+    expect(ctx).toContain(`Read on ${file} using offset and limit from this index:\n${renderOutline(buildOutline(markdown), { name: 'b.pdf' })}`);
+  });
+
+  it('keeps the savings note after the index', async () => {
+    const savings = estimateSavings({ kind: 'PDF', pages: 7, tokens: { raw: 1813, out: 1731 } });
+    const result = await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => ({ path: '/c.md', markdown: bigMarkdown(), savings }), deps());
+    expect(context(result).endsWith(`\n${savingsNote(savings)}`)).toBe(true);
+  });
+
+  it('leaves a small document unchanged', async () => {
+    const file = pdf();
+    const result = await handleClaudePreToolUse(payload({ file_path: file }), async () => ({ path: '/c.md', markdown: '# Small\n\nbody' }), deps());
+    expect(input(result)).toEqual({ file_path: '/c.md' });
+    expect(context(result)).toBe(`distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`);
+  });
+
+  it('passes an explicit offset or limit through unchanged', async () => {
+    for (const extra of [{ offset: 5 }, { limit: 20 }]) {
+      const result = await handleClaudePreToolUse(payload({ file_path: pdf(), ...extra }), async () => ({ path: '/c.md', markdown: bigMarkdown() }), deps());
+      expect(input(result)).toEqual({ file_path: '/c.md', ...extra });
+      expect(context(result)).not.toContain('large document');
+    }
+  });
+
+  it('is disabled with indexMinTokens 0', async () => {
+    const result = await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => ({ path: '/c.md', markdown: bigMarkdown() }), deps({ indexMinTokens: 0 }));
+    expect(input(result)).toEqual({ file_path: '/c.md' });
+  });
+
+  it('honours a custom threshold', async () => {
+    const result = await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => ({ path: '/c.md', markdown: bigMarkdown(3) }), deps({ indexMinTokens: 100 }));
+    expect(input(result).offset).toBe(1);
+  });
+});
+
+describe('run hook claude large document', () => {
+  it('builds the index over the cached file, header included, fresh and cached', async () => {
+    const file = pdf();
+    const markdown = bigMarkdown();
+    const make = () => {
+      const h = harness(JSON.stringify(payload({ file_path: file })), {}, undefined, async () => ({ name: 'b.pdf', markdown, tokens: { raw: 90000, out: 20000 } }) as never);
+      return h;
+    };
+    for (const round of [0, 1]) {
+      const h = make();
+      await run(['hook', 'claude'], h.deps);
+      const out = JSON.parse(h.stdout[0]).hookSpecificOutput;
+      const cached = readFileSync(out.updatedInput.file_path, 'utf8').split('\n');
+      expect(out.updatedInput.offset).toBe(1);
+      const row = /L(\d+)-(\d+) · [\d,]+ tok · ## Section 7$/m.exec(out.additionalContext);
+      expect(row).not.toBeNull();
+      expect(cached[Number(row?.[1]) - 1]).toBe('## Section 7');
+      expect(h.openDistiller).toHaveBeenCalledTimes(round === 0 ? 1 : 0);
+    }
+  });
+
+  it('DISTILL_INDEX_MIN_TOKENS=0 disables the index', async () => {
+    const h = harness(JSON.stringify(payload({ file_path: pdf() })), { DISTILL_INDEX_MIN_TOKENS: '0' }, undefined, async () => ({ name: 'b.pdf', markdown: bigMarkdown(), tokens: { raw: 9, out: 9 } }) as never);
+    await run(['hook', 'claude'], h.deps);
+    expect(JSON.parse(h.stdout[0]).hookSpecificOutput.updatedInput.offset).toBeUndefined();
   });
 });
 

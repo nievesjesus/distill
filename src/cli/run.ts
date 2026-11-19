@@ -482,6 +482,11 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         ? error.message
         : String(error);
 
+  const indexMinTokens = (raw: string | undefined): number | undefined => {
+    if (raw === undefined || !/^\d+$/.test(raw.trim())) return undefined;
+    return Number(raw.trim());
+  };
+
   const convertViaCache = (getDistiller: () => Promise<Distiller>, absPath: string) =>
     convertCached(absPath, {
       getDistiller,
@@ -515,12 +520,13 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         const result = await handleClaudePreToolUse(payload, async (absPath) => {
           try {
             const converted = await convertViaCache(getDistiller, absPath);
-            return converted.savings === null ? { path: converted.mdPath } : { path: converted.mdPath, savings: converted.savings };
+            const markdown = readFileSync(converted.mdPath, 'utf8');
+            return converted.savings === null ? { path: converted.mdPath, markdown } : { path: converted.mdPath, savings: converted.savings, markdown };
           } catch (error) {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
+        }, { homeDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS) });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);

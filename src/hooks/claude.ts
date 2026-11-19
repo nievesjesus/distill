@@ -1,6 +1,8 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { buildOutline, fitLines, renderOutline } from '../core/outline';
 import { type SavingsEstimate, savingsNote } from '../core/savings';
+import { countTokens } from '../core/tokens';
 import { isInside } from '../node/inside';
 import { isOwnCommand } from './install-claude';
 import { type MatchContext, type ReadRule, parseReadRule, ruleMayMatch } from './read-rules';
@@ -13,7 +15,11 @@ export interface ClaudeHookDeps {
   platform?: NodeJS.Platform;
   plugin?: boolean;
   savingsNote?: boolean;
+  indexMinTokens?: number;
 }
+
+const DEFAULT_INDEX_MIN_TOKENS = 8000;
+const FIRST_PART_TOKENS = 2000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -115,7 +121,7 @@ async function realpathOrNull(path: string | undefined): Promise<string | null> 
 
 export async function handleClaudePreToolUse(
   payload: unknown,
-  convert: (absPath: string) => Promise<{ path: string; savings?: SavingsEstimate }>,
+  convert: (absPath: string) => Promise<{ path: string; savings?: SavingsEstimate; markdown?: string }>,
   deps: ClaudeHookDeps,
 ): Promise<object | null> {
   try {
@@ -134,13 +140,34 @@ export async function handleClaudePreToolUse(
     if (deps.plugin === true && (await anyOwnHook(files))) return null;
     const converted = await convert(realOriginal);
     const note = converted.savings !== undefined && deps.savingsNote !== false ? `\n${savingsNote(converted.savings)}` : '';
+    const lead = `distill converted ${basename(original)} to Markdown to save tokens. Original file: ${original}.`;
+    const indexMin = deps.indexMinTokens ?? DEFAULT_INDEX_MIN_TOKENS;
+    const markdown = converted.markdown;
+    const paged = toolInput.offset !== undefined || toolInput.limit !== undefined;
+    if (!paged && markdown !== undefined && indexMin > 0) {
+      const tokens = countTokens(markdown);
+      if (tokens > indexMin) {
+        const limit = fitLines(markdown, FIRST_PART_TOKENS);
+        const lines = markdown.split('\n').length;
+        const index = renderOutline(buildOutline(markdown), { name: basename(original) });
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            updatedInput: { ...toolInput, file_path: converted.path, offset: 1, limit },
+            permissionDecision: 'allow',
+            permissionDecisionReason: 'distill: converted copy in its cache',
+            additionalContext: `${lead} This is a large document: ${lines} lines, ~${tokens} tokens. Only lines 1-${limit} were loaded. Read the sections you need with Read on ${original} using offset and limit from this index:\n${index}${note}`,
+          },
+        };
+      }
+    }
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         updatedInput: { ...toolInput, file_path: converted.path },
         permissionDecision: 'allow',
         permissionDecisionReason: 'distill: converted copy in its cache',
-        additionalContext: `distill converted ${basename(original)} to Markdown to save tokens. Original file: ${original}.${note}`,
+        additionalContext: `${lead}${note}`,
       },
     };
   } catch {
