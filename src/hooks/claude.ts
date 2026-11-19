@@ -64,23 +64,23 @@ interface PageSlice {
   count: number;
 }
 
-function sliceOfPages(markdown: string, requested: string[]): PageSlice | null {
+function sliceOfPages(markdown: string, physical: string[]): PageSlice | null {
   const lines = markdown.split('\n');
   const markers = pageMarkersIn(markdown);
-  if (markers.length === 0) return { from: 1, to: lines.length, text: markdown, figures: [], count: requested.length };
+  if (markers.length === 0) return { from: 1, to: lines.length, text: markdown, figures: [], count: physical.length };
   const indexes: number[] = [];
-  for (const label of requested) {
-    const index = markers.findIndex((marker) => marker.label === label);
-    if (index === -1) return null;
+  for (const label of physical) {
+    const index = Number(label) - 1;
+    if (index >= markers.length) return null;
     indexes.push(index);
   }
   const first = Math.min(...indexes);
   const last = Math.max(...indexes);
   const from = markers[first].line;
   const to = last + 1 < markers.length ? markers[last + 1].line - 1 : lines.length;
-  const figures = indexes.filter((index) => markers[index].visual === 'figure').map((index) => markers[index].label);
+  const figures = indexes.filter((index) => markers[index].visual === 'figure').map((index) => String(index + 1));
   if (figures.length === indexes.length) return null;
-  return { from, to, text: lines.slice(from - 1, to).join('\n'), figures, count: requested.length };
+  return { from, to, text: lines.slice(from - 1, to).join('\n'), figures, count: physical.length };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

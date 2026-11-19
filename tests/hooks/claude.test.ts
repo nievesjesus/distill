@@ -773,6 +773,29 @@ describe('reads with pages', () => {
   });
 });
 
+describe('reads with pages and labelled markers', () => {
+  const markdown = ['# h', '', '<!-- page i -->', 'a', '<!-- page ii -->', 'b', '<!-- page 1 -->', 'c', '<!-- page 2: figure (x) -->', 'd', '<!-- page 3 -->', 'e'].join('\n');
+  const input = (result: unknown): Record<string, unknown> => (result as { hookSpecificOutput: { updatedInput: Record<string, unknown> } }).hookSpecificOutput.updatedInput;
+  const go = (pages: string) => handleClaudePreToolUse(payload({ file_path: pdf(), pages }), async () => ({ path: '/c.md', markdown }), deps());
+
+  it('maps pages to marker position, not label', async () => {
+    expect(input(await go('3'))).toEqual({ file_path: '/c.md', offset: 7, limit: 2 });
+    expect(input(await go('5'))).toEqual({ file_path: '/c.md', offset: 11, limit: 2 });
+    expect(input(await go('1-2'))).toEqual({ file_path: '/c.md', offset: 3, limit: 4 });
+  });
+
+  it('steps aside beyond the marker count and for a figure at that position', async () => {
+    expect(await go('6')).toBeNull();
+    expect(await go('4')).toBeNull();
+  });
+
+  it('names figure pages by physical number', async () => {
+    const result = (await go('3-4')) as { hookSpecificOutput: { additionalContext: string } };
+    expect(result.hookSpecificOutput.additionalContext).toContain('Page 4 contains a chart');
+    expect(result.hookSpecificOutput.additionalContext).toContain('pages: "4"');
+  });
+});
+
 describe('run hook claude pages', () => {
   const pages = Array.from({ length: 6 }, (_, i) => `<!-- page ${i + 1} -->\n\nbody of page ${i + 1}`).join('\n\n');
   it('windows the cached file for a pages read, fresh and cached', async () => {
