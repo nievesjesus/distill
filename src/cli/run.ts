@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, rmdirSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { isLoopbackHost } from '../core/loopback';
@@ -19,6 +19,7 @@ import type { Distiller } from '../node/distill';
 import { cwdResolver, resolveRoots, rootResolver } from '../mcp/roots';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isInside } from '../node/inside';
+import { readStats, recordUsage, renderStats, summarize } from '../node/stats';
 import { readLiteparseVersion } from '../node/versions';
 import { findPackageRoot } from '../node/lingua';
 import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
@@ -62,6 +63,12 @@ function gitCheckIgnore(cwd: string, file: string): boolean | null {
 }
 
 const BYTES_PER_MB = 1024 * 1024;
+
+function parsePrice(value: string): number {
+  const price = Number(value);
+  if (value.trim() === '' || !Number.isFinite(price) || price < 0) throw new InvalidArgumentError('must be a non-negative number');
+  return price;
+}
 
 async function defaultReadStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -316,7 +323,13 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--max-tokens <n>', 'with --stdout: print an index and the first lines when the document is larger than this', parsePositiveInt)
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
     .action(async (files: string[], options: ConvertOptions) => {
-      const code = await runConvert(files, options, { stdout, stderr, openDistiller, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1' });
+      const code = await runConvert(files, options, {
+        stdout,
+        stderr,
+        openDistiller,
+        savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
+        recordUsage: (kind, savings) => recordUsage({ source: 'cli', kind, savings }, { cacheDir, env }),
+      });
       if (isTTY && !options.json && !options.stdout) await showNotice();
       if (code !== 0) exit(code);
     });
@@ -330,6 +343,16 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .action(async (file: string, options: OutlineOptions) => {
       const code = await runOutline(file, options, { stdout, stderr, openDistiller });
       if (code !== 0) exit(code);
+    });
+
+  program
+    .command('stats')
+    .description('Show how many tokens distill has saved on this machine')
+    .option('--json', 'print the summary as JSON')
+    .option('--price <usd>', 'value saved tokens at this price in USD per million input tokens', parsePrice)
+    .action((options: { json?: boolean; price?: number }) => {
+      const summary = summarize(readStats(cacheDir), new Date());
+      stdout(options.json ? JSON.stringify(summary) : renderStats(summary, options.price === undefined ? {} : { price: options.price }));
     });
 
   program
@@ -410,6 +433,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           health: () => distiller.health(),
           resolvePath,
           savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
+          recordUsage: (kind, savings) => recordUsage({ source: 'mcp', kind, savings }, { cacheDir, env }),
           ...(maxResultTokens === undefined ? {} : { maxResultTokens }),
         });
 
@@ -521,6 +545,9 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           try {
             const converted = await convertViaCache(getDistiller, absPath);
             const markdown = readFileSync(converted.mdPath, 'utf8');
+            if (converted.savings !== null) {
+              recordUsage({ source: 'hook', kind: extname(absPath).slice(1).toUpperCase() || 'unknown', savings: converted.savings }, { cacheDir, env });
+            }
             return converted.savings === null ? { path: converted.mdPath, markdown } : { path: converted.mdPath, savings: converted.savings, markdown };
           } catch (error) {
             stderr(`distill hook: ${describeError(error)}`);

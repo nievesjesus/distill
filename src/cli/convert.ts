@@ -4,7 +4,7 @@ import { InvalidArgumentError } from 'commander';
 import { parseBoosterList } from '../core/booster-list';
 import { savedPercent, shortCount } from '../core/format';
 import { buildOutline, fitLines, renderOutline, sliceLines } from '../core/outline';
-import { estimateSavings, savingsNote } from '../core/savings';
+import { type SavingsEstimate, estimateSavings, savingsNote } from '../core/savings';
 import type { LocalBoosterId } from '../core/types';
 import type { Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
@@ -34,6 +34,7 @@ export interface ConvertIo {
   stdout: (line: string) => void;
   stderr: (line: string) => void;
   savingsNote?: boolean;
+  recordUsage?: (kind: string, savings: SavingsEstimate) => void;
   openDistiller: (maxBytes: number) => Promise<Distiller>;
 }
 
@@ -129,6 +130,9 @@ export async function runConvert(files: string[], options: ConvertOptions, io: C
     const input = files[index];
     try {
       const result = await distiller.distillFile(input, { boosters, lingua: options.lingua ?? false, rate: options.rate });
+      try {
+        io.recordUsage?.(result.kind, estimateSavings(result));
+      } catch {}
       if (options.stdout) {
         io.stdout(stdoutText(result.markdown, result.name, input, result.tokens.out, options));
         if (io.savingsNote !== false) io.stderr(savingsNote(estimateSavings(result)));

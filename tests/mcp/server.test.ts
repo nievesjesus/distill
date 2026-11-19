@@ -38,6 +38,7 @@ interface ConnectDeps {
   savingsNote?: boolean;
   maxResultTokens?: number;
   stat?: (p: string) => Promise<{ size: number; mtimeMs: number }>;
+  recordUsage?: (kind: string, savings: unknown) => void;
 }
 
 const LINE = 'row alpha beta gamma\n';
@@ -66,6 +67,7 @@ async function connect(deps: ConnectDeps = {}) {
     ...(deps.savingsNote === undefined ? {} : { savingsNote: deps.savingsNote }),
     ...(deps.maxResultTokens === undefined ? {} : { maxResultTokens: deps.maxResultTokens }),
     ...(deps.stat === undefined ? {} : { stat: deps.stat }),
+    ...(deps.recordUsage === undefined ? {} : { recordUsage: deps.recordUsage }),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test', version: '0.0.0' });
@@ -467,5 +469,35 @@ describe('outline and sections', () => {
     expect(whole).not.toHaveProperty('outline');
     const small = (await file(client, {})).structuredContent as Structured;
     expect(small).not.toHaveProperty('outline');
+  });
+});
+
+describe('usage recording', () => {
+  it('records distill_file from the start only', async () => {
+    const recorded: unknown[][] = [];
+    const client = await connect({ recordUsage: (...args) => recorded.push(args), stat: fixedStat });
+    await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+    await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', offset: 1, limit: 1 } });
+    await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf', section: 'a.pdf' } });
+    expect(recorded).toEqual([['PDF', SAVINGS]]);
+  });
+
+  it('never records distill_outline and records each distill_files result', async () => {
+    const recorded: unknown[][] = [];
+    const client = await connect({ recordUsage: (...args) => recorded.push(args), stat: fixedStat });
+    await client.callTool({ name: 'distill_outline', arguments: { path: '/x/a.pdf' } });
+    expect(recorded).toEqual([]);
+    await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/bad.pdf', '/x/a.pdf', '/x/b.pdf'] } });
+    expect(recorded).toEqual([['PDF', SAVINGS], ['PDF', SAVINGS]]);
+  });
+
+  it('does not break the call when recording throws', async () => {
+    const client = await connect({
+      recordUsage: () => {
+        throw new Error('disk full');
+      },
+    });
+    const result = await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+    expect(result.isError).toBeFalsy();
   });
 });

@@ -83,6 +83,7 @@ export interface McpDeps {
   savingsNote?: boolean;
   maxResultTokens?: number;
   stat?: (path: string) => Promise<{ size: number; mtimeMs: number }>;
+  recordUsage?: (kind: string, savings: SavingsEstimate) => void;
 }
 
 interface Page {
@@ -138,6 +139,11 @@ function describeError(error: unknown): { code: string; message: string } {
 export function createMcpServer(deps: McpDeps): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: deps.health().version });
   const withNote = deps.savingsNote !== false;
+  const track = (kind: string, savings: SavingsEstimate): void => {
+    try {
+      deps.recordUsage?.(kind, savings);
+    } catch {}
+  };
 
   const budget = deps.maxResultTokens !== undefined && deps.maxResultTokens > 0 ? deps.maxResultTokens : DEFAULT_MAX_RESULT_TOKENS;
   const statFile = deps.stat ?? stat;
@@ -236,6 +242,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         const more = page.to < page.end;
         const continuation = more ? continuationFor(page, limit !== undefined) : undefined;
         const savings = offset === 1 && args.section === undefined ? estimateSavings(result) : undefined;
+        if (savings && args.limit === undefined) track(result.kind, savings);
         const note = withNote && savings ? savingsNote(savings) : undefined;
         const partialStart = args.offset === undefined && args.limit === undefined && args.section === undefined && page.to < page.total;
         const outline = partialStart ? renderOutline(buildOutline(result.markdown), { name: result.name }) : undefined;
@@ -384,6 +391,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
           if (cost <= remaining) {
             remaining -= cost;
             estimates.push(savings);
+            track(result.kind, savings);
             results.push({ path, tokens: result.tokens, savings, markdown: result.markdown });
             sections.push(`# ${result.name}\n\n${result.markdown}`);
             continue;
@@ -392,6 +400,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
           cut = true;
           partial += 1;
           estimates.push(savings);
+          track(result.kind, savings);
           const entry: Entry = {
             path,
             continuation: `Showing lines ${page.from}-${page.to} of ${page.total}. Call distill_file with this path and offset ${page.to + 1} to continue.`,
