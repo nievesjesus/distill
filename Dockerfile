@@ -12,6 +12,7 @@ LABEL org.opencontainers.image.source="https://github.com/nievesjesus/distill"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libreoffice-writer libreoffice-calc libreoffice-impress \
+        ffmpeg \
         tesseract-ocr-eng \
         fonts-dejavu-core fonts-liberation2 \
     && rm -rf /var/lib/apt/lists/*
@@ -24,6 +25,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 COPY lingua-runtime/package.json lingua-runtime/package-lock.json ./lingua-runtime/
+COPY asr-runtime/package.json asr-runtime/package-lock.json ./asr-runtime/
 RUN mkdir -p /home/node/.cache && chown node:node /home/node/.cache
 USER node
 EXPOSE 4321
