@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FloatBytes, LinearResampler, WindowFeeder, ffmpegArgs, ffprobeArgs, pcmStream, readWavInfo, wavDuration } from '../../../src/node/asr/decode';
+import { FloatBytes, LinearResampler, WindowFeeder, ffmpegArgs, ffmpegInfoArgs, ffprobeArgs, parseFfmpegDuration, pcmStream, readWavInfo, wavDuration } from '../../../src/node/asr/decode';
 import { AsrError } from '../../../src/node/asr/errors';
 import { makeWav, sine } from './helpers';
 
@@ -184,6 +184,13 @@ describe('ffmpeg path', () => {
   it('restricts ffprobe protocols and uses an absolute input', () => {
     const args = ffprobeArgs('-evil.mp4');
     expect(args).toEqual(['-v', 'error', '-protocol_whitelist', 'file,pipe', '-show_entries', 'format=duration', '-of', 'csv=p=0', '-i', resolve('-evil.mp4')]);
+  });
+
+  it('reads a duration from ffmpeg stderr', () => {
+    expect(ffmpegInfoArgs('-evil.mp4')).toEqual(['-hide_banner', '-protocol_whitelist', 'file,pipe', '-i', resolve('-evil.mp4')]);
+    expect(parseFfmpegDuration('Input #0, mov\n  Duration: 01:02:03.50, start: 0.000000, bitrate: 128 kb/s')).toBeCloseTo(3723.5);
+    expect(parseFfmpegDuration('  Duration: N/A, bitrate: N/A')).toBeUndefined();
+    expect(parseFfmpegDuration('')).toBeUndefined();
   });
 
   it('spawns without a shell and streams f32 samples across odd chunks', async () => {

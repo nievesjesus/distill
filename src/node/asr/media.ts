@@ -7,6 +7,7 @@ import { DistillError } from '../errors';
 import type { Parser } from '../parse';
 import { AsrError } from './errors';
 import { collectSlides as defaultCollectSlides } from './frames';
+import { cachedSlides, storeSlides } from './slides-cache';
 import { knownDuration, transcribe as defaultTranscribe } from './transcribe';
 
 export interface MediaDeps {
@@ -49,15 +50,21 @@ export function withMedia(parser: Parser, deps: MediaDeps): Parser {
     let slides: Slide[] = [];
     if (wantFrames) {
       if (ffmpeg !== null) {
-        slides = await collectSlides(path, {
-          ffmpeg,
-          duration: result.duration ?? 0,
-          ocr: async (png) => (await parser.toMarkdown(png)).markdown,
-          ...(opts?.signal ? { signal: opts.signal } : {}),
-        }).catch((error) => {
-          if (error instanceof AsrError) throw new DistillError(error.code, error.message, { cause: error });
-          throw error;
-        });
+        const stored = await cachedSlides(path, deps.cacheDir).catch(() => undefined);
+        if (stored !== undefined) {
+          slides = stored;
+        } else {
+          slides = await collectSlides(path, {
+            ffmpeg,
+            duration: result.duration ?? 0,
+            ocr: async (png) => (await parser.toMarkdown(png)).markdown,
+            ...(opts?.signal ? { signal: opts.signal } : {}),
+          }).catch((error) => {
+            if (error instanceof AsrError) throw new DistillError(error.code, error.message, { cause: error });
+            throw error;
+          });
+          await storeSlides(path, deps.cacheDir, slides).catch(() => undefined);
+        }
       }
     }
     const body = formatTranscript(result.segments, { timestamps: opts?.timestamps ?? 'coarse', ...(lang ? { lang } : {}), slides });

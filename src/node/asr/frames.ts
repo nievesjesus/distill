@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Slide } from '../../core/transcript';
@@ -13,6 +13,8 @@ export const INTERVAL_SECONDS = 10;
 export const HASH_DISTANCE = 6;
 export const PIXEL_GUARD = 3;
 
+const STALE_FRAMES_MS = 60 * 60 * 1000;
+const FRAMES_PREFIX = 'distill-frames-';
 const THUMB_WIDTH = 9;
 const THUMB_HEIGHT = 8;
 const THUMB_BYTES = THUMB_WIDTH * THUMB_HEIGHT;
@@ -219,9 +221,24 @@ async function distinct(frames: Keyframe[], spawnFn: SpawnFn, options: SlideOpti
   return kept;
 }
 
+async function sweepStaleFrames(root: string): Promise<void> {
+  try {
+    const cutoff = Date.now() - STALE_FRAMES_MS;
+    for (const name of await readdir(root)) {
+      if (!name.startsWith(FRAMES_PREFIX)) continue;
+      const path = join(root, name);
+      try {
+        if ((await stat(path)).mtimeMs < cutoff) await rm(path, { recursive: true, force: true });
+      } catch {}
+    }
+  } catch {}
+}
+
 export async function collectSlides(input: string, options: SlideOptions): Promise<Slide[]> {
   const spawnFn: SpawnFn = options.spawn ?? nodeSpawn;
-  const work = await mkdtemp(join(options.tmpRoot ?? tmpdir(), 'distill-frames-'));
+  const root = options.tmpRoot ?? tmpdir();
+  await sweepStaleFrames(root);
+  const work = await mkdtemp(join(root, FRAMES_PREFIX));
   try {
     let frames = await extract(input, { type: 'scene' }, join(work, 'scene'), spawnFn, options);
     if (frames.length < MIN_SCENE_FRAMES) {

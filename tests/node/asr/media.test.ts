@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { renderSrt } from '../../../src/core/transcript';
 import { countTokens } from '../../../src/core/tokens';
@@ -30,6 +33,52 @@ function deps(overrides: Record<string, unknown> = {}) {
   const collectSlides = vi.fn(async () => [{ at: 10, lines: ['Hiring plan'] }]);
   return { cacheDir: '/cache', env: {}, transcribe, collectSlides, resolveFfmpeg: () => '/bin/ffmpeg', ...overrides } as any;
 }
+
+describe('withMedia slide cache', () => {
+  function realVideo() {
+    const root = mkdtempSync(join(tmpdir(), 'media-slides-'));
+    const video = join(root, 'talk.mp4');
+    writeFileSync(video, 'not really a video');
+    return { root, video };
+  }
+
+  it('extracts frames once and serves the slides from the cache afterwards', async () => {
+    const { root, video } = realVideo();
+    try {
+      const d = deps({ cacheDir: join(root, 'cache') });
+      const first = await withMedia(innerParser(), d).toMarkdown(video, { timestamps: 'none' });
+      const second = await withMedia(innerParser(), d).toMarkdown(video, { timestamps: 'none' });
+      expect(d.collectSlides).toHaveBeenCalledTimes(1);
+      expect(second.markdown).toBe(first.markdown);
+      expect(second.markdown).toContain('Hiring plan');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the slides cache private', async () => {
+    if (process.platform === 'win32') return;
+    const { root, video } = realVideo();
+    try {
+      await withMedia(innerParser(), deps({ cacheDir: join(root, 'cache') })).toMarkdown(video);
+      expect(statSync(join(root, 'cache', 'transcripts')).mode & 0o777).toBe(0o700);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('caches a video with no on-screen text too', async () => {
+    const { root, video } = realVideo();
+    try {
+      const d = deps({ cacheDir: join(root, 'cache'), collectSlides: vi.fn(async () => []) });
+      await withMedia(innerParser(), d).toMarkdown(video);
+      await withMedia(innerParser(), d).toMarkdown(video);
+      expect(d.collectSlides).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('withMedia', () => {
   it('turns audio into a headed transcript with SRT tokens as the raw baseline', async () => {

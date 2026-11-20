@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASR_FILES, ASR_MODEL_ID, ASR_RUNTIME_VERSION, asrPaths, asrPlatformPackage } from '../../../src/node/asr-install';
 import { AsrError } from '../../../src/node/asr/errors';
-import { transcribe } from '../../../src/node/asr/transcribe';
+import { knownDuration, transcribe } from '../../../src/node/asr/transcribe';
 import { makeWav } from './helpers';
 
 let root: string;
@@ -76,6 +76,30 @@ writeFileSync(${JSON.stringify(pidFile)}, String(g.pid));
 ${handleTerm ? "process.on('SIGTERM', () => { g.kill('SIGKILL'); process.exit(0); });" : "process.on('SIGTERM', () => {});"}
 setInterval(()=>{},1000);process.__hang=1;
 `;
+
+describe('knownDuration without ffprobe', () => {
+  it('falls back to the Duration line of ffmpeg stderr', async () => {
+    if (process.platform === 'win32') return;
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    const ffmpeg = join(bin, 'ffmpeg');
+    writeFileSync(ffmpeg, "#!/bin/sh\necho '  Duration: 00:01:30.25, start: 0.0, bitrate: 64 kb/s' >&2\necho 'At least one output file must be specified' >&2\nexit 1\n", { mode: 0o755 });
+    const media = join(root, 'x.mp3');
+    writeFileSync(media, 'not wav');
+    expect(await knownDuration(media, ffmpeg)).toBeCloseTo(90.25);
+  });
+
+  it('is unknown when neither tool reports a duration', async () => {
+    if (process.platform === 'win32') return;
+    const bin = join(root, 'bin2');
+    mkdirSync(bin);
+    const ffmpeg = join(bin, 'ffmpeg');
+    writeFileSync(ffmpeg, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const media = join(root, 'x.mp3');
+    writeFileSync(media, 'not wav');
+    expect(await knownDuration(media, ffmpeg)).toBeUndefined();
+  });
+});
 
 describe('transcribe', () => {
   it('keeps the transcript cache private on POSIX', async () => {

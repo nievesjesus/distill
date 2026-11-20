@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASR_MODEL_ID, asrPaths, getAsrStatus, resolveFfmpeg } from '../asr-install';
 import { readJsonFile, sha256Of, writePrivateJson } from './cache';
-import { ffprobeArgs, readWavInfo, wavDuration } from './decode';
+import { ffmpegInfoArgs, ffprobeArgs, parseFfmpegDuration, readWavInfo, wavDuration } from './decode';
 import { ASR_UNAVAILABLE_MESSAGE, AsrError } from './errors';
 import type { AsrErrorCode } from './errors';
 
@@ -115,11 +115,19 @@ async function readCache(path: string): Promise<{ segments: AsrSegment[]; durati
 
 function probeDuration(ffmpeg: string, input: string, platform: NodeJS.Platform): Promise<number | undefined> {
   const probe = join(dirname(ffmpeg), platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
-  if (!existsSync(probe)) return Promise.resolve(undefined);
+  if (!existsSync(probe)) return ffmpegDuration(ffmpeg, input);
   return new Promise((resolve) => {
     execFile(probe, ffprobeArgs(input), { timeout: 10_000, windowsHide: true }, (error, stdout) => {
       const seconds = Number.parseFloat(String(stdout).trim());
       resolve(error || !Number.isFinite(seconds) || seconds <= 0 ? undefined : seconds);
+    });
+  });
+}
+
+function ffmpegDuration(ffmpeg: string, input: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    execFile(ffmpeg, ffmpegInfoArgs(input), { timeout: 15_000, windowsHide: true, maxBuffer: 1 << 20 }, (_error, _stdout, stderr) => {
+      resolve(parseFfmpegDuration(String(stderr)));
     });
   });
 }

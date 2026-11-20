@@ -732,9 +732,13 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       try {
         const absPath = isAbsolute(file) ? file : resolve(cwd, file);
         const mediaKind = detectKind(absPath);
-        if ((mediaKind === 'AUDIO' || mediaKind === 'VIDEO') && (await createMediaGate({ cacheDir, env })(absPath)) !== 'convert') {
-          exit(1);
-          return;
+        if (mediaKind === 'AUDIO' || mediaKind === 'VIDEO') {
+          const plan = await createMediaGate({ cacheDir, env })(absPath);
+          if (plan !== 'convert') {
+            stderr(`distill hook: ${plan.defer}`);
+            exit(1);
+            return;
+          }
         }
         const { mdPath: path } = await convertViaCache(getDistiller, absPath);
         stdout(JSON.stringify({ path }));

@@ -687,6 +687,17 @@ describe('run hook convert', () => {
     expect(JSON.parse(h.stdout[0]).path).toMatch(/\.md$/);
   });
 
+  it('explains on stderr why long or unreadable media was not converted', async () => {
+    const file = join(proj, 'long.mp3');
+    writeFileSync(file, 'not a wav');
+    const h = harness('', { PATH: '' });
+    await run(['hook', 'convert', file], h.deps);
+    expect(h.stdout).toEqual([]);
+    expect(h.exit).toHaveBeenCalledWith(1);
+    expect(h.stderr.join('\n')).toContain('ffmpeg is required');
+    expect(h.openDistiller).not.toHaveBeenCalled();
+  });
+
   it('exits 1 for unsupported kinds without opening the distiller', async () => {
     const h = harness('');
     await run(['hook', 'convert', '/a/b.png'], h.deps);

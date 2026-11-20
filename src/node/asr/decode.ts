@@ -20,6 +20,17 @@ export function ffprobeArgs(input: string): string[] {
   return ['-v', 'error', '-protocol_whitelist', 'file,pipe', '-show_entries', 'format=duration', '-of', 'csv=p=0', '-i', resolve(input)];
 }
 
+export function ffmpegInfoArgs(input: string): string[] {
+  return ['-hide_banner', '-protocol_whitelist', 'file,pipe', '-i', resolve(input)];
+}
+
+export function parseFfmpegDuration(stderr: string): number | undefined {
+  const match = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(stderr);
+  if (!match) return undefined;
+  const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+  return seconds > 0 ? seconds : undefined;
+}
+
 export interface WavInfo {
   float: boolean;
   bits: number;

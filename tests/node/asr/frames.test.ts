@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, utimesSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -248,6 +248,20 @@ const three: FakeFrame[] = [
 ];
 
 describe('collectSlides', () => {
+  it('removes stale distill-frames directories from the temp root and keeps fresh ones', async () => {
+    const stale = join(root, 'distill-frames-stale');
+    const fresh = join(root, 'distill-frames-fresh');
+    const other = join(root, 'something-else');
+    for (const dir of [stale, fresh, other]) mkdirSync(dir);
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(stale, old, old);
+    utimesSync(other, old, old);
+    await collectSlides('/m/v.mp4', { ffmpeg: '/bin/ffmpeg', duration: 40, ocr: ocrFromFile().fn, spawn: fakeFfmpeg({ scene: three }).spawn, tmpRoot: root });
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    expect(existsSync(other)).toBe(true);
+  });
+
   it('extracts once when the scene pass finds enough frames, and times slides from pts_time', async () => {
     const ffmpeg = fakeFfmpeg({ scene: three });
     const ocr = ocrFromFile();
