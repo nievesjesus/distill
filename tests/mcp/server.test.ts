@@ -260,6 +260,26 @@ describe('createMcpServer', () => {
       expect(calls[0].opts.signal).toBeInstanceOf(AbortSignal);
     });
 
+    it('passes the request abort signal through distill_files and distill_outline', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      const client = await connect({ distiller: mediaDistiller(calls) });
+      await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/talk.mp3'] } });
+      await client.callTool({ name: 'distill_outline', arguments: { path: '/x/talk2.mp3' } });
+      expect(calls).toHaveLength(2);
+      expect(calls[0].opts.signal).toBeInstanceOf(AbortSignal);
+      expect(calls[1].opts.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('describes both size limits instead of a single cap', async () => {
+      const client = await connect();
+      const tools = (await client.listTools()).tools;
+      const text = tools.find((tool) => tool.name === 'distill_file')?.description ?? '';
+      expect(text).toMatch(/documents/);
+      expect(text).toMatch(/2 GB/);
+      const capabilities = tools.find((tool) => tool.name === 'distill_capabilities')?.description ?? '';
+      expect(capabilities).toContain('mediaMaxBytes');
+    });
+
     it('surfaces asr_unavailable with the install command', async () => {
       const error = new DistillError('asr_unavailable', 'Speech recognition is not installed. Run `distill-llm asr install` to download it (about 700 MB, one time).');
       const client = await connect({ distiller: mediaDistiller([], error) });
@@ -364,7 +384,7 @@ describe('createMcpServer', () => {
   it('distill_capabilities returns the health object', async () => {
     const client = await connect();
     const result = await client.callTool({ name: 'distill_capabilities', arguments: {} });
-    expect(result.structuredContent).toEqual({ ...HEALTH, maxResultTokens: 10000 });
+    expect(result.structuredContent).toEqual({ ...HEALTH, mediaMaxBytes: 2 * 1024 * 1024 * 1024, maxResultTokens: 10000 });
   });
 });
 

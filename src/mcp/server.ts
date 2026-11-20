@@ -10,6 +10,7 @@ import { countTokens } from '../core/tokens';
 import type { DistillResult, Health, LocalBoosterId } from '../core/types';
 import type { DistillOptions, Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
+import { maxBytesFor } from '../node/limits';
 
 const MAX_PATHS = 20;
 const SERVER_NAME = 'distill-llm';
@@ -56,6 +57,7 @@ const entrySchema = z.object({
 });
 
 function formatLimit(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10} GB`;
   return bytes >= 1024 * 1024 ? `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
@@ -293,7 +295,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
     return { result, key };
   }
 
-  const maxSize = formatLimit(deps.health().maxBytes);
+  const documentLimit = formatLimit(deps.health().maxBytes);
+  const mediaLimit = formatLimit(maxBytesFor('a.mp3', deps.health().maxBytes));
+  const maxSize = `${documentLimit} for documents, ${mediaLimit} for audio and video`;
 
   server.registerTool(
     'distill_file',
@@ -429,9 +433,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
         visualPages: visualPagesSchema.optional(),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       try {
-        const { result, key } = await distillOne(args.path, args);
+        const { result, key } = await distillOne(args.path, args, extra?.signal);
         const outline = buildOutline(result.markdown);
         const text = renderOutline(outline, { name: result.name });
         const savings = claimReport(key) ? estimateSavings(result) : undefined;
@@ -481,11 +485,11 @@ export function createMcpServer(deps: McpDeps): McpServer {
         tokens: tokensSchema,
       },
     },
-    async (args) => {
+    async (args, extra) => {
       try {
         if (args.path !== undefined && args.url !== undefined) throw new DistillError('bad_request', 'Pass either path or url, not both');
         if (args.path === undefined && args.url === undefined) throw new DistillError('bad_request', 'Pass path or url');
-        const { result, key } = args.url !== undefined ? await distillUrlOne(args.url, {}) : await distillOne(args.path as string, {});
+        const { result, key } = args.url !== undefined ? await distillUrlOne(args.url, {}) : await distillOne(args.path as string, {}, extra?.signal);
         let found: ReturnType<typeof searchMarkdown>;
         try {
           found = searchMarkdown(result.markdown, args.query, {
@@ -536,7 +540,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_page_image',
     {
       title: 'View one page of a PDF as an image',
-      description: `Render one page of a local PDF as a PNG image (about 100 dpi), or return an image file (PNG, JPG, WebP) itself. Read-only: never modifies or uploads the file. Use it only for pages listed in visualPages by distill_file or distill_outline, and only when the question depends on the chart or image on that page: it costs far more tokens than the Markdown. One page per call (page is the physical page number, 1-based, as listed in visualPages.page). Fails with bad_request (other file types, page out of range), forbidden (outside allowed roots), too_large (over ${maxSize}), not_found or parse_failed.`,
+      description: `Render one page of a local PDF as a PNG image (about 100 dpi), or return an image file (PNG, JPG, WebP) itself. Read-only: never modifies or uploads the file. Use it only for pages listed in visualPages by distill_file or distill_outline, and only when the question depends on the chart or image on that page: it costs far more tokens than the Markdown. One page per call (page is the physical page number, 1-based, as listed in visualPages.page). Fails with bad_request (other file types, page out of range), forbidden (outside allowed roots), too_large (over ${documentLimit}), not_found or parse_failed.`,
       annotations: READ_ONLY,
       inputSchema: {
         path: z.string().min(1).describe(PATH_HINT),
@@ -602,7 +606,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         note: z.string().optional(),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       type Entry =
         | {
             path: string;
@@ -632,7 +636,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
           continue;
         }
         try {
-          const { result, key } = await distillOne(path, args);
+          const { result, key } = await distillOne(path, args, extra?.signal);
           const savings = claimReport(key) ? estimateSavings(result) : undefined;
           const cost = countTokens(result.markdown);
           if (cost <= remaining) {
@@ -688,7 +692,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_capabilities',
     {
       title: 'Report distill capabilities',
-      description: `Report the server version, the maximum file size in bytes (maxBytes), the per-call output cap in tokens (maxResultTokens) and which optional features are available (LibreOffice for legacy .doc/.xls/.ppt and OpenDocument, LLMLingua-2 for the lossy lingua option, and the local speech-recognition stack for audio and video; the user installs it with the command distill-llm asr install, this server never does). Read-only and cheap; call it when a conversion fails with needs_libreoffice or before using lingua. Does not read any document.`,
+      description: `Report the server version, the maximum file size in bytes for documents (maxBytes) and for audio and video (mediaMaxBytes), the per-call output cap in tokens (maxResultTokens) and which optional features are available (LibreOffice for legacy .doc/.xls/.ppt and OpenDocument, LLMLingua-2 for the lossy lingua option, and the local speech-recognition stack for audio and video; the user installs it with the command distill-llm asr install, this server never does). Read-only and cheap; call it when a conversion fails with needs_libreoffice or before using lingua. Does not read any document.`,
       annotations: READ_ONLY,
       outputSchema: {
         version: z.string(),
@@ -697,11 +701,13 @@ export function createMcpServer(deps: McpDeps): McpServer {
         lingua: linguaStatusSchema,
         asr: asrStatusSchema.optional(),
         maxBytes: z.number(),
+        mediaMaxBytes: z.number(),
         maxResultTokens: z.number(),
       },
     },
     async () => {
-      const health = { ...deps.health(), maxResultTokens: budget };
+      const base = deps.health();
+      const health = { ...base, mediaMaxBytes: maxBytesFor('a.mp3', base.maxBytes), maxResultTokens: budget };
       return { content: [{ type: 'text' as const, text: JSON.stringify(health) }], structuredContent: health };
     },
   );

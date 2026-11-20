@@ -22,10 +22,13 @@ function result(path: string, markdown: string, kind: DistillResult['kind'] = 'P
   return { path, name: path.split('/').pop() as string, kind, pages: 2, markdown, tokens: { raw: 5000, out: 3000 }, ms: 3 };
 }
 
+const signals: (AbortSignal | undefined)[] = [];
+
 function fakeDistiller(calls: string[] = []): Distiller {
   return {
-    async distillFile(path) {
+    async distillFile(path, opts) {
       calls.push(path);
+      signals.push(opts?.signal);
       if (path.endsWith('bad.pdf')) throw new DistillError('parse_failed', 'broken file');
       return result(path, DOC);
     },
@@ -124,6 +127,13 @@ describe('distill_search', () => {
     await client.callTool({ name: 'distill_search', arguments: { path: '/x/doc.pdf', query: 'costs' } });
     await client.callTool({ name: 'distill_file', arguments: { path: '/x/doc.pdf' } });
     expect(calls).toHaveLength(1);
+  });
+
+  it('passes the request abort signal to the conversion', async () => {
+    signals.length = 0;
+    const client = await connect(fakeDistiller());
+    await client.callTool({ name: 'distill_search', arguments: { path: '/x/signal.pdf', query: 'intro' } });
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
   });
 
   it('requires exactly one of path and url', async () => {
