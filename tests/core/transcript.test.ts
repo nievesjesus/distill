@@ -214,6 +214,13 @@ describe('detectLang', () => {
 });
 
 describe('transcriptHeader', () => {
+  it('cannot be closed early by a file name', () => {
+    const header = transcriptHeader({ name: 'a --> <b>--!>x.mp3', duration: 5 });
+    expect(header.slice(4, -4)).not.toContain('--');
+    expect(header.endsWith(' -->')).toBe(true);
+    expect(header).toContain('a');
+  });
+
   it('names the file, duration, language and engine', () => {
     expect(transcriptHeader({ name: 'call.m4a', duration: 1623.4, lang: 'es' })).toBe('<!-- distill: transcript of call.m4a, 27:03, es, local ASR (Parakeet TDT 0.6B v3) -->');
   });

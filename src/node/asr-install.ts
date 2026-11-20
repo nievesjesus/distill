@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
-import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import type { WriteStream } from 'node:fs';
+import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import type { AsrStatus } from '../core/types';
 import { findOnPath } from '../hooks/command';
-import { createRuntimeInstaller } from './runtime-install';
+import { RENAME_BACKOFF_MS, createRuntimeInstaller, renameWithRetry } from './runtime-install';
+import type { FileOps } from './runtime-install';
 import type { RuntimeInstallerOptions } from './runtime-install';
 
 export const ASR_MODEL_ID = 'parakeet-tdt-0.6b-v3-int8';
@@ -12,6 +14,7 @@ export const ASR_MODEL_ID = 'parakeet-tdt-0.6b-v3-int8';
 const MODEL_REPO = 'csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8';
 const MODEL_COMMIT = 'ed5d745623472f97cfc2e6c2916ee248798fc5a8';
 const RUNTIME_PACKAGE = 'sherpa-onnx-node';
+export const ASR_RUNTIME_VERSION = '2.0.2';
 const RUNTIME_DIR = 'asr';
 const MODELS_DIR = 'asr-models';
 const VAD_FILE = 'silero_vad.onnx';
@@ -65,10 +68,18 @@ export function asrPaths(cacheDir: string): { runtimeRoot: string; modelDir: str
   };
 }
 
+function isRegularFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 export function resolveFfmpeg(env: Record<string, string | undefined>, platform: NodeJS.Platform = process.platform): string | null {
   const own = env.DISTILL_FFMPEG?.trim();
-  if (own && isAbsolute(own) && existsSync(own)) return own;
-  return findOnPath('ffmpeg', env.PATH ?? env.Path, platform);
+  if (own && isAbsolute(own) && isRegularFile(own)) return own;
+  return findOnPath(platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg', env.PATH ?? env.Path, platform);
 }
 
 export type { AsrStatus };
@@ -140,9 +151,19 @@ function hasFileOfSize(path: string, size: number): boolean {
   }
 }
 
+function installedVersion(root: string, name: string): string | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(join(root, 'node_modules', ...name.split('/'), 'package.json'), 'utf8')) as { version?: unknown };
+    return typeof parsed.version === 'string' ? parsed.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function runtimePresent(cacheDir: string, platform: string, arch: string): boolean {
   const root = asrPaths(cacheDir).runtimeRoot;
-  return runtimePackages(platform, arch).every((name) => existsSync(join(root, 'node_modules', ...name.split('/'), 'package.json')));
+  const present = runtimePackages(platform, arch).every((name) => existsSync(join(root, 'node_modules', ...name.split('/'), 'package.json')));
+  return present && installedVersion(root, RUNTIME_PACKAGE) === ASR_RUNTIME_VERSION;
 }
 
 function treeBytes(path: string): number {
@@ -223,7 +244,14 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
     await installer.install();
   }
 
-  async function download(file: AsrFile, before: number, install: AsrInstallOptions): Promise<void> {
+  const ops: FileOps = { rename, rm, ...options.fileOps };
+  const backoffMs = options.renameBackoffMs ?? RENAME_BACKOFF_MS;
+
+  const writeChunk = (stream: WriteStream, chunk: Uint8Array) =>
+    new Promise<void>((resolve, reject) => stream.write(chunk, (error) => (error ? reject(error) : resolve())));
+  const closeStream = (stream: WriteStream) => new Promise<void>((resolve) => stream.end(() => resolve()));
+
+  async function download(file: AsrFile, before: number, install: AsrInstallOptions, restarted = false): Promise<void> {
     const target = fileTarget(options.cacheDir, file);
     const part = `${target}.part`;
     await mkdir(dirname(target), { recursive: true });
@@ -234,6 +262,14 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
     }
     const emit = (done: number) => install.onProgress?.({ file: file.name, done: before + done, total: totalBytes });
     emit(have);
+    if (have === file.size) {
+      if ((await sha256Of(part)) === file.sha256) {
+        await renameWithRetry(ops, part, target, backoffMs);
+        return;
+      }
+      await rm(part, { force: true });
+      return download(file, before, install, restarted);
+    }
     let response: Response;
     try {
       response = await fetchFn(file.url, {
@@ -246,19 +282,19 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
       throw new AsrInstallFailure('download_failed', `Could not download ${file.name}: ${(error as Error).message}`);
     }
     if (response.status === 416) {
+      await response.body?.cancel().catch(() => undefined);
       await rm(part, { force: true });
+      if (!restarted) return download(file, before, install, true);
       throw new AsrInstallFailure('download_failed', `Could not resume ${file.name}: the server rejected the range. Try again.`);
     }
     if (response.status !== 200 && response.status !== 206) {
       throw new AsrInstallFailure('download_failed', `Could not download ${file.name}: HTTP ${response.status}`);
     }
     if (!response.body) throw new AsrInstallFailure('download_failed', `Could not download ${file.name}: empty response`);
-    let written = 0;
-    if (response.status === 200 || have === 0) {
-      await writeFile(part, new Uint8Array(0));
-      have = 0;
-    }
-    written = have;
+    if (response.status === 200 || have === 0) have = 0;
+    let written = have;
+    const out = createWriteStream(part, { flags: have > 0 ? 'a' : 'w' });
+    out.on('error', () => undefined);
     const reader = response.body.getReader();
     try {
       for (;;) {
@@ -267,17 +303,20 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
         written += value.byteLength;
         if (written > file.size) {
           await reader.cancel().catch(() => undefined);
+          await closeStream(out);
           await rm(part, { force: true });
           throw new AsrInstallFailure('size_mismatch', `${file.name} is larger than the expected ${file.size} bytes`);
         }
-        await appendFile(part, value);
+        await writeChunk(out, value);
         emit(written);
       }
     } catch (error) {
+      await closeStream(out);
       if (error instanceof AsrInstallFailure) throw error;
       if (install.signal?.aborted) throw abortFailure(file);
       throw new AsrInstallFailure('download_failed', `Download of ${file.name} was interrupted: ${(error as Error).message}`);
     }
+    await closeStream(out);
     if (written !== file.size) {
       await rm(part, { force: true });
       throw new AsrInstallFailure('size_mismatch', `${file.name} ended at ${written} bytes, expected ${file.size}`);
@@ -286,7 +325,7 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
       await rm(part, { force: true });
       throw new AsrInstallFailure('sha_mismatch', `${file.name} failed the sha256 check`);
     }
-    await rename(part, target);
+    await renameWithRetry(ops, part, target, backoffMs);
   }
 
   async function perform(install: AsrInstallOptions): Promise<void> {

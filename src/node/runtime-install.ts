@@ -14,7 +14,7 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 10_000;
 const KILL_GRACE_MS = 5000;
 const RENAME_ATTEMPTS = 5;
-const RENAME_BACKOFF_MS = 50;
+export const RENAME_BACKOFF_MS = 50;
 const RETRYABLE_RENAME_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY']);
 const MAX_CAPTURE = 16 * 1024;
 const MAX_MESSAGE = 300;
@@ -255,7 +255,7 @@ function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
 }
 
-async function renameWithRetry(ops: FileOps, from: string, to: string, backoffMs: number): Promise<void> {
+export async function renameWithRetry(ops: FileOps, from: string, to: string, backoffMs: number): Promise<void> {
   for (let attempt = 1; ; attempt += 1) {
     try {
       await ops.rename(from, to);

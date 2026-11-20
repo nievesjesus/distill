@@ -179,6 +179,7 @@ export function detectLang(segments: readonly TranscriptSegment[]): TranscriptLa
 }
 
 export function transcriptHeader(info: { name: string; duration?: number; lang?: TranscriptLang }): string {
-  const parts = [`transcript of ${info.name}`, ...(info.duration === undefined ? [] : [formatClock(info.duration)]), ...(info.lang ? [info.lang] : []), TRANSCRIPT_ENGINE];
+  const name = info.name.replace(/-{2,}/g, '-').replace(/[\r\n]+/g, ' ');
+  const parts = [`transcript of ${name}`, ...(info.duration === undefined ? [] : [formatClock(info.duration)]), ...(info.lang ? [info.lang] : []), TRANSCRIPT_ENGINE];
   return `<!-- distill: ${parts.join(', ')} -->`;
 }

@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ASR_FILES, ASR_MODEL_ID, asrPaths, asrPlatformPackage } from '../../../src/node/asr-install';
+import { ASR_FILES, ASR_MODEL_ID, ASR_RUNTIME_VERSION, asrPaths, asrPlatformPackage } from '../../../src/node/asr-install';
 import { AsrError } from '../../../src/node/asr/errors';
 import { transcribe } from '../../../src/node/asr/transcribe';
 import { makeWav } from './helpers';
@@ -18,7 +18,7 @@ function installFake(): void {
   const paths = asrPaths(cacheDir);
   for (const name of ['sherpa-onnx-node', asrPlatformPackage(process.platform, process.arch)!]) {
     mkdirSync(join(paths.runtimeRoot, 'node_modules', name), { recursive: true });
-    writeFileSync(join(paths.runtimeRoot, 'node_modules', name, 'package.json'), '{}');
+    writeFileSync(join(paths.runtimeRoot, 'node_modules', name, 'package.json'), JSON.stringify({ version: ASR_RUNTIME_VERSION }));
   }
   mkdirSync(paths.modelDir, { recursive: true });
   for (const file of ASR_FILES) {
@@ -78,6 +78,59 @@ setInterval(()=>{},1000);process.__hang=1;
 `;
 
 describe('transcribe', () => {
+  it('keeps the transcript cache private on POSIX', async () => {
+    if (process.platform === 'win32') return;
+    await transcribe(wav, { cacheDir, workerPath: worker(okWorker), env: {} });
+    const dir = join(cacheDir, 'transcripts');
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    const file = join(dir, `${sha(readFileSync(wav))}-${ASR_MODEL_ID}-v1.json`);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it('tightens an existing transcript cache directory', async () => {
+    if (process.platform === 'win32') return;
+    mkdirSync(join(cacheDir, 'transcripts'), { mode: 0o755 });
+    await transcribe(wav, { cacheDir, workerPath: worker(okWorker), env: {} });
+    expect(statSync(join(cacheDir, 'transcripts')).mode & 0o777).toBe(0o700);
+  });
+
+  it('runs one worker at a time by default and queues the next transcription', async () => {
+    const log = join(root, 'log.txt');
+    const other = join(root, 'b.wav');
+    writeFileSync(other, makeWav({ rate: 16000, channels: 1, bits: 16, count: 8000, frames: () => 0 }));
+    const workerPath = worker(`const fs=await import('node:fs');fs.appendFileSync(${JSON.stringify(log)},'start\\n');await new Promise(r=>setTimeout(r,250));fs.appendFileSync(${JSON.stringify(log)},'end\\n');out({type:'done',duration:1});`);
+    await Promise.all([transcribe(wav, { cacheDir, workerPath, env: {} }), transcribe(other, { cacheDir, workerPath, env: {} })]);
+    expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['start', 'end', 'start', 'end']);
+  });
+
+  it('allows more workers when DISTILL_ASR_CONCURRENCY says so', async () => {
+    const log = join(root, 'log2.txt');
+    const other = join(root, 'b.wav');
+    writeFileSync(other, makeWav({ rate: 16000, channels: 1, bits: 16, count: 8000, frames: () => 0 }));
+    const workerPath = worker(`const fs=await import('node:fs');fs.appendFileSync(${JSON.stringify(log)},'start\\n');await new Promise(r=>setTimeout(r,250));fs.appendFileSync(${JSON.stringify(log)},'end\\n');out({type:'done',duration:1});`);
+    const env = { DISTILL_ASR_CONCURRENCY: '2' };
+    await Promise.all([transcribe(wav, { cacheDir, workerPath, env }), transcribe(other, { cacheDir, workerPath, env })]);
+    expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['start', 'start', 'end', 'end']);
+  });
+
+  it('lets a queued transcription be cancelled before it starts', async () => {
+    const other = join(root, 'b.wav');
+    writeFileSync(other, makeWav({ rate: 16000, channels: 1, bits: 16, count: 8000, frames: () => 0 }));
+    const slow = worker(`await new Promise(r=>setTimeout(r,300));out({type:'done',duration:1});`);
+    const first = transcribe(wav, { cacheDir, workerPath: slow, env: {} });
+    const controller = new AbortController();
+    const second = transcribe(other, { cacheDir, workerPath: slow, env: {}, signal: controller.signal });
+    setTimeout(() => controller.abort(), 50);
+    await expect(second).rejects.toMatchObject({ code: 'aborted' });
+    await first;
+  });
+
+  it('serves a duplicate request from the cache once the first one finishes', async () => {
+    const workerPath = worker(`await new Promise(r=>setTimeout(r,200));${okWorker}`);
+    const [a, b] = await Promise.all([transcribe(wav, { cacheDir, workerPath, env: {} }), transcribe(wav, { cacheDir, workerPath, env: {} })]);
+    expect([a.cached, b.cached].sort()).toEqual([false, true]);
+  });
+
   it('collects segments from the worker, rounds times and reports progress', async () => {
     const progress: number[] = [];
     const result = await transcribe(wav, { cacheDir, workerPath: worker(okWorker), env: {}, onProgress: (s: number) => progress.push(s) });

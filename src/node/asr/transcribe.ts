@@ -1,11 +1,10 @@
 import { execFile, spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { createReadStream, existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASR_MODEL_ID, asrPaths, getAsrStatus, resolveFfmpeg } from '../asr-install';
+import { readJsonFile, sha256Of, writePrivateJson } from './cache';
 import { ffprobeArgs, readWavInfo, wavDuration } from './decode';
 import { ASR_UNAVAILABLE_MESSAGE, AsrError } from './errors';
 import type { AsrErrorCode } from './errors';
@@ -37,6 +36,45 @@ const UNKNOWN_DURATION_TIMEOUT_MS = 30 * 60 * 1000;
 const STDERR_CAP = 8192;
 const ERROR_CODES: readonly AsrErrorCode[] = ['asr_unavailable', 'ffmpeg_missing', 'no_audio', 'asr_failed', 'aborted', 'timeout'];
 
+const MAX_ASR_CONCURRENCY = 16;
+
+let activeWorkers = 0;
+const waiting: (() => void)[] = [];
+
+function concurrencyLimit(env: NodeJS.ProcessEnv): number {
+  const raw = env.DISTILL_ASR_CONCURRENCY?.trim();
+  const value = raw && /^\d+$/.test(raw) ? Number(raw) : 1;
+  return value >= 1 ? Math.min(value, MAX_ASR_CONCURRENCY) : 1;
+}
+
+async function acquireWorkerSlot(env: NodeJS.ProcessEnv, signal: AbortSignal | undefined): Promise<() => void> {
+  const release = () => {
+    activeWorkers -= 1;
+    const next = waiting.shift();
+    if (next) next();
+  };
+  for (;;) {
+    if (signal?.aborted) throw new AsrError('aborted', 'Transcription was cancelled');
+    if (activeWorkers < concurrencyLimit(env)) {
+      activeWorkers += 1;
+      return release;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const wake = () => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      };
+      const onAbort = () => {
+        const at = waiting.indexOf(wake);
+        if (at >= 0) waiting.splice(at, 1);
+        reject(new AsrError('aborted', 'Transcription was cancelled'));
+      };
+      waiting.push(wake);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+}
+
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
 
 function packageRoot(from: string): string | undefined {
@@ -58,12 +96,6 @@ function defaultWorkerPath(): string {
   return existsSync(built) ? built : beside;
 }
 
-async function sha256Of(path: string): Promise<string> {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
-  return hash.digest('hex');
-}
-
 function cachePath(cacheDir: string, sha: string): string {
   return join(cacheDir, 'transcripts', `${sha}-${ASR_MODEL_ID}-${CACHE_VERSION}.json`);
 }
@@ -76,24 +108,9 @@ function validSegments(value: unknown): value is AsrSegment[] {
 }
 
 async function readCache(path: string): Promise<{ segments: AsrSegment[]; duration: number } | undefined> {
-  try {
-    const parsed = JSON.parse(await readFile(path, 'utf8')) as { segments?: unknown; duration?: unknown };
-    if (validSegments(parsed.segments) && typeof parsed.duration === 'number') return { segments: parsed.segments, duration: parsed.duration };
-  } catch {
-    return undefined;
-  }
+  const parsed = (await readJsonFile(path)) as { segments?: unknown; duration?: unknown } | undefined;
+  if (parsed && validSegments(parsed.segments) && typeof parsed.duration === 'number') return { segments: parsed.segments, duration: parsed.duration };
   return undefined;
-}
-
-async function writeCache(path: string, value: { segments: AsrSegment[]; duration: number }): Promise<void> {
-  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-  try {
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(tmp, JSON.stringify(value));
-    await rename(tmp, path);
-  } catch {
-    await rm(tmp, { force: true }).catch(() => undefined);
-  }
 }
 
 function probeDuration(ffmpeg: string, input: string, platform: NodeJS.Platform): Promise<number | undefined> {
@@ -234,21 +251,28 @@ export async function transcribe(input: string, options: TranscribeOptions): Pro
   const hit = await readCache(file);
   if (hit) return { ...hit, cached: true };
 
-  const ffmpeg = resolveFfmpeg(env);
-  const known = await knownDuration(input, ffmpeg);
-  const timeoutMs = options.timeoutMs ?? (known === undefined ? UNKNOWN_DURATION_TIMEOUT_MS : Math.ceil(known * 2000) + 120_000);
-  const paths = asrPaths(options.cacheDir);
-  const threads = options.threads ?? Math.max(1, Math.min(4, cpus().length));
+  const release = await acquireWorkerSlot(env, options.signal);
+  try {
+    const again = await readCache(file);
+    if (again) return { ...again, cached: true };
+    const ffmpeg = resolveFfmpeg(env);
+    const known = await knownDuration(input, ffmpeg);
+    const timeoutMs = options.timeoutMs ?? (known === undefined ? UNKNOWN_DURATION_TIMEOUT_MS : Math.ceil(known * 2000) + 120_000);
+    const paths = asrPaths(options.cacheDir);
+    const threads = options.threads ?? Math.max(1, Math.min(4, cpus().length));
 
-  const result = await runWorker(
-    options.workerPath ?? defaultWorkerPath(),
-    { runtimeRoot: paths.runtimeRoot, modelDir: paths.modelDir, vadPath: paths.vadPath, input, threads, ffmpeg },
-    env,
-    timeoutMs,
-    options.signal,
-    options.onProgress,
-    options.killGraceMs ?? 2000,
-  );
-  await writeCache(file, result);
-  return { ...result, cached: false };
+    const result = await runWorker(
+      options.workerPath ?? defaultWorkerPath(),
+      { runtimeRoot: paths.runtimeRoot, modelDir: paths.modelDir, vadPath: paths.vadPath, input, threads, ffmpeg },
+      env,
+      timeoutMs,
+      options.signal,
+      options.onProgress,
+      options.killGraceMs ?? 2000,
+    );
+    await writePrivateJson(file, result);
+    return { ...result, cached: false };
+  } finally {
+    release();
+  }
 }

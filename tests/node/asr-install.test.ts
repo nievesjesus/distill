@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, renameSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ASR_FILES, ASR_MODEL_ID, asrPaths, asrPlatformPackage, createAsrInstaller, getAsrStatus, resolveFfmpeg } from '../../src/node/asr-install';
+import { ASR_FILES, ASR_MODEL_ID, ASR_RUNTIME_VERSION, asrPaths, asrPlatformPackage, createAsrInstaller, getAsrStatus, resolveFfmpeg } from '../../src/node/asr-install';
 import type { AsrFile } from '../../src/node/asr-install';
 
 class FakeChild extends EventEmitter {
@@ -79,7 +79,7 @@ describe('asr installer', () => {
   function plant(dir: string, names: string[]) {
     for (const name of names) {
       mkdirSync(join(dir, 'node_modules', name), { recursive: true });
-      writeFileSync(join(dir, 'node_modules', name, 'package.json'), '{}');
+      writeFileSync(join(dir, 'node_modules', name, 'package.json'), JSON.stringify({ version: ASR_RUNTIME_VERSION }));
     }
   }
 
@@ -297,6 +297,61 @@ describe('asr installer', () => {
     expect(readFileSync(join(paths.modelDir, 'encoder.int8.onnx'))).toEqual(BODIES['encoder.int8.onnx']);
   });
 
+  it('verifies and moves a complete .part file without downloading it again', async () => {
+    const paths = asrPaths(cacheDir);
+    mkdirSync(paths.modelDir, { recursive: true });
+    writeFileSync(join(paths.modelDir, 'encoder.int8.onnx.part'), BODIES['encoder.int8.onnx']);
+    const { installer, seen } = make(serveAll);
+    await installer.install();
+    expect(seen.map((entry) => entry.url)).not.toContain(FILES[0].url);
+    expect(readFileSync(join(paths.modelDir, 'encoder.int8.onnx'))).toEqual(BODIES['encoder.int8.onnx']);
+    expect(existsSync(join(paths.modelDir, 'encoder.int8.onnx.part'))).toBe(false);
+  });
+
+  it('downloads fresh once when a complete .part file fails the sha256 check', async () => {
+    const paths = asrPaths(cacheDir);
+    mkdirSync(paths.modelDir, { recursive: true });
+    writeFileSync(join(paths.modelDir, 'encoder.int8.onnx.part'), Buffer.from('x'.repeat(BODIES['encoder.int8.onnx'].length)));
+    const { installer, seen } = make(serveAll);
+    await installer.install();
+    const encoder = seen.filter((entry) => entry.url === FILES[0].url);
+    expect(encoder).toEqual([{ url: FILES[0].url, range: null }]);
+    expect(readFileSync(join(paths.modelDir, 'encoder.int8.onnx'))).toEqual(BODIES['encoder.int8.onnx']);
+  });
+
+  it('restarts once from zero when the server rejects the range with 416', async () => {
+    const paths = asrPaths(cacheDir);
+    mkdirSync(paths.modelDir, { recursive: true });
+    writeFileSync(join(paths.modelDir, 'encoder.int8.onnx.part'), BODIES['encoder.int8.onnx'].subarray(0, 400));
+    const { installer, seen } = make((url, range) => {
+      if (range) return new Response(null, { status: 416 });
+      return serveAll(url);
+    });
+    await installer.install();
+    const encoder = seen.filter((entry) => entry.url === FILES[0].url);
+    expect(encoder.map((entry) => entry.range)).toEqual(['bytes=400-', null]);
+    expect(readFileSync(join(paths.modelDir, 'encoder.int8.onnx'))).toEqual(BODIES['encoder.int8.onnx']);
+  });
+
+  it('retries the final rename when the file is briefly locked', async () => {
+    let failures = 2;
+    const { installer } = make(serveAll, {
+      renameBackoffMs: 1,
+      fileOps: {
+        rename: async (from: string, to: string) => {
+          if (from.endsWith('.part') && failures > 0) {
+            failures -= 1;
+            throw Object.assign(new Error('locked'), { code: 'EBUSY' });
+          }
+          renameSync(from, to);
+        },
+      },
+    });
+    await installer.install();
+    expect(failures).toBe(0);
+    expect(readFileSync(join(asrPaths(cacheDir).modelDir, 'encoder.int8.onnx'))).toEqual(BODIES['encoder.int8.onnx']);
+  });
+
   it('aborts a download when the signal fires', async () => {
     const controller = new AbortController();
     const { installer } = make((_url, _range, signal) => {
@@ -365,6 +420,20 @@ describe('asr installer', () => {
       expect(getAsrStatus({ cacheDir, platform: 'darwin', arch: 'arm64', env: { PATH: '' }, files: FILES }).models).toBe(false);
     });
 
+    it('treats a runtime with a different sherpa-onnx-node version as not installed', () => {
+      const root = asrPaths(cacheDir).runtimeRoot;
+      plant(root, ['sherpa-onnx-node', 'sherpa-onnx-darwin-arm64']);
+      writeFileSync(join(root, 'node_modules', 'sherpa-onnx-node', 'package.json'), JSON.stringify({ version: '1.0.0' }));
+      const status = getAsrStatus({ cacheDir, platform: 'darwin', arch: 'arm64', env: { PATH: '' }, files: FILES });
+      expect(status.runtime).toBe(false);
+      expect(status.installed).toBe(false);
+    });
+
+    it('pins the same sherpa-onnx-node version as asr-runtime/package.json', () => {
+      const pinned = JSON.parse(readFileSync(join(__dirname, '..', '..', 'asr-runtime', 'package.json'), 'utf8')).dependencies['sherpa-onnx-node'];
+      expect(ASR_RUNTIME_VERSION).toBe(pinned);
+    });
+
     it('lists the unsupported reason for platforms without a prebuilt', () => {
       const status = getAsrStatus({ cacheDir, platform: 'linux', arch: 'riscv64', env: { PATH: '' } });
       expect(status.installable).toBe(false);
@@ -387,6 +456,25 @@ describe('asr installer', () => {
       chmodSync(onPath, 0o755);
       expect(resolveFfmpeg({ DISTILL_FFMPEG: 'ffmpeg', PATH: bin })).toBe(onPath);
       expect(resolveFfmpeg({ DISTILL_FFMPEG: join(root, 'nope'), PATH: bin })).toBe(onPath);
+    });
+
+    it('rejects a DISTILL_FFMPEG that is a directory', () => {
+      const dir = join(root, 'a-dir');
+      mkdirSync(dir);
+      expect(resolveFfmpeg({ DISTILL_FFMPEG: dir, PATH: '' })).toBeNull();
+    });
+
+    it('looks only for ffmpeg.exe on Windows', () => {
+      const bin = join(root, 'winbin');
+      mkdirSync(bin);
+      const cmd = join(bin, 'ffmpeg.cmd');
+      writeFileSync(cmd, '');
+      chmodSync(cmd, 0o755);
+      expect(resolveFfmpeg({ PATH: bin }, 'win32')).toBeNull();
+      const exe = join(bin, 'ffmpeg.exe');
+      writeFileSync(exe, '');
+      chmodSync(exe, 0o755);
+      expect(resolveFfmpeg({ PATH: bin }, 'win32')).toBe(exe);
     });
 
     it('returns null when nothing is found', () => {
