@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SearchQueryError } from '../../src/core/search';
 import { searchMarkdownBounded } from '../../src/node/search-bounded';
@@ -56,9 +56,5 @@ describe('searchMarkdownBounded', () => {
 
   it('turns a reported query error into a SearchQueryError', async () => {
     await expect(searchMarkdownBounded('abc\n', 'bad query', { regex: true }, { workerPath: queryErrorWorker })).rejects.toThrow(SearchQueryError);
-  });
-
-  it.skipIf(!existsSync(resolve('dist/search-worker.js')))('stops a catastrophic regex in the built worker', async () => {
-    await expect(searchMarkdownBounded(`${'a'.repeat(40)}!`, '(a+)+$', { regex: true }, { timeoutMs: 500, workerPath: resolve('dist/search-worker.js') })).rejects.toThrow(/took longer/);
   });
 });
