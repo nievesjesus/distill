@@ -20,7 +20,8 @@ export interface LinguaStatus {
   unsupportedReason?: string;
   modelError?: string;
 }
-export interface AsrStatus { installed: boolean; runtime: boolean; models: boolean; ffmpeg: string | null; installable: boolean; unsupportedReason?: string; diskBytes: number }
+export interface AsrInstalledModel { name: string; bytes: number }
+export interface AsrStatus { installed: boolean; runtime: boolean; models: boolean; vad?: boolean; model?: string; defaultModel?: string | null; installedModels?: AsrInstalledModel[]; ffmpeg: string | null; installable: boolean; unsupportedReason?: string; diskBytes: number }
 export interface Health { version: string; liteparseVersion: string; libreoffice: boolean; lingua: LinguaStatus; asr?: AsrStatus; maxBytes: number }
 export interface DistillResult { path: string; name: string; kind: FileKind; pages: number; markdown: string; tokens: { raw: number; out: number }; ms: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[]; markdownServed?: boolean }
 export type InstallMethod = 'npm-global' | 'npx' | 'docker' | 'desktop' | 'source';

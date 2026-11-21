@@ -149,6 +149,7 @@ describe('asr installer', () => {
       runtimeRoot: join('/c', 'asr'),
       modelDir: join('/c', 'asr-models', 'parakeet-tdt-0.6b-v3-int8'),
       vadPath: join('/c', 'asr-models', 'silero_vad.onnx'),
+      defaultPath: join('/c', 'asr-models', 'default'),
     });
   });
 
@@ -177,7 +178,7 @@ describe('asr installer', () => {
     expect(seen.map((entry) => entry.url)).toEqual(FILES.map((file) => file.url));
     expect(seen.every((entry) => entry.range === null)).toBe(true);
     expect(readdirSync(paths.modelDir).sort()).toEqual(['encoder.int8.onnx', 'tokens.txt']);
-    expect(readdirSync(join(cacheDir, 'asr-models')).sort()).toEqual(['parakeet-tdt-0.6b-v3-int8', 'silero_vad.onnx']);
+    expect(readdirSync(join(cacheDir, 'asr-models')).sort()).toEqual(['default', 'parakeet-tdt-0.6b-v3-int8', 'silero_vad.onnx']);
     expect(readdirSync(cacheDir).sort()).toEqual(['asr', 'asr-models']);
     const status = installer.status();
     expect(status).toMatchObject({ installed: true, runtime: true, models: true, installable: true });
@@ -402,7 +403,7 @@ describe('asr installer', () => {
   describe('status', () => {
     it('is not installed on an empty cache', () => {
       const status = getAsrStatus({ cacheDir, platform: 'darwin', arch: 'arm64', env: { PATH: '' }, files: FILES });
-      expect(status).toEqual({ installed: false, runtime: false, models: false, ffmpeg: null, installable: true, diskBytes: 0 });
+      expect(status).toEqual({ installed: false, runtime: false, models: false, vad: false, model: 'parakeet', defaultModel: null, installedModels: [], ffmpeg: null, installable: true, diskBytes: 0 });
     });
 
     it('reports runtime without models', () => {

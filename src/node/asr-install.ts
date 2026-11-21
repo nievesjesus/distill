@@ -1,23 +1,25 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import type { WriteStream } from 'node:fs';
-import { mkdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import type { AsrStatus } from '../core/types';
 import { findOnPath } from '../hooks/command';
+import { AsrError } from './asr/errors';
+import { ASR_MODELS, ASR_MODEL_NAMES, DEFAULT_ASR_MODEL, isAsrModelName } from './asr/models';
+import type { AsrModelName } from './asr/models';
 import { RENAME_BACKOFF_MS, createRuntimeInstaller, renameWithRetry } from './runtime-install';
 import type { FileOps } from './runtime-install';
 import type { RuntimeInstallerOptions } from './runtime-install';
 
-export const ASR_MODEL_ID = 'parakeet-tdt-0.6b-v3-int8';
+export const ASR_MODEL_ID = ASR_MODELS.parakeet.id;
 
-const MODEL_REPO = 'csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8';
-const MODEL_COMMIT = 'ed5d745623472f97cfc2e6c2916ee248798fc5a8';
 const RUNTIME_PACKAGE = 'sherpa-onnx-node';
 export const ASR_RUNTIME_VERSION = '2.0.2';
 const RUNTIME_DIR = 'asr';
 const MODELS_DIR = 'asr-models';
 const VAD_FILE = 'silero_vad.onnx';
+const DEFAULT_FILE = 'default';
 
 export interface AsrFile {
   name: string;
@@ -27,21 +29,23 @@ export interface AsrFile {
   sha256: string;
 }
 
-const modelUrl = (name: string) => `https://huggingface.co/${MODEL_REPO}/resolve/${MODEL_COMMIT}/${name}`;
+const VAD_ENTRY: AsrFile = {
+  name: VAD_FILE,
+  dir: 'vad',
+  url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx',
+  size: 643854,
+  sha256: '9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6',
+};
 
-export const ASR_FILES: readonly AsrFile[] = [
-  { name: 'encoder.int8.onnx', dir: 'model', url: modelUrl('encoder.int8.onnx'), size: 652282294, sha256: '1afbe69c1ffdabee94755f42e4daf1d93549131a3da11356bda84fcef0f2c479' },
-  { name: 'decoder.int8.onnx', dir: 'model', url: modelUrl('decoder.int8.onnx'), size: 11845274, sha256: '0222a86147299d4dee90edf95b6d13827edb42ad8b7c9cf0b2582f030937c0b5' },
-  { name: 'joiner.int8.onnx', dir: 'model', url: modelUrl('joiner.int8.onnx'), size: 6355277, sha256: 'cbd02f3696e9944970111fb439d9c3fd365a80374565f13f2b9c7007d253fc98' },
-  { name: 'tokens.txt', dir: 'model', url: modelUrl('tokens.txt'), size: 93939, sha256: 'd58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d' },
-  {
-    name: VAD_FILE,
-    dir: 'vad',
-    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx',
-    size: 643854,
-    sha256: '9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6',
-  },
-];
+export function asrFilesFor(model: AsrModelName): readonly AsrFile[] {
+  return [...ASR_MODELS[model].files.map((file): AsrFile => ({ ...file, dir: 'model' })), VAD_ENTRY];
+}
+
+export const ASR_FILES: readonly AsrFile[] = asrFilesFor('parakeet');
+
+export function asrDownloadBytes(model: AsrModelName): number {
+  return asrFilesFor(model).reduce((sum, file) => sum + file.size, 0);
+}
 
 export const ASR_RUNTIME_APPROX_BYTES = 35_000_000;
 export const ASR_MODELS_BYTES = ASR_FILES.reduce((sum, file) => sum + file.size, 0);
@@ -60,12 +64,40 @@ export function asrPlatformPackage(platform: string, arch: string): string | und
   return PLATFORM_PACKAGES[`${platform}-${arch}`];
 }
 
-export function asrPaths(cacheDir: string): { runtimeRoot: string; modelDir: string; vadPath: string } {
+export function asrPaths(cacheDir: string, model: AsrModelName = DEFAULT_ASR_MODEL): { runtimeRoot: string; modelDir: string; vadPath: string; defaultPath: string } {
   return {
     runtimeRoot: join(cacheDir, RUNTIME_DIR),
-    modelDir: join(cacheDir, MODELS_DIR, ASR_MODEL_ID),
+    modelDir: join(cacheDir, MODELS_DIR, ASR_MODELS[model].id),
     vadPath: join(cacheDir, MODELS_DIR, VAD_FILE),
+    defaultPath: join(cacheDir, MODELS_DIR, DEFAULT_FILE),
   };
+}
+
+export function readDefaultModel(cacheDir: string): AsrModelName | undefined {
+  try {
+    const value = readFileSync(asrPaths(cacheDir).defaultPath, 'utf8').trim();
+    return isAsrModelName(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export interface SelectAsrModelOptions {
+  cacheDir: string;
+  env: Record<string, string | undefined>;
+  requested?: string;
+}
+
+function checkedModel(value: string, source: string): AsrModelName {
+  if (isAsrModelName(value)) return value;
+  throw new AsrError('asr_unavailable', `Unknown speech model "${value}" (${source}). Choose one of: ${ASR_MODEL_NAMES.join(', ')}.`);
+}
+
+export function selectAsrModel(options: SelectAsrModelOptions): AsrModelName {
+  const fromEnv = options.env.DISTILL_ASR_MODEL?.trim();
+  if (fromEnv) return checkedModel(fromEnv, 'DISTILL_ASR_MODEL');
+  if (options.requested) return checkedModel(options.requested, '--asr-model');
+  return readDefaultModel(options.cacheDir) ?? DEFAULT_ASR_MODEL;
 }
 
 function isRegularFile(path: string): boolean {
@@ -93,12 +125,13 @@ export interface AsrProgress {
 export interface AsrInstallOptions {
   onProgress?: (progress: AsrProgress) => void;
   signal?: AbortSignal;
+  model?: AsrModelName;
 }
 
 export interface AsrInstaller {
-  status(): AsrStatus;
+  status(model?: AsrModelName): AsrStatus;
   install(options?: AsrInstallOptions): Promise<void>;
-  uninstall(): Promise<void>;
+  uninstall(model?: AsrModelName): Promise<void>;
 }
 
 export type AsrInstallErrorCode = 'unsupported_platform' | 'download_failed' | 'size_mismatch' | 'sha_mismatch' | 'aborted';
@@ -119,6 +152,8 @@ export interface AsrStatusOptions {
   platform?: NodeJS.Platform | string;
   arch?: string;
   files?: readonly AsrFile[];
+  modelFiles?: Partial<Record<AsrModelName, readonly AsrFile[]>>;
+  model?: AsrModelName;
 }
 
 export interface AsrInstallerOptions
@@ -138,8 +173,8 @@ function runtimePackages(platform: string, arch: string): string[] {
   return platformPackage === undefined ? [RUNTIME_PACKAGE] : [RUNTIME_PACKAGE, platformPackage];
 }
 
-function fileTarget(cacheDir: string, file: AsrFile): string {
-  const paths = asrPaths(cacheDir);
+function fileTarget(cacheDir: string, file: AsrFile, model: AsrModelName): string {
+  const paths = asrPaths(cacheDir, model);
   return file.dir === 'vad' ? paths.vadPath : join(paths.modelDir, file.name);
 }
 
@@ -182,15 +217,27 @@ export function getAsrStatus(options: AsrStatusOptions): AsrStatus {
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
   const env = options.env ?? process.env;
-  const files = options.files ?? ASR_FILES;
+  const persisted = readDefaultModel(options.cacheDir);
+  const target = options.model ?? persisted ?? DEFAULT_ASR_MODEL;
+  const filesOf = (model: AsrModelName): readonly AsrFile[] => options.modelFiles?.[model] ?? (options.files && model === target ? options.files : asrFilesFor(model));
+  const present = (model: AsrModelName, only?: AsrFile['dir']) =>
+    filesOf(model).filter((file) => only === undefined || file.dir === only).every((file) => hasFileOfSize(fileTarget(options.cacheDir, file, model), file.size));
   const reason = unsupportedReason(platform, arch);
   const runtime = reason === undefined && runtimePresent(options.cacheDir, platform, arch);
-  const models = files.every((file) => hasFileOfSize(fileTarget(options.cacheDir, file), file.size));
+  const models = present(target);
+  const installedModels = ASR_MODEL_NAMES.filter((model) => present(model, 'model')).map((model) => ({
+    name: model,
+    bytes: filesOf(model).filter((file) => file.dir === 'model').reduce((sum, file) => sum + file.size, 0),
+  }));
   const paths = asrPaths(options.cacheDir);
   return {
     installed: runtime && models,
     runtime,
     models,
+    vad: present(target, 'vad'),
+    model: target,
+    defaultModel: persisted ?? null,
+    installedModels,
     ffmpeg: resolveFfmpeg(env, platform as NodeJS.Platform),
     installable: reason === undefined,
     ...(reason === undefined ? {} : { unsupportedReason: reason }),
@@ -219,12 +266,12 @@ function abortFailure(file: AsrFile): AsrInstallFailure {
 export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
-  const files = options.files ?? ASR_FILES;
+  const filesFor = (model: AsrModelName): readonly AsrFile[] => options.modelFiles?.[model] ?? options.files ?? asrFilesFor(model);
   const fetchFn = options.fetch ?? globalThis.fetch;
   const paths = asrPaths(options.cacheDir);
   const reason = unsupportedReason(platform, arch);
-  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   let running: Promise<void> | undefined;
+  let runningModel: AsrModelName | undefined;
 
   async function installRuntime(): Promise<void> {
     if (runtimePresent(options.cacheDir, platform, arch)) return;
@@ -251,8 +298,13 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
     new Promise<void>((resolve, reject) => stream.write(chunk, (error) => (error ? reject(error) : resolve())));
   const closeStream = (stream: WriteStream) => new Promise<void>((resolve) => stream.end(() => resolve()));
 
-  async function download(file: AsrFile, before: number, install: AsrInstallOptions, restarted = false): Promise<void> {
-    const target = fileTarget(options.cacheDir, file);
+  interface Job {
+    model: AsrModelName;
+    total: number;
+  }
+
+  async function download(file: AsrFile, before: number, install: AsrInstallOptions, job: Job, restarted = false): Promise<void> {
+    const target = fileTarget(options.cacheDir, file, job.model);
     const part = `${target}.part`;
     await mkdir(dirname(target), { recursive: true });
     let have = await partSize(part);
@@ -260,7 +312,7 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
       await rm(part, { force: true });
       have = 0;
     }
-    const emit = (done: number) => install.onProgress?.({ file: file.name, done: before + done, total: totalBytes });
+    const emit = (done: number) => install.onProgress?.({ file: file.name, done: before + done, total: job.total });
     emit(have);
     if (have === file.size) {
       if ((await sha256Of(part)) === file.sha256) {
@@ -268,7 +320,7 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
         return;
       }
       await rm(part, { force: true });
-      return download(file, before, install, restarted);
+      return download(file, before, install, job, restarted);
     }
     let response: Response;
     try {
@@ -284,7 +336,7 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
     if (response.status === 416) {
       await response.body?.cancel().catch(() => undefined);
       await rm(part, { force: true });
-      if (!restarted) return download(file, before, install, true);
+      if (!restarted) return download(file, before, install, job, true);
       throw new AsrInstallFailure('download_failed', `Could not resume ${file.name}: the server rejected the range. Try again.`);
     }
     if (response.status !== 200 && response.status !== 206) {
@@ -330,26 +382,53 @@ export function createAsrInstaller(options: AsrInstallerOptions): AsrInstaller {
 
   async function perform(install: AsrInstallOptions): Promise<void> {
     if (reason) throw new AsrInstallFailure('unsupported_platform', reason);
+    const model = install.model ?? DEFAULT_ASR_MODEL;
+    const files = filesFor(model);
+    const job: Job = { model, total: files.reduce((sum, file) => sum + file.size, 0) };
     await installRuntime();
     let before = 0;
     for (const file of files) {
-      if (!hasFileOfSize(fileTarget(options.cacheDir, file), file.size)) await download(file, before, install);
+      if (!hasFileOfSize(fileTarget(options.cacheDir, file, model), file.size)) await download(file, before, install, job);
       before += file.size;
     }
+    await mkdir(dirname(paths.defaultPath), { recursive: true });
+    await writeFile(paths.defaultPath, `${model}\n`);
+  }
+
+  function modelInstalled(model: AsrModelName): boolean {
+    return filesFor(model).filter((file) => file.dir === 'model').every((file) => hasFileOfSize(fileTarget(options.cacheDir, file, model), file.size));
   }
 
   return {
-    status: () => getAsrStatus({ cacheDir: options.cacheDir, env: options.env, platform, arch, files }),
+    status: (model) => getAsrStatus({ cacheDir: options.cacheDir, env: options.env, platform, arch, files: options.files, modelFiles: options.modelFiles, ...(model ? { model } : {}) }),
     install(install = {}) {
-      if (running) return running;
-      running = perform(install).finally(() => {
-        running = undefined;
-      });
-      return running;
+      const model = install.model ?? DEFAULT_ASR_MODEL;
+      if (running && runningModel === model) return running;
+      const previous = running ?? Promise.resolve();
+      const current: Promise<void> = previous
+        .catch(() => undefined)
+        .then(() => perform(install))
+        .finally(() => {
+          if (running === current) {
+            running = undefined;
+            runningModel = undefined;
+          }
+        });
+      running = current;
+      runningModel = model;
+      return current;
     },
-    async uninstall() {
-      await rm(paths.runtimeRoot, { recursive: true, force: true });
-      await rm(join(options.cacheDir, MODELS_DIR), { recursive: true, force: true });
+    async uninstall(model) {
+      if (model === undefined) {
+        await rm(paths.runtimeRoot, { recursive: true, force: true });
+        await rm(join(options.cacheDir, MODELS_DIR), { recursive: true, force: true });
+        return;
+      }
+      await rm(asrPaths(options.cacheDir, model).modelDir, { recursive: true, force: true });
+      if (readDefaultModel(options.cacheDir) !== model) return;
+      const next = ASR_MODEL_NAMES.find((name) => name !== model && modelInstalled(name));
+      if (next) await writeFile(paths.defaultPath, `${next}\n`);
+      else await rm(paths.defaultPath, { force: true });
     },
   };
 }

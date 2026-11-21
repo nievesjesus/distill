@@ -20,6 +20,13 @@ export interface FormatOptions {
 
 export const TRANSCRIPT_ENGINE = 'local ASR (Parakeet TDT 0.6B v3)';
 
+const CJK_CHAR = String.raw`[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}　-〿＀-￯]`;
+const CJK_ANY = new RegExp(CJK_CHAR, 'u');
+const CJK_END = new RegExp(`${CJK_CHAR}$`, 'u');
+const CJK_START = new RegExp(`^${CJK_CHAR}`, 'u');
+const CJK_GLOBAL = new RegExp(CJK_CHAR, 'gu');
+const NOT_AFTER_CJK = `(?<!${CJK_CHAR})`;
+
 const PARAGRAPH_GAP_SECONDS = 2;
 const PARAGRAPH_WORDS = 120;
 const COARSE_STAMP_SECONDS = 60;
@@ -55,10 +62,10 @@ const REPEAT_KEEP: ReadonlySet<string> = new Set(['had', 'that', 'is']);
 
 function fixSpacing(text: string): string {
   return text
-    .replace(/([,;])(?=[\p{L}$€£¥¿¡(])/gu, '$1 ')
-    .replace(/(?<=\D)([,;])(?=\d)/gu, '$1 ')
-    .replace(/([!?])(?=[\p{L}\p{N}$€£¥¿¡(])/gu, '$1 ')
-    .replace(/(:)(?=[$€£¥¿¡(])/gu, '$1 ')
+    .replace(new RegExp(`${NOT_AFTER_CJK}([,;])(?=[\\p{L}$€£¥¿¡(])`, 'gu'), '$1 ')
+    .replace(new RegExp(`(?<=\\D)${NOT_AFTER_CJK}([,;])(?=\\d)`, 'gu'), '$1 ')
+    .replace(new RegExp(`${NOT_AFTER_CJK}([!?])(?=[\\p{L}\\p{N}$€£¥¿¡(])`, 'gu'), '$1 ')
+    .replace(new RegExp(`${NOT_AFTER_CJK}(:)(?=[$€£¥¿¡(])`, 'gu'), '$1 ')
     .replace(/(?<=\p{Ll})\.(?=\p{Lu}\p{Ll})/gu, '. ');
 }
 
@@ -80,7 +87,7 @@ function dropFillers(text: string, lang: TranscriptLang): string {
 }
 
 function collapseRepeats(text: string): string {
-  return text.replace(/(?<![\p{L}\p{N}])(\p{L}+)((?:\s+\1)+)(?![\p{L}\p{N}])/giu, (all, word: string) => (REPEAT_KEEP.has(word.toLowerCase()) ? all : word));
+  return text.replace(/(?<![\p{L}\p{N}])(\p{L}+)((?:\s+\1)+)(?![\p{L}\p{N}])/giu, (all, word: string) => (REPEAT_KEEP.has(word.toLowerCase()) || CJK_ANY.test(word) ? all : word));
 }
 
 function clean(text: string, lang: TranscriptLang | undefined): string {
@@ -98,7 +105,14 @@ interface Paragraph {
 
 type Block = { kind: 'speech'; start: number; text: string } | { kind: 'slide'; at: number; text: string };
 
-const wordCount = (text: string) => (text === '' ? 0 : text.split(/\s+/).length);
+function wordCount(text: string): number {
+  if (text === '') return 0;
+  const cjk = (text.match(CJK_GLOBAL) ?? []).length;
+  const rest = text.replace(CJK_GLOBAL, ' ').split(/\s+/).filter((word) => word !== '').length;
+  return rest + Math.ceil(cjk / 2);
+}
+
+const joinText = (left: string, right: string) => (CJK_END.test(left) && CJK_START.test(right) ? `${left}${right}` : `${left} ${right}`);
 
 function slideText(slide: Slide): string {
   return [`> [slide ${formatClock(slide.at)}]`, ...slide.lines.map((line) => `> ${line}`)].join('\n');
@@ -125,7 +139,7 @@ export function formatTranscript(segments: readonly TranscriptSegment[], options
       if (split) {
         paragraphs.push({ start: segment.start, text: segment.text, words: wordCount(segment.text), epoch });
       } else {
-        current.text = `${current.text} ${segment.text}`;
+        current.text = joinText(current.text, segment.text);
         current.words += wordCount(segment.text);
       }
       previousEnd = segment.end;
@@ -178,8 +192,8 @@ export function detectLang(segments: readonly TranscriptSegment[]): TranscriptLa
   return winner;
 }
 
-export function transcriptHeader(info: { name: string; duration?: number; lang?: TranscriptLang }): string {
+export function transcriptHeader(info: { name: string; duration?: number; lang?: string; engine?: string }): string {
   const name = info.name.replace(/-{2,}/g, '-').replace(/[\r\n]+/g, ' ');
-  const parts = [`transcript of ${name}`, ...(info.duration === undefined ? [] : [formatClock(info.duration)]), ...(info.lang ? [info.lang] : []), TRANSCRIPT_ENGINE];
+  const parts = [`transcript of ${name}`, ...(info.duration === undefined ? [] : [formatClock(info.duration)]), ...(info.lang ? [info.lang] : []), info.engine ?? TRANSCRIPT_ENGINE];
   return `<!-- distill: ${parts.join(', ')} -->`;
 }

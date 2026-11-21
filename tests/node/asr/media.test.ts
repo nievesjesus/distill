@@ -232,3 +232,42 @@ describe('withMedia', () => {
     expect(inner.renderPage).toHaveBeenCalled();
   });
 });
+
+describe('withMedia models', () => {
+  const zhSegments = [{ start: 0, end: 3, text: '你好,世界。' }, { start: 3.5, end: 6, text: '我们开始。' }];
+
+  it('names the model and uses the detected language in the header', async () => {
+    const d = deps({ transcribe: vi.fn(async () => ({ segments: zhSegments, duration: 6, cached: false, model: 'whisper-small', lang: 'zh' })) });
+    const out = await withMedia(innerParser(), d).toMarkdown('/a/x.mp3');
+    expect(out.markdown).toBe('<!-- distill: transcript of x.mp3, 00:06, zh, local ASR (Whisper small) -->\n\n[00:00] 你好,世界。我们开始。');
+  });
+
+  it('names whisper turbo', async () => {
+    const d = deps({ transcribe: vi.fn(async () => ({ segments, duration: 14.2, cached: false, model: 'whisper-turbo', lang: 'en' })) });
+    const out = await withMedia(innerParser(), d).toMarkdown('/a/x.mp3');
+    expect(out.markdown.split('\n')[0]).toBe('<!-- distill: transcript of x.mp3, 00:14, en, local ASR (Whisper large-v3-turbo) -->');
+  });
+
+  it('keeps the heuristic and the parakeet name when the worker gives no language or model', async () => {
+    const out = await withMedia(innerParser(), deps()).toMarkdown('/a/x.mp3');
+    expect(out.markdown.split('\n')[0]).toContain(', en, local ASR (Parakeet TDT 0.6B v3)');
+  });
+
+  it('does not remove fillers for languages other than en and es', async () => {
+    const d = deps({ transcribe: vi.fn(async () => ({ segments: [{ start: 0, end: 2, text: 'Das ist, um, ein Test' }], duration: 2, cached: false, model: 'whisper-small', lang: 'de' })) });
+    const out = await withMedia(innerParser(), d).toMarkdown('/a/x.mp3', { timestamps: 'none' });
+    expect(out.markdown.endsWith('Das ist, um, ein Test')).toBe(true);
+  });
+
+  it('removes fillers when the worker says es', async () => {
+    const d = deps({ transcribe: vi.fn(async () => ({ segments: [{ start: 0, end: 2, text: 'Eh, vamos a empezar' }], duration: 2, cached: false, model: 'whisper-small', lang: 'es' })) });
+    const out = await withMedia(innerParser(), d).toMarkdown('/a/x.mp3', { timestamps: 'none' });
+    expect(out.markdown.endsWith('Vamos a empezar')).toBe(true);
+  });
+
+  it('passes the model and language options through to transcribe', async () => {
+    const d = deps();
+    await withMedia(innerParser(), d).toMarkdown('/a/x.mp3', { asrModel: 'whisper-small', language: 'ja' });
+    expect(d.transcribe).toHaveBeenCalledWith('/a/x.mp3', expect.objectContaining({ model: 'whisper-small', language: 'ja' }));
+  });
+});

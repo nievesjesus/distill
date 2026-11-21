@@ -3,10 +3,13 @@ import { existsSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ASR_MODEL_ID, asrPaths, getAsrStatus, resolveFfmpeg } from '../asr-install';
+import { asrPaths, getAsrStatus, resolveFfmpeg, selectAsrModel } from '../asr-install';
 import { readJsonFile, sha256Of, writePrivateJson } from './cache';
 import { ffmpegInfoArgs, ffprobeArgs, parseFfmpegDuration, readWavInfo, wavDuration } from './decode';
-import { ASR_UNAVAILABLE_MESSAGE, AsrError } from './errors';
+import { AsrError, asrUnavailableMessage } from './errors';
+import { ASR_MODELS, isAsrLanguage, modelBytes, modelFileOf } from './models';
+import type { AsrModelName, AsrModelSpec } from './models';
+import type { WorkerModel } from './recognizer';
 import type { AsrErrorCode } from './errors';
 
 export { AsrError } from './errors';
@@ -23,12 +26,38 @@ export interface TranscribeOptions {
   onProgress?: (seconds: number) => void;
   workerPath?: string;
   killGraceMs?: number;
+  model?: AsrModelName;
+  language?: string;
 }
 
 export interface TranscribeResult {
   segments: AsrSegment[];
   duration: number;
   cached: boolean;
+  model: AsrModelName;
+  lang?: string;
+}
+
+export interface AsrSelection {
+  spec: AsrModelSpec;
+  language?: string;
+}
+
+export function resolveAsrSelection(options: { cacheDir: string; env?: NodeJS.ProcessEnv; model?: AsrModelName; language?: string }): AsrSelection {
+  const env = options.env ?? process.env;
+  const spec = ASR_MODELS[selectAsrModel({ cacheDir: options.cacheDir, env, requested: options.model })];
+  if (spec.kind !== 'whisper') return { spec };
+  const fromEnv = env.DISTILL_ASR_LANGUAGE?.trim();
+  const raw = fromEnv ? fromEnv : options.language;
+  if (raw === undefined || raw === '') return { spec };
+  if (!isAsrLanguage(raw)) {
+    throw new AsrError('asr_failed', `${fromEnv ? 'DISTILL_ASR_LANGUAGE' : '--language'} must be a 2 or 3 letter lowercase language code such as es, en or ja.`);
+  }
+  return { spec, language: raw };
+}
+
+export function asrTimeoutMs(duration: number | undefined, spec: AsrModelSpec): number {
+  return duration === undefined ? UNKNOWN_DURATION_TIMEOUT_MS : Math.ceil(duration * 1000 * spec.timeoutFactor) + 120_000;
 }
 
 const CACHE_VERSION = 'v1';
@@ -96,8 +125,9 @@ function defaultWorkerPath(): string {
   return existsSync(built) ? built : beside;
 }
 
-function cachePath(cacheDir: string, sha: string): string {
-  return join(cacheDir, 'transcripts', `${sha}-${ASR_MODEL_ID}-${CACHE_VERSION}.json`);
+function cachePath(cacheDir: string, sha: string, selection: AsrSelection): string {
+  const language = selection.language ? `-${selection.language}` : '';
+  return join(cacheDir, 'transcripts', `${sha}-${selection.spec.id}${language}-${CACHE_VERSION}.json`);
 }
 
 function validSegments(value: unknown): value is AsrSegment[] {
@@ -107,9 +137,17 @@ function validSegments(value: unknown): value is AsrSegment[] {
   );
 }
 
-async function readCache(path: string): Promise<{ segments: AsrSegment[]; duration: number } | undefined> {
-  const parsed = (await readJsonFile(path)) as { segments?: unknown; duration?: unknown } | undefined;
-  if (parsed && validSegments(parsed.segments) && typeof parsed.duration === 'number') return { segments: parsed.segments, duration: parsed.duration };
+interface StoredTranscript {
+  segments: AsrSegment[];
+  duration: number;
+  lang?: string;
+}
+
+async function readCache(path: string): Promise<StoredTranscript | undefined> {
+  const parsed = (await readJsonFile(path)) as { segments?: unknown; duration?: unknown; lang?: unknown } | undefined;
+  if (parsed && validSegments(parsed.segments) && typeof parsed.duration === 'number') {
+    return { segments: parsed.segments, duration: parsed.duration, ...(isAsrLanguage(parsed.lang) ? { lang: parsed.lang } : {}) };
+  }
   return undefined;
 }
 
@@ -146,6 +184,7 @@ function tail(text: string): string {
 interface WorkerRun {
   segments: AsrSegment[];
   duration: number;
+  lang?: string;
 }
 
 function runWorker(
@@ -166,6 +205,7 @@ function runWorker(
     });
     const segments: AsrSegment[] = [];
     let duration: number | undefined;
+    let lang: string | undefined;
     let workerError: AsrError | undefined;
     let forced: AsrError | undefined;
     let stderr = '';
@@ -199,8 +239,11 @@ function runWorker(
         } catch (error) {
           kill(new AsrError('asr_failed', `Progress callback failed: ${error instanceof Error ? error.message : String(error)}`));
         }
+      } else if (event.type === 'language' && isAsrLanguage(event.lang)) {
+        lang = event.lang;
       } else if (event.type === 'done' && typeof event.duration === 'number') {
         duration = round3(event.duration);
+        if (isAsrLanguage(event.lang)) lang = event.lang;
       } else if (event.type === 'error') {
         const code: AsrErrorCode = ERROR_CODES.includes(event.code) ? event.code : 'asr_failed';
         workerError = new AsrError(code, typeof event.message === 'string' ? event.message : 'Transcription failed');
@@ -234,7 +277,7 @@ function runWorker(
       if (buffered.trim()) handle(buffered);
       if (forced) return reject(forced);
       if (workerError) return reject(workerError);
-      if (duration !== undefined && code === 0) return resolve({ segments, duration });
+      if (duration !== undefined && code === 0) return resolve({ segments, duration, ...(lang ? { lang } : {}) });
       const detail = tail(stderr);
       const how = killSignal ? `was killed by ${killSignal}` : `exited with code ${code}`;
       reject(new AsrError('asr_failed', `The speech worker ${how}${duration === undefined && code === 0 ? ' without finishing' : ''}${detail ? `: ${detail}` : ''}`));
@@ -244,34 +287,58 @@ function runWorker(
   });
 }
 
-export async function cachedTranscript(input: string, cacheDir: string): Promise<{ segments: AsrSegment[]; duration: number } | undefined> {
-  return readCache(cachePath(cacheDir, await sha256Of(input)));
+export async function cachedTranscript(
+  input: string,
+  cacheDir: string,
+  selection: { env?: NodeJS.ProcessEnv; model?: AsrModelName; language?: string } = {},
+): Promise<StoredTranscript | undefined> {
+  const resolved = resolveAsrSelection({ cacheDir, ...selection });
+  return readCache(cachePath(cacheDir, await sha256Of(input), resolved));
+}
+
+function workerModel(cacheDir: string, spec: AsrModelSpec): WorkerModel {
+  const dir = asrPaths(cacheDir, spec.name).modelDir;
+  const at = (role: 'encoder' | 'decoder' | 'joiner' | 'tokens') => join(dir, modelFileOf(spec, role)!.name);
+  return {
+    kind: spec.kind,
+    files: { encoder: at('encoder'), decoder: at('decoder'), ...(spec.kind === 'transducer' ? { joiner: at('joiner') } : {}), tokens: at('tokens') },
+  };
 }
 
 export async function transcribe(input: string, options: TranscribeOptions): Promise<TranscribeResult> {
   const env = options.env ?? process.env;
   if (options.signal?.aborted) throw new AsrError('aborted', 'Transcription was cancelled');
-  const status = getAsrStatus({ cacheDir: options.cacheDir, env });
-  if (!status.installed) throw new AsrError('asr_unavailable', ASR_UNAVAILABLE_MESSAGE);
+  const selection = resolveAsrSelection({ cacheDir: options.cacheDir, env, model: options.model, language: options.language });
+  const { spec } = selection;
+  const status = getAsrStatus({ cacheDir: options.cacheDir, env, model: spec.name });
+  if (!status.installed) throw new AsrError('asr_unavailable', asrUnavailableMessage(spec.name, modelBytes(spec)));
 
   const sha = await sha256Of(input);
-  const file = cachePath(options.cacheDir, sha);
+  const file = cachePath(options.cacheDir, sha, selection);
   const hit = await readCache(file);
-  if (hit) return { ...hit, cached: true };
+  if (hit) return { ...hit, cached: true, model: spec.name };
 
   const release = await acquireWorkerSlot(env, options.signal);
   try {
     const again = await readCache(file);
-    if (again) return { ...again, cached: true };
+    if (again) return { ...again, cached: true, model: spec.name };
     const ffmpeg = resolveFfmpeg(env);
     const known = await knownDuration(input, ffmpeg);
-    const timeoutMs = options.timeoutMs ?? (known === undefined ? UNKNOWN_DURATION_TIMEOUT_MS : Math.ceil(known * 2000) + 120_000);
-    const paths = asrPaths(options.cacheDir);
+    const timeoutMs = options.timeoutMs ?? asrTimeoutMs(known, spec);
+    const paths = asrPaths(options.cacheDir, spec.name);
     const threads = options.threads ?? Math.max(1, Math.min(4, cpus().length));
 
     const result = await runWorker(
       options.workerPath ?? defaultWorkerPath(),
-      { runtimeRoot: paths.runtimeRoot, modelDir: paths.modelDir, vadPath: paths.vadPath, input, threads, ffmpeg },
+      {
+        runtimeRoot: paths.runtimeRoot,
+        model: workerModel(options.cacheDir, spec),
+        vadPath: paths.vadPath,
+        input,
+        threads,
+        ffmpeg,
+        ...(selection.language ? { language: selection.language } : {}),
+      },
       env,
       timeoutMs,
       options.signal,
@@ -279,7 +346,7 @@ export async function transcribe(input: string, options: TranscribeOptions): Pro
       options.killGraceMs ?? 2000,
     );
     await writePrivateJson(file, result);
-    return { ...result, cached: false };
+    return { ...result, cached: false, model: spec.name };
   } finally {
     release();
   }

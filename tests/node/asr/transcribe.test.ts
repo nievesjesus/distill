@@ -158,7 +158,7 @@ describe('transcribe', () => {
   it('collects segments from the worker, rounds times and reports progress', async () => {
     const progress: number[] = [];
     const result = await transcribe(wav, { cacheDir, workerPath: worker(okWorker), env: {}, onProgress: (s: number) => progress.push(s) });
-    expect(result).toEqual({ segments: expectedSegments, duration: 3, cached: false });
+    expect(result).toEqual({ segments: expectedSegments, duration: 3, cached: false, model: 'parakeet' });
     expect(progress).toEqual([0.5]);
   });
 
@@ -169,7 +169,8 @@ describe('transcribe', () => {
     const result = await transcribe(wav, { cacheDir, workerPath, threads: 2, env: { DISTILL_FFMPEG: ffmpeg } });
     const req = JSON.parse(result.segments[0].text);
     const paths = asrPaths(cacheDir);
-    expect(req).toMatchObject({ runtimeRoot: paths.runtimeRoot, modelDir: paths.modelDir, vadPath: paths.vadPath, input: wav, threads: 2, ffmpeg });
+    expect(req).toMatchObject({ runtimeRoot: paths.runtimeRoot, vadPath: paths.vadPath, input: wav, threads: 2, ffmpeg });
+    expect(req.model.files.encoder).toBe(join(paths.modelDir, 'encoder.int8.onnx'));
   });
 
   it('caches by file hash, model id and format version, and skips the worker on a hit', async () => {

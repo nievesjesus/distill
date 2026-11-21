@@ -229,3 +229,45 @@ describe('transcriptHeader', () => {
     expect(transcriptHeader({ name: 'a.mp3', duration: 3725 })).toBe('<!-- distill: transcript of a.mp3, 1:02:05, local ASR (Parakeet TDT 0.6B v3) -->');
   });
 });
+
+describe('transcriptHeader engines', () => {
+  it('names the engine and accepts any detected language', () => {
+    expect(transcriptHeader({ name: 'a.mp3', duration: 5, lang: 'ja', engine: 'local ASR (Whisper small)' })).toBe('<!-- distill: transcript of a.mp3, 00:05, ja, local ASR (Whisper small) -->');
+    expect(transcriptHeader({ name: 'a.mp3', engine: 'local ASR (Whisper large-v3-turbo)' })).toBe('<!-- distill: transcript of a.mp3, local ASR (Whisper large-v3-turbo) -->');
+  });
+});
+
+describe('CJK text', () => {
+  const zh = '你好,世界。我们今天开始!好吗?可以';
+  const ja = '今日は晴れです;明日も晴れでしょう?はい!分かりました,ありがとう';
+
+  it('does not insert spaces between CJK characters', () => {
+    expect(one(zh)).toBe(zh);
+    expect(one(ja)).toBe(ja);
+    expect(one('こんにちは,世界')).toBe('こんにちは,世界');
+  });
+
+  it('does not collapse repeated CJK words', () => {
+    expect(one('对 对 对,我们走')).toBe('对 对 对,我们走');
+    expect(one('はい はい はい')).toBe('はい はい はい');
+    expect(one('the the plan')).toBe('the plan');
+  });
+
+  it('joins neighbouring CJK segments without a space but keeps spaces for Latin text', () => {
+    expect(formatTranscript([seg(0, 2, '你好世界。'), seg(2.5, 4, '我们开始。')], { timestamps: 'none' })).toBe('你好世界。我们开始。');
+    expect(formatTranscript([seg(0, 2, 'こんにちは'), seg(2.5, 4, '世界')], { timestamps: 'none' })).toBe('こんにちは世界');
+    expect(formatTranscript([seg(0, 2, 'Hello there.'), seg(2.5, 4, 'Second one.')], { timestamps: 'none' })).toBe('Hello there. Second one.');
+    expect(formatTranscript([seg(0, 2, '你好'), seg(2.5, 4, 'world')], { timestamps: 'none' })).toBe('你好 world');
+  });
+
+  it('starts a new paragraph on long CJK runs and on pauses, keeping timestamps', () => {
+    const long = '我'.repeat(260);
+    const text = formatTranscript([seg(0, 5, long), seg(5.5, 8, '你好。')], { timestamps: 'none' });
+    expect(text).toBe(`${long}\n\n你好。`);
+    expect(formatTranscript([seg(0, 2, '你好。'), seg(70, 72, '再见。')], { timestamps: 'coarse' })).toBe('[00:00] 你好。\n\n[01:10] 再见。');
+  });
+
+  it('leaves fillers alone when no language is given', () => {
+    expect(one('um 你好 uh 世界')).toBe('um 你好 uh 世界');
+  });
+});

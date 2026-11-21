@@ -74,3 +74,27 @@ describe('createMediaGate', () => {
     });
   });
 });
+
+describe('createMediaGate per model', () => {
+  const at = (model: string | undefined, seconds: number) => gate({ env: model ? { DISTILL_ASR_MODEL: model } : {}, duration: async () => seconds })('/a/x.mp3');
+
+  it('uses the active model limit', async () => {
+    expect(await at('whisper-small', 120)).toBe('convert');
+    expect(await at('whisper-small', 121)).toEqual({ defer: expect.any(String) });
+    expect(await at('whisper-turbo', 90)).toBe('convert');
+    expect(await at('whisper-turbo', 91)).toEqual({ defer: expect.any(String) });
+    expect(await at('parakeet', 600)).toBe('convert');
+    expect(await at(undefined, 601)).toEqual({ defer: expect.any(String) });
+  });
+
+  it('asks the transcript cache about the active model', async () => {
+    const cached = vi.fn(async () => undefined);
+    await gate({ cached, env: { DISTILL_ASR_MODEL: 'whisper-small' }, duration: async () => 5 })('/a/x.mp3');
+    expect(cached).toHaveBeenCalledWith('/a/x.mp3', '/c', expect.objectContaining({ env: { DISTILL_ASR_MODEL: 'whisper-small' } }));
+  });
+
+  it('lets an explicit limit win and falls back to parakeet on an unknown model name', async () => {
+    expect(await gate({ env: { DISTILL_ASR_MODEL: 'whisper-turbo' }, maxSeconds: 1000, duration: async () => 999 })('/a/x.mp3')).toBe('convert');
+    expect(await at('nonsense', 500)).toBe('convert');
+  });
+});

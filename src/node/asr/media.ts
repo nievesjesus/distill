@@ -1,14 +1,16 @@
 import { basename } from 'node:path';
 import { detectKind } from '../../core/kind';
 import { countTokens } from '../../core/tokens';
-import { type Slide, detectLang, formatTranscript, renderSrt, transcriptHeader } from '../../core/transcript';
+import { type Slide, type TranscriptLang, detectLang, formatTranscript, renderSrt, transcriptHeader } from '../../core/transcript';
 import { resolveFfmpeg as defaultResolveFfmpeg } from '../asr-install';
 import { DistillError } from '../errors';
 import type { Parser } from '../parse';
 import { AsrError } from './errors';
 import { collectSlides as defaultCollectSlides } from './frames';
 import { cachedSlides, storeSlides } from './slides-cache';
-import { knownDuration, transcribe as defaultTranscribe } from './transcribe';
+import { ASR_MODELS, DEFAULT_ASR_MODEL } from './models';
+import type { AsrModelName } from './models';
+import { knownDuration, resolveAsrSelection, transcribe as defaultTranscribe } from './transcribe';
 
 export interface MediaDeps {
   cacheDir: string;
@@ -29,24 +31,40 @@ export function withMedia(parser: Parser, deps: MediaDeps): Parser {
   const findFfmpeg = deps.resolveFfmpeg ?? defaultResolveFfmpeg;
   const probe = deps.duration ?? knownDuration;
 
+  const selectedModel = (): AsrModelName | undefined => {
+    try {
+      return resolveAsrSelection({ cacheDir: deps.cacheDir, env }).spec.name;
+    } catch {
+      return undefined;
+    }
+  };
+
   async function build(path: string, opts: Parameters<Parser['toMarkdown']>[1]) {
     const kind = detectKind(path);
     const wantFrames = kind === 'VIDEO' && (opts?.frames ?? 'ocr') === 'ocr';
     const ffmpeg = findFfmpeg(env);
-    let result: { segments: Awaited<ReturnType<typeof transcribe>>['segments']; duration: number | undefined; silent?: boolean };
+    let result: { segments: Awaited<ReturnType<typeof transcribe>>['segments']; duration: number | undefined; silent?: boolean; model?: AsrModelName; lang?: string };
     try {
-      result = await transcribe(path, { cacheDir: deps.cacheDir, env, ...(opts?.signal ? { signal: opts.signal } : {}) });
+      result = await transcribe(path, {
+        cacheDir: deps.cacheDir,
+        env,
+        ...(opts?.signal ? { signal: opts.signal } : {}),
+        ...(opts?.asrModel ? { model: opts.asrModel } : {}),
+        ...(opts?.language ? { language: opts.language } : {}),
+      });
     } catch (error) {
       if (error instanceof AsrError && error.code === 'no_audio' && wantFrames && ffmpeg !== null) {
         const probed = await probe(path, ffmpeg).catch(() => undefined);
-        result = { segments: [], duration: probed, silent: true };
+        result = { segments: [], duration: probed, silent: true, model: selectedModel() };
       } else if (error instanceof AsrError) {
         throw new DistillError(error.code, error.message, { cause: error });
       } else {
         throw error;
       }
     }
-    const lang = detectLang(result.segments);
+    const lang: string | undefined = result.lang ?? detectLang(result.segments);
+    const fillerLang: TranscriptLang | undefined = lang === 'en' || lang === 'es' ? lang : undefined;
+    const engine = ASR_MODELS[result.model ?? DEFAULT_ASR_MODEL].engine;
     let slides: Slide[] = [];
     if (wantFrames) {
       if (ffmpeg !== null) {
@@ -67,8 +85,8 @@ export function withMedia(parser: Parser, deps: MediaDeps): Parser {
         }
       }
     }
-    const body = formatTranscript(result.segments, { timestamps: opts?.timestamps ?? 'coarse', ...(lang ? { lang } : {}), slides });
-    const header = transcriptHeader({ name: basename(path), ...(result.duration === undefined ? {} : { duration: result.duration }), ...(lang ? { lang } : {}) });
+    const body = formatTranscript(result.segments, { timestamps: opts?.timestamps ?? 'coarse', ...(fillerLang ? { lang: fillerLang } : {}), slides });
+    const header = transcriptHeader({ name: basename(path), ...(result.duration === undefined ? {} : { duration: result.duration }), ...(lang ? { lang } : {}), engine });
     const text = result.silent ? `${NO_AUDIO}${body === '' ? '' : `\n\n${body}`}` : body === '' ? NO_SPEECH : body;
     const markdown = `${header}\n\n${text}`;
     return { markdown, segments: result.segments, rawTokens: result.segments.length === 0 ? 0 : countTokens(renderSrt(result.segments)) };

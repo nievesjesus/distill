@@ -1,12 +1,15 @@
 import { availableParallelism } from 'node:os';
 import { LiteParse, ParseTimeoutError } from '@llamaindex/liteparse';
 import type { VisualKind, VisualPage } from '../core/types';
+import type { AsrModelName } from './asr/models';
 import { DistillError } from './errors';
 
 export interface ParseOptions {
   mode?: 'clean' | 'full';
   timestamps?: 'none' | 'coarse' | 'segment';
   frames?: 'none' | 'ocr';
+  asrModel?: AsrModelName;
+  language?: string;
   signal?: AbortSignal;
 }
 

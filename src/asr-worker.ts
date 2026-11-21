@@ -5,10 +5,13 @@ import { AsrError } from './node/asr/errors';
 import { bindToParent, readRequest } from './node/asr/lifecycle';
 import { runPipeline } from './node/asr/pipeline';
 import type { PipelineEvent } from './node/asr/pipeline';
+import { createRecognition } from './node/asr/recognizer';
+import type { WorkerModel } from './node/asr/recognizer';
 
 interface WorkerRequest {
   runtimeRoot: string;
-  modelDir: string;
+  model: WorkerModel;
+  language?: string;
   vadPath: string;
   input: string;
   threads: number;
@@ -38,19 +41,14 @@ async function main(): Promise<void> {
   const { request: req, closed } = await readRequest<WorkerRequest>(process.stdin);
   bindToParent(closed, controller);
   const sherpa = loadSherpa(req.runtimeRoot);
-  const recognizer = new sherpa.OfflineRecognizer({
-    featConfig: { sampleRate: 16000, featureDim: 80 },
-    modelConfig: {
-      transducer: {
-        encoder: join(req.modelDir, 'encoder.int8.onnx'),
-        decoder: join(req.modelDir, 'decoder.int8.onnx'),
-        joiner: join(req.modelDir, 'joiner.int8.onnx'),
-      },
-      tokens: join(req.modelDir, 'tokens.txt'),
-      modelType: 'nemo_transducer',
-      numThreads: req.threads,
-      provider: 'cpu',
-      debug: 0,
+  const pending: Promise<void>[] = [];
+  const recognition = createRecognition({
+    sherpa,
+    model: req.model,
+    threads: req.threads,
+    language: req.language,
+    onLanguage: (lang) => {
+      pending.push(write({ type: 'language', lang }));
     },
   });
   const vad = new sherpa.Vad(
@@ -62,7 +60,6 @@ async function main(): Promise<void> {
     },
     60,
   );
-  const pending: Promise<void>[] = [];
   await runPipeline({
     pcm: pcmStream(req.input, { ffmpeg: req.ffmpeg, signal: controller.signal }),
     vad: {
@@ -72,15 +69,10 @@ async function main(): Promise<void> {
       pop: () => vad.pop(),
       flush: () => vad.flush(),
     },
-    recognize: (samples) => {
-      const stream = recognizer.createStream();
-      stream.acceptWaveform({ samples, sampleRate: 16000 });
-      recognizer.decode(stream);
-      const result = recognizer.getResult(stream);
-      return { text: String(result.text ?? ''), lang: result.lang ? String(result.lang) : undefined };
-    },
+    recognize: (samples) => recognition.recognize(samples),
     emit: (event: PipelineEvent) => {
-      pending.push(write(event));
+      const lang = recognition.language();
+      pending.push(write(event.type === 'done' && lang ? { ...event, lang } : event));
     },
   });
   await Promise.all(pending);

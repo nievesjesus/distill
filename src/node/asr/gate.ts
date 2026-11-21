@@ -2,9 +2,10 @@ import { detectKind } from '../../core/kind';
 import { resolveFfmpeg as defaultResolveFfmpeg } from '../asr-install';
 import { FFMPEG_MISSING_MESSAGE } from './errors';
 import { cachedSlides } from './slides-cache';
-import { cachedTranscript, knownDuration } from './transcribe';
+import { ASR_MODELS } from './models';
+import { cachedTranscript, knownDuration, resolveAsrSelection } from './transcribe';
 
-export const MEDIA_AUTO_SECONDS = 600;
+export const MEDIA_AUTO_SECONDS = ASR_MODELS.parakeet.autoSeconds;
 
 export type MediaPlan = 'convert' | { defer: string };
 
@@ -23,11 +24,18 @@ export function createMediaGate(options: MediaGateOptions): (path: string) => Pr
   const slidesCached = options.slides ?? cachedSlides;
   const duration = options.duration ?? knownDuration;
   const findFfmpeg = options.resolveFfmpeg ?? defaultResolveFfmpeg;
-  const limit = options.maxSeconds ?? MEDIA_AUTO_SECONDS;
+  const activeLimit = (): number => {
+    try {
+      return resolveAsrSelection({ cacheDir: options.cacheDir, env: options.env }).spec.autoSeconds;
+    } catch {
+      return MEDIA_AUTO_SECONDS;
+    }
+  };
   return async (path) => {
+    const limit = options.maxSeconds ?? activeLimit();
     const ffmpeg = findFfmpeg(options.env);
     const needsSlides = ffmpeg !== null && detectKind(path) === 'VIDEO';
-    const transcribed = (await cached(path, options.cacheDir).catch(() => undefined)) !== undefined;
+    const transcribed = (await cached(path, options.cacheDir, { env: options.env }).catch(() => undefined)) !== undefined;
     if (transcribed && (!needsSlides || (await slidesCached(path, options.cacheDir).catch(() => undefined)) !== undefined)) return 'convert';
     const seconds = await duration(path, ffmpeg).catch(() => undefined);
     if (seconds !== undefined && seconds <= limit) return 'convert';

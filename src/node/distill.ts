@@ -17,6 +17,7 @@ import type { Lingua } from './lingua';
 import { getAsrStatus } from './asr-install';
 import { createLinguaInstaller } from './lingua-install';
 import { withMedia } from './asr/media';
+import type { AsrModelName } from './asr/models';
 import { withBuiltinOffice } from './office';
 import { createParser } from './parse';
 import type { Parser } from './parse';
@@ -40,6 +41,8 @@ export interface DistillOptions {
   rate?: number;
   timestamps?: 'none' | 'coarse' | 'segment';
   frames?: 'none' | 'ocr';
+  asrModel?: AsrModelName;
+  language?: string;
   signal?: AbortSignal;
 }
 
@@ -128,6 +131,8 @@ export function createDistiller(deps: {
         ...(opts.mode ? { mode: opts.mode } : {}),
         ...(opts.timestamps ? { timestamps: opts.timestamps } : {}),
         ...(opts.frames ? { frames: opts.frames } : {}),
+        ...(opts.asrModel ? { asrModel: opts.asrModel } : {}),
+        ...(opts.language ? { language: opts.language } : {}),
         ...(opts.signal ? { signal: opts.signal } : {}),
       };
       const parsed = await deps.parser.toMarkdown(path, Object.keys(parseOptions).length > 0 ? parseOptions : undefined);
