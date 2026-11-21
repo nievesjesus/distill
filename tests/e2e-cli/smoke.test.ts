@@ -249,6 +249,18 @@ describe('distill-llm mcp', () => {
   });
 });
 
+describe('distill-llm grep --regex', () => {
+  it('stops a catastrophic regex instead of hanging', () => {
+    const file = join(work, 'evil.csv');
+    writeFileSync(file, `word\n${'a'.repeat(40)}!\n`);
+    const started = Date.now();
+    const out = runCli(['grep', '--regex', '(a+)+$', file]);
+    expect(out.status).toBe(2);
+    expect(out.stderr).toContain('took longer');
+    expect(Date.now() - started).toBeLessThan(10000);
+  });
+});
+
 describe('distill-llm hooks install', () => {
   it('installs and uninstalls the claude hook in a temp home', () => {
     const settingsPath = join(home, '.claude', 'settings.json');

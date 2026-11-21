@@ -2,7 +2,7 @@ import { chmodSync } from 'node:fs';
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: { cli: 'src/cli/index.ts', 'asr-worker': 'src/asr-worker.ts' },
+  entry: { cli: 'src/cli/index.ts', 'asr-worker': 'src/asr-worker.ts', 'search-worker': 'src/search-worker.ts' },
   format: ['esm'],
   platform: 'node',
   target: 'node22',

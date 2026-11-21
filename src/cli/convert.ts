@@ -9,6 +9,7 @@ import { SearchQueryError, renderHits, searchMarkdown } from '../core/search';
 import { countTokens } from '../core/tokens';
 import type { LocalBoosterId } from '../core/types';
 import type { Distiller } from '../node/distill';
+import { searchMarkdownBounded } from '../node/search-bounded';
 import { ASR_MODEL_NAMES, isAsrLanguage } from '../node/asr/models';
 import type { AsrModelName } from '../node/asr/models';
 import { DistillError } from '../node/errors';
@@ -303,7 +304,14 @@ export async function runGrep(query: string, file: string, options: GrepOptions,
   }
   try {
     const result = isUrlInput(file) ? await distiller.distillUrl(file, { lingua: false, ...webOptions(options) }) : await distiller.distillFile(file, { lingua: false, ...(options.asrModel ? { asrModel: options.asrModel } : {}), ...(options.language ? { language: options.language } : {}) });
-    const found = searchMarkdown(result.markdown, query, searchOptions);
+    let found: Awaited<ReturnType<typeof searchMarkdownBounded>>;
+    try {
+      found = await searchMarkdownBounded(result.markdown, query, searchOptions);
+    } catch (error) {
+      if (!(error instanceof SearchQueryError)) throw error;
+      io.stderr(`error: ${error.message}`);
+      return 2;
+    }
     const body = found.hits.length === 0 ? 'No matches.' : renderHits(found.hits);
     const more = found.truncated ? `\n${found.total - found.hits.length} more not shown (${found.total} in total). Raise --max or narrow the query.` : '';
     const text = `${body}${more}`;

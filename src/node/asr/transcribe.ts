@@ -2,8 +2,8 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { asrPaths, getAsrStatus, resolveFfmpeg, selectAsrModel } from '../asr-install';
+import { builtWorkerPath } from '../worker-path';
 import { readJsonFile, sha256Of, writePrivateJson } from './cache';
 import { ffmpegInfoArgs, ffprobeArgs, parseFfmpegDuration, readWavInfo, wavDuration } from './decode';
 import { AsrError, asrUnavailableMessage } from './errors';
@@ -105,25 +105,6 @@ async function acquireWorkerSlot(env: NodeJS.ProcessEnv, signal: AbortSignal | u
 }
 
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
-
-function packageRoot(from: string): string | undefined {
-  let dir = from;
-  for (;;) {
-    if (existsSync(join(dir, 'package.json'))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
-
-function defaultWorkerPath(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const beside = join(here, 'asr-worker.js');
-  if (existsSync(beside)) return beside;
-  const root = packageRoot(here);
-  const built = root ? join(root, 'dist', 'asr-worker.js') : beside;
-  return existsSync(built) ? built : beside;
-}
 
 function cachePath(cacheDir: string, sha: string, selection: AsrSelection): string {
   const language = selection.language ? `-${selection.language}` : '';
@@ -329,7 +310,7 @@ export async function transcribe(input: string, options: TranscribeOptions): Pro
     const threads = options.threads ?? Math.max(1, Math.min(4, cpus().length));
 
     const result = await runWorker(
-      options.workerPath ?? defaultWorkerPath(),
+      options.workerPath ?? builtWorkerPath('asr-worker.js'),
       {
         runtimeRoot: paths.runtimeRoot,
         model: workerModel(options.cacheDir, spec),

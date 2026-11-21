@@ -372,7 +372,7 @@ distill-llm grep "termination clause" contract.pdf --context 3 --max 10
 distill-llm grep --regex "Q[1-4] 20\d\d" report.pdf --json
 ```
 
-Each hit prints as `p.<page> L<line>: text`; `--json` prints `{ hits, total, truncated }`, where each hit has `line`, `text` and, when known, `page` and `section` (the nearest heading). Options: `--regex`, `--context <n>` (default 2), `--max <n>` (default 20). Matching ignores case and line wraps. It also takes a URL, and works on audio and video transcripts. Then read around the hit with `distill_file` (`section` or `offset`). See [MCP server](#mcp-server) for the tool's parameters.
+Each hit prints as `p.<page> L<line>: text`; `--json` prints `{ hits, total, truncated }`, where each hit has `line`, `text` and, when known, `page` and `section` (the nearest heading). Options: `--regex`, `--context <n>` (default 2), `--max <n>` (default 20). Matching ignores case and line wraps. It also takes a URL, and works on audio and video transcripts. A regex that runs longer than 2 s is stopped (`bad_request` in MCP, exit 2 in the CLI). Then read around the hit with `distill_file` (`section` or `offset`). See [MCP server](#mcp-server) for the tool's parameters.
 
 ## Supported formats
 
