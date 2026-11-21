@@ -27,11 +27,12 @@ function installFake(): void {
   }
 }
 
-function worker(body: string): string {
+function worker(body: string, vars: Record<string, unknown> = {}): string {
   const path = join(root, `worker-${Math.random().toString(36).slice(2)}.mjs`);
+  writeFileSync(`${path}.json`, JSON.stringify(vars));
   writeFileSync(
     path,
-    `let raw='';process.stdin.setEncoding('utf8');let started=false;process.stdin.on('data',d=>{raw+=d;const at=raw.indexOf('\\n');if(started||at<0)return;started=true;(async()=>{const req=JSON.parse(raw.slice(0,at));const out=(o)=>process.stdout.write(JSON.stringify(o)+'\\n');${body}if(!process.__hang)process.exit(0);})();});`,
+    `let raw='';process.stdin.setEncoding('utf8');let started=false;process.stdin.on('data',d=>{raw+=d;const at=raw.indexOf('\\n');if(started||at<0)return;started=true;(async()=>{const req=JSON.parse(raw.slice(0,at));const out=(o)=>process.stdout.write(JSON.stringify(o)+'\\n');const vars=JSON.parse((await import('node:fs')).readFileSync(process.argv[1]+'.json','utf8'));${body}if(!process.__hang)process.exit(0);})();});`,
   );
   return path;
 }
@@ -68,11 +69,11 @@ const alive = (pid: number) => {
   }
 };
 
-const grandchildWorker = (pidFile: string, handleTerm: boolean) => `
+const grandchildWorker = (handleTerm: boolean) => `
 const { spawn } = await import('node:child_process');
 const { writeFileSync } = await import('node:fs');
 const g = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
-writeFileSync(${JSON.stringify(pidFile)}, String(g.pid));
+writeFileSync(vars.pidFile, String(g.pid));
 ${handleTerm ? "process.on('SIGTERM', () => { g.kill('SIGKILL'); process.exit(0); });" : "process.on('SIGTERM', () => {});"}
 setInterval(()=>{},1000);process.__hang=1;
 `;
@@ -122,7 +123,7 @@ describe('transcribe', () => {
     const log = join(root, 'log.txt');
     const other = join(root, 'b.wav');
     writeFileSync(other, makeWav({ rate: 16000, channels: 1, bits: 16, count: 8000, frames: () => 0 }));
-    const workerPath = worker(`const fs=await import('node:fs');fs.appendFileSync(${JSON.stringify(log)},'start\\n');await new Promise(r=>setTimeout(r,250));fs.appendFileSync(${JSON.stringify(log)},'end\\n');out({type:'done',duration:1});`);
+    const workerPath = worker(`const fs=await import('node:fs');fs.appendFileSync(vars.log,'start\\n');await new Promise(r=>setTimeout(r,250));fs.appendFileSync(vars.log,'end\\n');out({type:'done',duration:1});`, { log });
     await Promise.all([transcribe(wav, { cacheDir, workerPath, env: {} }), transcribe(other, { cacheDir, workerPath, env: {} })]);
     expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['start', 'end', 'start', 'end']);
   });
@@ -131,7 +132,7 @@ describe('transcribe', () => {
     const log = join(root, 'log2.txt');
     const other = join(root, 'b.wav');
     writeFileSync(other, makeWav({ rate: 16000, channels: 1, bits: 16, count: 8000, frames: () => 0 }));
-    const workerPath = worker(`const fs=await import('node:fs');fs.appendFileSync(${JSON.stringify(log)},'start\\n');await new Promise(r=>setTimeout(r,250));fs.appendFileSync(${JSON.stringify(log)},'end\\n');out({type:'done',duration:1});`);
+    const workerPath = worker(`const fs=await import('node:fs');fs.appendFileSync(vars.log,'start\\n');await new Promise(r=>setTimeout(r,250));fs.appendFileSync(vars.log,'end\\n');out({type:'done',duration:1});`, { log });
     const env = { DISTILL_ASR_CONCURRENCY: '2' };
     await Promise.all([transcribe(wav, { cacheDir, workerPath, env }), transcribe(other, { cacheDir, workerPath, env })]);
     expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['start', 'start', 'end', 'end']);
@@ -251,7 +252,7 @@ describe('transcribe', () => {
     it('terminates the worker gracefully on abort so its child process is cleaned up', async () => {
       const pidFile = join(root, 'pid');
       const controller = new AbortController();
-      const run = transcribe(wav, { cacheDir, workerPath: worker(grandchildWorker(pidFile, true)), env: {}, signal: controller.signal });
+      const run = transcribe(wav, { cacheDir, workerPath: worker(grandchildWorker(true), { pidFile }), env: {}, signal: controller.signal });
       await vi.waitFor(() => expect(existsSync(pidFile)).toBe(true));
       await sleep(100);
       const pid = Number(readFileSync(pidFile, 'utf8'));
@@ -264,7 +265,7 @@ describe('transcribe', () => {
     it('escalates to SIGKILL when the worker ignores SIGTERM', async () => {
       const pidFile = join(root, 'pid2');
       const started = Date.now();
-      const run = transcribe(wav, { cacheDir, workerPath: worker(grandchildWorker(pidFile, false)), env: {}, timeoutMs: 400, killGraceMs: 200 });
+      const run = transcribe(wav, { cacheDir, workerPath: worker(grandchildWorker(false), { pidFile }), env: {}, timeoutMs: 400, killGraceMs: 200 });
       await expect(run).rejects.toMatchObject({ code: 'timeout' });
       expect(Date.now() - started).toBeLessThan(4000);
       const pid = Number(readFileSync(pidFile, 'utf8'));
@@ -274,10 +275,10 @@ describe('transcribe', () => {
 
   it('kills the worker and rejects with asr_failed when onProgress throws', async () => {
     const pidFile = join(root, 'pid3');
-    const body = `${grandchildWorker(pidFile, true)}\nout({type:'progress',seconds:1});`;
+    const body = `${grandchildWorker(true)}\nout({type:'progress',seconds:1});`;
     const err = await transcribe(wav, {
       cacheDir,
-      workerPath: worker(body),
+      workerPath: worker(body, { pidFile }),
       env: {},
       onProgress: () => {
         throw new Error('callback exploded');

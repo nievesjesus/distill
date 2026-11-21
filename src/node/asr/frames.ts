@@ -95,7 +95,8 @@ const normalize = (line: string) => line.toLowerCase().replace(/[^\p{L}\p{N}]+/g
 function ocrLines(markdown: string): string[] {
   const lines: string[] = [];
   for (const raw of markdown.split('\n')) {
-    if (/^\s*<!--.*-->\s*$/.test(raw) || /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(raw)) continue;
+    const trimmed = raw.trim();
+    if ((trimmed.startsWith('<!--') && trimmed.endsWith('-->')) || /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(raw)) continue;
     const line = raw.replace(/^\s*#{1,6}\s+/, '').replace(/\s+/g, ' ').trim();
     if ((line.match(/[\p{L}\p{N}]/gu) ?? []).length >= MIN_LINE_CHARS) lines.push(line);
   }

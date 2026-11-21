@@ -79,8 +79,8 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function looseSource(query: string, opts: SearchOptions): string {
-  return opts.regex ? query : query.replace(/\s+/g, ' ').trim().split(' ').map(escapeRegex).join('\\s+');
+function looseSource(query: string): string {
+  return query.replace(/\s+/g, ' ').trim().split(' ').map(escapeRegex).join('\\s+');
 }
 
 function compile(query: string, opts: SearchOptions): RegExp {
@@ -133,7 +133,9 @@ function windowsOf(flat: Flat, pattern: RegExp, context: number, totalLines: num
 
 export function searchMarkdown(markdown: string, query: string, opts: SearchOptions = {}): SearchResult {
   const pattern = compile(query, opts);
-  const loose = new RegExp(looseSource(query, opts), opts.caseSensitive ? '' : 'i');
+  const loose = opts.regex
+    ? new RegExp(pattern.source, pattern.flags.replace('g', ''))
+    : new RegExp(looseSource(query), opts.caseSensitive ? '' : 'i');
   const context = Math.max(0, Math.floor(opts.context ?? DEFAULT_CONTEXT));
   const maxHits = Math.max(1, Math.floor(opts.maxHits ?? DEFAULT_MAX_HITS));
   const lines = markdown.split('\n');

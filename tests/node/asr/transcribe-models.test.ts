@@ -30,18 +30,19 @@ function installModel(model: AsrModelName): void {
   }
 }
 
-function worker(body: string): string {
+function worker(body: string, vars: Record<string, unknown> = {}): string {
   const path = join(root, `worker-${Math.random().toString(36).slice(2)}.mjs`);
+  writeFileSync(`${path}.json`, JSON.stringify(vars));
   writeFileSync(
     path,
-    `let raw='';process.stdin.setEncoding('utf8');let started=false;process.stdin.on('data',d=>{raw+=d;const at=raw.indexOf('\\n');if(started||at<0)return;started=true;(async()=>{const req=JSON.parse(raw.slice(0,at));const out=(o)=>process.stdout.write(JSON.stringify(o)+'\\n');${body}process.exit(0);})();});`,
+    `let raw='';process.stdin.setEncoding('utf8');let started=false;process.stdin.on('data',d=>{raw+=d;const at=raw.indexOf('\\n');if(started||at<0)return;started=true;(async()=>{const req=JSON.parse(raw.slice(0,at));const out=(o)=>process.stdout.write(JSON.stringify(o)+'\\n');const vars=JSON.parse((await import('node:fs')).readFileSync(process.argv[1]+'.json','utf8'));${body}process.exit(0);})();});`,
   );
   return path;
 }
 
 const echoWorker = () => `
 const { writeFileSync } = await import('node:fs');
-writeFileSync(${JSON.stringify(capture)}, JSON.stringify(req));
+writeFileSync(vars.capture, JSON.stringify(req));
 out({type:'segment',start:0,end:1,text:'hola'});
 out({type:'language',lang:'es'});
 out({type:'done',duration:1,lang:'es'});
@@ -90,7 +91,7 @@ describe('resolveAsrSelection', () => {
 describe('transcribe with models', () => {
   it('fails with asr_unavailable naming the exact install command when the chosen model is missing', async () => {
     installModel('parakeet');
-    const err = await transcribe(wav, { cacheDir, env: { DISTILL_ASR_MODEL: 'whisper-small' }, workerPath: worker(echoWorker()) }).catch((e) => e);
+    const err = await transcribe(wav, { cacheDir, env: { DISTILL_ASR_MODEL: 'whisper-small' }, workerPath: worker(echoWorker(), { capture }) }).catch((e) => e);
     expect(err).toBeInstanceOf(AsrError);
     expect(err.code).toBe('asr_unavailable');
     expect(err.message).toContain('distill-llm asr install --model whisper-small');
@@ -98,7 +99,7 @@ describe('transcribe with models', () => {
 
   it('sends a transducer model request for parakeet', async () => {
     installModel('parakeet');
-    const result = await transcribe(wav, { cacheDir, env: {}, workerPath: worker(echoWorker()), threads: 3 });
+    const result = await transcribe(wav, { cacheDir, env: {}, workerPath: worker(echoWorker(), { capture }), threads: 3 });
     const req = JSON.parse(readFileSync(capture, 'utf8'));
     const dir = asrPaths(cacheDir).modelDir;
     expect(req.model).toEqual({ kind: 'transducer', files: { encoder: join(dir, 'encoder.int8.onnx'), decoder: join(dir, 'decoder.int8.onnx'), joiner: join(dir, 'joiner.int8.onnx'), tokens: join(dir, 'tokens.txt') } });
@@ -109,7 +110,7 @@ describe('transcribe with models', () => {
 
   it('sends a whisper model request with the forced language and reports lang', async () => {
     installModel('whisper-small');
-    const result = await transcribe(wav, { cacheDir, env: { DISTILL_ASR_MODEL: 'whisper-small' }, language: 'es', workerPath: worker(echoWorker()) });
+    const result = await transcribe(wav, { cacheDir, env: { DISTILL_ASR_MODEL: 'whisper-small' }, language: 'es', workerPath: worker(echoWorker(), { capture }) });
     const req = JSON.parse(readFileSync(capture, 'utf8'));
     const dir = asrPaths(cacheDir, 'whisper-small').modelDir;
     expect(req.model).toEqual({ kind: 'whisper', files: { encoder: join(dir, 'small-encoder.int8.onnx'), decoder: join(dir, 'small-decoder.int8.onnx'), tokens: join(dir, 'small-tokens.txt') } });
@@ -121,16 +122,16 @@ describe('transcribe with models', () => {
     installModel('whisper-small');
     const env = { DISTILL_ASR_MODEL: 'whisper-small' };
     const digest = sha(readFileSync(wav));
-    await transcribe(wav, { cacheDir, env, workerPath: worker(echoWorker()) });
+    await transcribe(wav, { cacheDir, env, workerPath: worker(echoWorker(), { capture }) });
     expect(existsSync(join(cacheDir, 'transcripts', `${digest}-${ASR_MODELS['whisper-small'].id}-v1.json`))).toBe(true);
-    await transcribe(wav, { cacheDir, env, language: 'ja', workerPath: worker(echoWorker()) });
+    await transcribe(wav, { cacheDir, env, language: 'ja', workerPath: worker(echoWorker(), { capture }) });
     expect(existsSync(join(cacheDir, 'transcripts', `${digest}-${ASR_MODELS['whisper-small'].id}-ja-v1.json`))).toBe(true);
   });
 
   it('does not share the cache between models and returns the stored lang', async () => {
     installModel('parakeet');
     installModel('whisper-small');
-    await transcribe(wav, { cacheDir, env: { DISTILL_ASR_MODEL: 'whisper-small' }, workerPath: worker(echoWorker()) });
+    await transcribe(wav, { cacheDir, env: { DISTILL_ASR_MODEL: 'whisper-small' }, workerPath: worker(echoWorker(), { capture }) });
     const other = await transcribe(wav, { cacheDir, env: {}, workerPath: worker(`out({type:'segment',start:0,end:1,text:'x'});out({type:'done',duration:1});`) });
     expect(other).toMatchObject({ cached: false, model: 'parakeet' });
     expect(other.lang).toBeUndefined();
@@ -142,7 +143,7 @@ describe('transcribe with models', () => {
     installModel('whisper-small');
     const env = { DISTILL_ASR_MODEL: 'whisper-small' };
     expect(await cachedTranscript(wav, cacheDir, { env })).toBeUndefined();
-    await transcribe(wav, { cacheDir, env, workerPath: worker(echoWorker()) });
+    await transcribe(wav, { cacheDir, env, workerPath: worker(echoWorker(), { capture }) });
     expect((await cachedTranscript(wav, cacheDir, { env }))?.lang).toBe('es');
     expect(await cachedTranscript(wav, cacheDir, { env, language: 'ja' })).toBeUndefined();
     expect(await cachedTranscript(wav, cacheDir, { env: {} })).toBeUndefined();

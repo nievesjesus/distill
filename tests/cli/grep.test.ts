@@ -117,7 +117,7 @@ describe('grep', () => {
 
   it('searches a web page and passes the address overrides', async () => {
     const h = harness();
-    await run(['grep', 'intro', 'https://docs.example.com/a', '--allow-private'], h.deps);
+    await run(['grep', 'intro', 'http://localhost:8080/a', '--allow-private'], h.deps);
     expect(h.urlCalls[0]?.opts?.robots).toBe('ignore');
     expect(h.urlCalls[0]?.opts?.allowPrivate).toBe(true);
     expect(h.stdout[0]).toContain('L3:');
