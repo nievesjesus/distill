@@ -87,6 +87,10 @@ const asrStatusSchema = z.object({
   installed: z.boolean(),
   runtime: z.boolean(),
   models: z.boolean(),
+  vad: z.boolean().optional(),
+  model: z.string().optional(),
+  defaultModel: z.string().nullable().optional(),
+  installedModels: z.array(z.object({ name: z.string(), bytes: z.number() })).optional(),
   ffmpeg: z.string().nullable(),
   installable: z.boolean(),
   unsupportedReason: z.string().optional(),
@@ -692,7 +696,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_capabilities',
     {
       title: 'Report distill capabilities',
-      description: `Report the server version, the maximum file size in bytes for documents (maxBytes) and for audio and video (mediaMaxBytes), the per-call output cap in tokens (maxResultTokens) and which optional features are available (LibreOffice for legacy .doc/.xls/.ppt and OpenDocument, LLMLingua-2 for the lossy lingua option, and the local speech-recognition stack for audio and video; the user installs it with the command distill-llm asr install, this server never does). Read-only and cheap; call it when a conversion fails with needs_libreoffice or before using lingua. Does not read any document.`,
+      description: `Report the server version, the maximum file size in bytes for documents (maxBytes) and for audio and video (mediaMaxBytes), the per-call output cap in tokens (maxResultTokens) and which optional features are available (LibreOffice for legacy .doc/.xls/.ppt and OpenDocument, LLMLingua-2 for the lossy lingua option, and the local speech-recognition stack for audio and video, with the installed speech models and the default one in asr.installedModels and asr.defaultModel; the user installs it with the command distill-llm asr install [--model parakeet|whisper-turbo|whisper-small], this server never does). Read-only and cheap; call it when a conversion fails with needs_libreoffice or before using lingua. Does not read any document.`,
       annotations: READ_ONLY,
       outputSchema: {
         version: z.string(),

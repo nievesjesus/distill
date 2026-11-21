@@ -33,12 +33,14 @@ import type { UpdateChecker } from '../node/update-check';
 import { detectKind } from '../core/kind';
 import { createMediaGate } from '../node/asr/gate';
 import { cacheDirFromEnv } from '../node/cache-dir';
-import { ASR_MODELS_BYTES, ASR_RUNTIME_APPROX_BYTES, createAsrInstaller, getAsrStatus } from '../node/asr-install';
+import { ASR_RUNTIME_APPROX_BYTES, asrDownloadBytes, createAsrInstaller, getAsrStatus, selectAsrModel } from '../node/asr-install';
+import { ASR_MODELS, ASR_MODEL_NAMES, DEFAULT_ASR_MODEL } from '../node/asr/models';
+import type { AsrModelName } from '../node/asr/models';
 import type { AsrInstaller, AsrProgress } from '../node/asr-install';
 import { createGlobalUpdater } from '../node/update-install';
 import type { GlobalUpdater } from '../node/update-install';
 import type { InstallMethod, UpdateCheck } from '../core/types';
-import { parseBoosters, parseFrames, parseNonNegativeInt, parsePositiveInt, parseRate, parseTimestamps, runConvert, runGrep, runOutline } from './convert';
+import { parseAsrModel, parseBoosters, parseFrames, parseLanguage, parseNonNegativeInt, parsePositiveInt, parseRate, parseTimestamps, runConvert, runGrep, runOutline } from './convert';
 import type { ConvertOptions, GrepOptions, OutlineOptions } from './convert';
 
 type Server = { url: string; close(): Promise<void> };
@@ -283,6 +285,14 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     return updater;
   };
 
+  const activeAsrModel = (): AsrModelName => {
+    try {
+      return selectAsrModel({ cacheDir, env });
+    } catch {
+      return DEFAULT_ASR_MODEL;
+    }
+  };
+
   let asr = deps.asrInstaller;
   const getAsr = (): AsrInstaller => {
     if (asr) return asr;
@@ -385,6 +395,8 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--full', 'for web pages and HTML files: keep the whole page instead of extracting the main content')
     .option('--timestamps <mode>', 'audio and video: none, coarse (default, about one [mm:ss] a minute) or segment', parseTimestamps)
     .option('--frames <mode>', 'video: ocr (default, adds new on-screen text) or none', parseFrames)
+    .option('--asr-model <name>', `audio and video: speech model, ${ASR_MODEL_NAMES.join(', ')} (default: the installed default)`, parseAsrModel)
+    .option('--language <iso>', 'audio and video with a Whisper model: force the spoken language, for example es, en or ja', parseLanguage)
     .action(async (files: string[], options: ConvertOptions) => {
       const code = await runConvert(files, options, {
         stdout,
@@ -422,6 +434,8 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
     .option('--allow-private', 'allow URLs that resolve to private, loopback or link-local addresses')
     .option('--allow-host <host>', 'allow this host even if it resolves to a private address (repeatable)', collectHost, [])
+    .option('--asr-model <name>', `audio and video: speech model, ${ASR_MODEL_NAMES.join(', ')} (default: the installed default)`, parseAsrModel)
+    .option('--language <iso>', 'audio and video with a Whisper model: force the spoken language, for example es, en or ja', parseLanguage)
     .action(async (query: string, file: string, options: GrepOptions) => {
       const code = await runGrep(query, file, options, {
         stdout,
@@ -508,9 +522,12 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
         stdout(JSON.stringify(current));
         return;
       }
+      const installedModels = current.installedModels ?? [];
       stdout(`installed: ${current.installed ? 'yes' : 'no'}`);
       stdout(`runtime: ${current.runtime ? 'yes' : 'no'}`);
-      stdout(`models: ${current.models ? 'yes' : 'no'}`);
+      stdout(`vad: ${current.vad ? 'yes' : 'no'}`);
+      stdout(`models: ${installedModels.length === 0 ? 'none' : installedModels.map((model) => `${model.name} (${formatMegabytes(model.bytes, 1)})`).join(', ')}`);
+      stdout(`default model: ${current.defaultModel ?? 'none'}`);
       stdout(`ffmpeg: ${current.ffmpeg ?? 'not found'}`);
       stdout(`disk: ${formatMegabytes(current.diskBytes, 1)}`);
       if (current.unsupportedReason) stdout(`unsupported: ${current.unsupportedReason}`);
@@ -518,50 +535,57 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
 
   asrCommand
     .command('install')
-    .description('Download the speech runtime and models (about 35 MB plus 670 MB)')
+    .description('Download the speech runtime and one speech model (parakeet by default)')
+    .option('--model <name>', `speech model to install: ${ASR_MODEL_NAMES.join(', ')} (default ${DEFAULT_ASR_MODEL})`, parseAsrModel)
     .option('--yes', 'download without asking')
-    .action(async (options: { yes?: boolean }) => {
+    .action(async (options: { yes?: boolean; model?: AsrModelName }) => {
+      const model = options.model ?? DEFAULT_ASR_MODEL;
       const installer = getAsr();
-      const current = installer.status();
+      const current = installer.status(model);
       if (current.unsupportedReason) {
         stderr(current.unsupportedReason);
         exit(1);
         return;
       }
-      if (current.installed) {
+      if (current.installed && (current.defaultModel === model || (current.defaultModel == null && model === DEFAULT_ASR_MODEL))) {
         stdout('Speech recognition is already installed.');
         return;
       }
-      stdout(`This downloads about ${formatMegabytes(ASR_RUNTIME_APPROX_BYTES, 0)} of runtime and ${formatMegabytes(ASR_MODELS_BYTES, 0)} of models.`);
-      if (options.yes !== true) {
-        if (!isTTY) {
-          stderr('Refusing to download without confirmation. Re-run with --yes.');
-          exit(1);
-          return;
-        }
-        const answer = (await prompt(`Download about ${formatMegabytes(ASR_RUNTIME_APPROX_BYTES, 0)} + ${formatMegabytes(ASR_MODELS_BYTES, 0)}? [y/N] `)).trim().toLowerCase();
-        if (answer !== 'y' && answer !== 'yes') {
-          stdout('Aborted.');
-          return;
+      if (!current.installed) {
+        const modelSize = formatMegabytes(asrDownloadBytes(model), 0);
+        const runtimeSize = formatMegabytes(ASR_RUNTIME_APPROX_BYTES, 0);
+        stdout(`This downloads about ${runtimeSize} of runtime and ${modelSize} of the ${model} model (${ASR_MODELS[model].languages}).`);
+        if (options.yes !== true) {
+          if (!isTTY) {
+            stderr('Refusing to download without confirmation. Re-run with --yes.');
+            exit(1);
+            return;
+          }
+          const answer = (await prompt(`Download about ${runtimeSize} + ${modelSize}? [y/N] `)).trim().toLowerCase();
+          if (answer !== 'y' && answer !== 'yes') {
+            stdout('Aborted.');
+            return;
+          }
         }
       }
       const report = progressReporter(stderr);
       try {
-        await installer.install({ onProgress: report });
+        await installer.install({ onProgress: report, model });
       } catch (error) {
         stderr(`Speech recognition install failed: ${errorMessage(error)}`);
         exit(1);
         return;
       }
-      stdout('Speech recognition installed.');
+      stdout(`Speech recognition installed (default model: ${model}).`);
     });
 
   asrCommand
     .command('uninstall')
-    .description('Remove the speech runtime and models')
-    .action(async () => {
-      await getAsr().uninstall();
-      stdout('Speech recognition removed.');
+    .description('Remove one speech model, or the runtime and every model when no model is given')
+    .option('--model <name>', `speech model to remove: ${ASR_MODEL_NAMES.join(', ')}`, parseAsrModel)
+    .action(async (options: { model?: AsrModelName }) => {
+      await getAsr().uninstall(options.model);
+      stdout(options.model ? `Speech model ${options.model} removed.` : 'Speech recognition removed.');
     });
 
   program
@@ -708,7 +732,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, cacheDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), asrInstalled: () => getAsrStatus({ cacheDir, env }).installed, mediaGate: createMediaGate({ cacheDir, env }), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
+        }, { homeDir, cacheDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), asrInstalled: () => getAsrStatus({ cacheDir, env, model: activeAsrModel() }).installed, mediaGate: createMediaGate({ cacheDir, env }), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);

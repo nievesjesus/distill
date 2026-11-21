@@ -9,6 +9,8 @@ import { SearchQueryError, renderHits, searchMarkdown } from '../core/search';
 import { countTokens } from '../core/tokens';
 import type { LocalBoosterId } from '../core/types';
 import type { Distiller } from '../node/distill';
+import { ASR_MODEL_NAMES, isAsrLanguage } from '../node/asr/models';
+import type { AsrModelName } from '../node/asr/models';
 import { DistillError } from '../node/errors';
 
 const CONCURRENCY = 4;
@@ -30,6 +32,8 @@ export interface ConvertOptions {
   full?: boolean;
   timestamps?: 'none' | 'coarse' | 'segment';
   frames?: 'none' | 'ocr';
+  asrModel?: AsrModelName;
+  language?: string;
 }
 
 export interface OutlineOptions {
@@ -47,6 +51,8 @@ export interface GrepOptions {
   maxSize: number;
   allowPrivate?: boolean;
   allowHost?: string[];
+  asrModel?: AsrModelName;
+  language?: string;
 }
 
 export interface ConvertIo {
@@ -86,6 +92,12 @@ function oneOf<T extends string>(choices: readonly T[]): (value: string) => T {
 
 export const parseTimestamps = oneOf(['none', 'coarse', 'segment'] as const);
 export const parseFrames = oneOf(['none', 'ocr'] as const);
+export const parseAsrModel = oneOf(ASR_MODEL_NAMES);
+
+export function parseLanguage(value: string): string {
+  if (!isAsrLanguage(value)) throw new InvalidArgumentError('must be a 2 or 3 letter lowercase language code such as es, en or ja');
+  return value;
+}
 
 export function parsePositiveInt(value: string): number {
   if (!/^\d+$/.test(value) || Number(value) < 1 || !Number.isSafeInteger(Number(value))) {
@@ -198,6 +210,8 @@ export async function runConvert(files: string[], options: ConvertOptions, io: C
         ...(options.full ? { mode: 'full' as const } : {}),
         ...(options.timestamps ? { timestamps: options.timestamps } : {}),
         ...(options.frames ? { frames: options.frames } : {}),
+        ...(options.asrModel ? { asrModel: options.asrModel } : {}),
+        ...(options.language ? { language: options.language } : {}),
       };
       const result = isUrlInput(input) ? await distiller.distillUrl(input, { ...settings, ...webOptions(options) }) : await distiller.distillFile(input, settings);
       try {
@@ -288,7 +302,7 @@ export async function runGrep(query: string, file: string, options: GrepOptions,
     return 1;
   }
   try {
-    const result = isUrlInput(file) ? await distiller.distillUrl(file, { lingua: false, ...webOptions(options) }) : await distiller.distillFile(file, { lingua: false });
+    const result = isUrlInput(file) ? await distiller.distillUrl(file, { lingua: false, ...webOptions(options) }) : await distiller.distillFile(file, { lingua: false, ...(options.asrModel ? { asrModel: options.asrModel } : {}), ...(options.language ? { language: options.language } : {}) });
     const found = searchMarkdown(result.markdown, query, searchOptions);
     const body = found.hits.length === 0 ? 'No matches.' : renderHits(found.hits);
     const more = found.truncated ? `\n${found.total - found.hits.length} more not shown (${found.total} in total). Raise --max or narrow the query.` : '';

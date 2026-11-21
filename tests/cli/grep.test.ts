@@ -23,9 +23,11 @@ function harness(env: Record<string, string> = {}) {
   const stderr: string[] = [];
   const exit = vi.fn();
   const urlCalls: { url: string; opts: DistillUrlOptions | undefined }[] = [];
+  const fileCalls: { path: string; opts: DistillUrlOptions | undefined }[] = [];
   const close = vi.fn();
   const distiller: Distiller = {
-    async distillFile(path) {
+    async distillFile(path, opts) {
+      fileCalls.push({ path, opts });
       if (path.endsWith('bad.pdf')) throw new DistillError('parse_failed', 'broken file');
       return { path, name: 'doc.pdf', kind: 'PDF', pages: 2, markdown: DOC, tokens: { raw: 5000, out: 3000 }, ms: 3 };
     },
@@ -47,7 +49,7 @@ function harness(env: Record<string, string> = {}) {
     handleSignals: false,
     env: { DISTILL_NO_UPDATE_CHECK: '1', DISTILL_NO_STATS: '1', ...env },
   };
-  return { deps, stdout, stderr, exit, urlCalls, close };
+  return { deps, stdout, stderr, exit, urlCalls, fileCalls, close };
 }
 
 function pdf(name = 'doc.pdf'): string {
@@ -134,5 +136,19 @@ describe('grep', () => {
     await run(['grep', 'x', pdf(), '--context', value], h.deps);
     expect(h.exit).toHaveBeenCalledWith(2);
     expect(h.deps.openDistiller).not.toHaveBeenCalled();
+  });
+});
+
+describe('grep speech model options', () => {
+  it('passes --asr-model and --language to the distiller', async () => {
+    const h = harness();
+    await run(['grep', 'intro', pdf(), '--asr-model', 'whisper-turbo', '--language', 'es'], h.deps);
+    expect(h.fileCalls[0].opts).toMatchObject({ asrModel: 'whisper-turbo', language: 'es', lingua: false });
+  });
+
+  it('rejects an unknown model', async () => {
+    const h = harness();
+    await run(['grep', 'intro', pdf(), '--asr-model', 'nope'], h.deps);
+    expect(h.exit).toHaveBeenCalledWith(2);
   });
 });

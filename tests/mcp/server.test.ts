@@ -397,6 +397,32 @@ describe('asr capability', () => {
     expect(result.isError).toBeFalsy();
     expect((result.structuredContent as { asr: unknown }).asr).toEqual(asr);
   });
+
+  it('reports the installed speech models and the default', async () => {
+    const asr = {
+      installed: true,
+      runtime: true,
+      models: true,
+      vad: true,
+      model: 'whisper-small',
+      defaultModel: 'whisper-small',
+      installedModels: [{ name: 'parakeet', bytes: 670576784 }, { name: 'whisper-small', bytes: 375484327 }],
+      ffmpeg: null,
+      installable: true,
+      diskBytes: 5,
+    };
+    const distiller = { ...fakeDistiller(), health: () => ({ ...HEALTH, asr }) };
+    const client = await connect({ distiller });
+    const result = await client.callTool({ name: 'distill_capabilities', arguments: {} });
+    expect((result.structuredContent as { asr: unknown }).asr).toEqual(asr);
+  });
+
+  it('leaves the file tools without a model parameter', async () => {
+    const client = await connect({});
+    const tools = (await client.listTools()).tools;
+    const file = tools.find((t) => t.name === 'distill_file')!;
+    expect(Object.keys((file.inputSchema as { properties: object }).properties).join(' ')).not.toMatch(/model|language/);
+  });
 });
 
 describe('paging', () => {

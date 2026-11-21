@@ -40,6 +40,10 @@ describe('plugin files', () => {
     expect(skill).toBe(claudeSkillMarkdown('distill-llm'));
   });
 
+  it('skill points other languages at the whisper-turbo model', () => {
+    expect(claudeSkillMarkdown('distill-llm')).toContain('distill-llm asr install --model whisper-turbo');
+  });
+
   it('skill asks for a bounded read and explains the index', () => {
     const skill = claudeSkillMarkdown('distill-llm');
     expect(skill).toContain('distill-llm convert --stdout --max-tokens 8000 "<path>"');

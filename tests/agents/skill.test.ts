@@ -64,3 +64,9 @@ describe('portable agents skill', () => {
     expect(hermesSkillPath('/h')).toBe(join('/h', '.hermes', 'skills', 'distill-documents', 'SKILL.md'));
   });
 });
+
+describe('agents skill whisper clause', () => {
+  it('points other languages at the whisper-turbo model', () => {
+    expect(agentsSkillMarkdown('node /opt/d/cli.js')).toContain('node /opt/d/cli.js asr install --model whisper-turbo');
+  });
+});

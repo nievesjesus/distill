@@ -13,7 +13,7 @@ function fakeInstaller(current: AsrStatus, feed: AsrProgress[] = [], failWith?: 
     for (const event of feed) options?.onProgress?.(event);
     if (failWith) throw failWith;
   });
-  const uninstall = vi.fn(async () => {});
+  const uninstall = vi.fn(async (_model?: string) => {});
   const installer: AsrInstaller = { status: () => current, install, uninstall };
   return { installer, install, uninstall };
 }
@@ -39,7 +39,24 @@ describe('asr status', () => {
     const { installer } = fakeInstaller(status({ runtime: true, ffmpeg: '/opt/homebrew/bin/ffmpeg', diskBytes: 10_000_000 }));
     const h = harness({ asrInstaller: installer });
     await run(['asr', 'status'], h.deps);
-    expect(h.stdout).toEqual(['installed: no', 'runtime: yes', 'models: no', 'ffmpeg: /opt/homebrew/bin/ffmpeg', 'disk: 10.0 MB']);
+    expect(h.stdout).toEqual(['installed: no', 'runtime: yes', 'vad: no', 'models: none', 'default model: none', 'ffmpeg: /opt/homebrew/bin/ffmpeg', 'disk: 10.0 MB']);
+  });
+
+  it('lists each installed model with its size and the default', async () => {
+    const { installer } = fakeInstaller(
+      status({ installed: true, runtime: true, models: true, vad: true, model: 'whisper-small', defaultModel: 'whisper-small', installedModels: [{ name: 'parakeet', bytes: 670_576_784 }, { name: 'whisper-small', bytes: 375_484_327 }], diskBytes: 1_000_000_000 }),
+    );
+    const h = harness({ asrInstaller: installer });
+    await run(['asr', 'status'], h.deps);
+    expect(h.stdout).toEqual([
+      'installed: yes',
+      'runtime: yes',
+      'vad: yes',
+      'models: parakeet (670.6 MB), whisper-small (375.5 MB)',
+      'default model: whisper-small',
+      'ffmpeg: not found',
+      'disk: 1000.0 MB',
+    ]);
   });
 
   it('says when ffmpeg is missing and when the platform is unsupported', async () => {
@@ -67,7 +84,7 @@ describe('asr install', () => {
     expect(prompt).toHaveBeenCalledTimes(1);
     expect((prompt.mock.calls[0] as unknown as string[])[0]).toMatch(/35 MB.*6\d\d MB/s);
     expect(install).toHaveBeenCalledTimes(1);
-    expect(h.stdout).toContain('Speech recognition installed.');
+    expect(h.stdout).toContain('Speech recognition installed (default model: parakeet).');
   });
 
   it('shows the sizes before asking', async () => {
@@ -140,6 +157,71 @@ describe('asr install', () => {
     await run(['asr', 'install', '--yes'], h.deps);
     expect(h.stderr.join('\n')).toContain('encoder.int8.onnx failed the sha256 check');
     expect(h.exit).toHaveBeenCalledWith(1);
+  });
+});
+
+describe('asr install --model', () => {
+  it('passes the model to the installer and shows its own download size', async () => {
+    const { installer, install } = fakeInstaller(status());
+    const prompt = vi.fn(async () => 'y');
+    const h = harness({ asrInstaller: installer, isTTY: true, prompt });
+    await run(['asr', 'install', '--model', 'whisper-small'], h.deps);
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({ model: 'whisper-small' }));
+    expect(h.stdout.join('\n')).toMatch(/35 MB.*376 MB.*whisper-small/s);
+    expect((prompt.mock.calls[0] as unknown as string[])[0]).toMatch(/35 MB \+ 376 MB/);
+  });
+
+  it('defaults to parakeet', async () => {
+    const { installer, install } = fakeInstaller(status());
+    const h = harness({ asrInstaller: installer });
+    await run(['asr', 'install', '--yes'], h.deps);
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({ model: 'parakeet' }));
+  });
+
+  it('rejects an unknown model', async () => {
+    const { installer, install } = fakeInstaller(status());
+    const h = harness({ asrInstaller: installer });
+    await run(['asr', 'install', '--yes', '--model', 'whisper-large'], h.deps);
+    expect(install).not.toHaveBeenCalled();
+    expect(h.exit).toHaveBeenCalledWith(2);
+  });
+
+  it('reports the model once it is installed', async () => {
+    const h = harness({ asrInstaller: fakeInstaller(status()).installer });
+    await run(['asr', 'install', '--yes', '--model', 'whisper-turbo'], h.deps);
+    expect(h.stdout).toContain('Speech recognition installed (default model: whisper-turbo).');
+  });
+
+  it('only switches the default when the model is already installed', async () => {
+    const { installer, install } = fakeInstaller(status({ installed: true, runtime: true, models: true, defaultModel: 'parakeet', installedModels: [{ name: 'parakeet', bytes: 1 }, { name: 'whisper-small', bytes: 1 }] }));
+    const h = harness({ asrInstaller: installer });
+    await run(['asr', 'install', '--yes', '--model', 'whisper-small'], h.deps);
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({ model: 'whisper-small' }));
+  });
+
+  it('says so when the model is already the default', async () => {
+    const { installer, install } = fakeInstaller(status({ installed: true, runtime: true, models: true, defaultModel: 'whisper-small' }));
+    const h = harness({ asrInstaller: installer });
+    await run(['asr', 'install', '--yes', '--model', 'whisper-small'], h.deps);
+    expect(install).not.toHaveBeenCalled();
+    expect(h.stdout).toContain('Speech recognition is already installed.');
+  });
+});
+
+describe('asr uninstall --model', () => {
+  it('removes one model', async () => {
+    const { installer, uninstall } = fakeInstaller(status({ installed: true }));
+    const h = harness({ asrInstaller: installer });
+    await run(['asr', 'uninstall', '--model', 'whisper-turbo'], h.deps);
+    expect(uninstall).toHaveBeenCalledWith('whisper-turbo');
+    expect(h.stdout).toContain('Speech model whisper-turbo removed.');
+  });
+
+  it('removes everything without a model', async () => {
+    const { installer, uninstall } = fakeInstaller(status({ installed: true }));
+    const h = harness({ asrInstaller: installer });
+    await run(['asr', 'uninstall'], h.deps);
+    expect(uninstall).toHaveBeenCalledWith(undefined);
   });
 });
 
