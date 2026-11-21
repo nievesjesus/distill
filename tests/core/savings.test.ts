@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PDF_PAGE_TOKENS, estimateSavings, savingsNote, sumSavings } from '../../src/core/savings';
+import { PDF_PAGE_TOKENS, estimateSavings, estimateSearchSavings, savingsNote, sumSavings } from '../../src/core/savings';
 
 describe('estimateSavings', () => {
   it('adds the page image cost to a PDF baseline', () => {
@@ -35,6 +35,23 @@ describe('estimateSavings', () => {
   });
 });
 
+describe('audio and video savings', () => {
+  it.each(['AUDIO', 'VIDEO'])('uses the SRT tokens as the baseline for %s', (kind) => {
+    expect(estimateSavings({ kind, pages: 1, tokens: { raw: 1000, out: 700 } })).toEqual({
+      baseline: 1000,
+      out: 700,
+      saved: 300,
+      percent: 30,
+      basis: 'srt',
+    });
+  });
+
+  it('labels the note as against an SRT transcript', () => {
+    const note = savingsNote(estimateSavings({ kind: 'AUDIO', pages: 1, tokens: { raw: 1000, out: 700 } }));
+    expect(note).toContain('vs an SRT transcript ≈ 1,000 tok (counted)');
+  });
+});
+
 describe('sumSavings', () => {
   it('adds up estimates and recomputes the percent', () => {
     const pdf = estimateSavings({ kind: 'PDF', pages: 7, tokens: { raw: 1813, out: 1731 } });
@@ -61,5 +78,18 @@ describe('savingsNote', () => {
     expect(note).toBe(
       `[distill] tokens saved ≈ 1,500 (75%) — this Markdown ≈ 500 tok vs the raw extracted text ≈ 2,000 tok (counted). ${tail}`,
     );
+  });
+});
+
+describe('estimateSearchSavings', () => {
+  it('compares the hits with reading the whole document', () => {
+    const s = estimateSearchSavings({ kind: 'PDF', pages: 7, tokens: { raw: 1813, out: 1731 } }, 120);
+    expect(s).toEqual({ baseline: 12733, out: 120, saved: 12613, percent: 99, basis: 'search' });
+    expect(savingsNote(s)).toContain('reading the whole document ≈ 12,733 tok');
+    expect(savingsNote(s)).toContain('this Markdown ≈ 120 tok');
+  });
+
+  it('uses the raw text for non-PDF documents', () => {
+    expect(estimateSearchSavings({ kind: 'DOCX', pages: 1, tokens: { raw: 1000, out: 600 } }, 50).baseline).toBe(1000);
   });
 });

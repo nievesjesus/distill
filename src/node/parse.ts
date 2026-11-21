@@ -1,10 +1,20 @@
 import { availableParallelism } from 'node:os';
 import { LiteParse, ParseTimeoutError } from '@llamaindex/liteparse';
 import type { VisualKind, VisualPage } from '../core/types';
+import type { AsrModelName } from './asr/models';
 import { DistillError } from './errors';
 
+export interface ParseOptions {
+  mode?: 'clean' | 'full';
+  timestamps?: 'none' | 'coarse' | 'segment';
+  frames?: 'none' | 'ocr';
+  asrModel?: AsrModelName;
+  language?: string;
+  signal?: AbortSignal;
+}
+
 export interface Parser {
-  toMarkdown(path: string, opts?: { mode?: 'clean' | 'full' }): Promise<{ markdown: string; pages: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[]; rawTokens?: number }>;
+  toMarkdown(path: string, opts?: ParseOptions): Promise<{ markdown: string; pages: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[]; rawTokens?: number }>;
   toJson(path: string): Promise<unknown>;
   renderPage(path: string, page: number, opts: { dpi: number }): Promise<RenderedPng>;
   close(): void;

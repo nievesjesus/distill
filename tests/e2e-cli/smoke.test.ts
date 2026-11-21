@@ -198,7 +198,7 @@ describe('distill-llm mcp', () => {
         stderr += String(chunk);
       });
       const { tools } = await client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image', 'distill_url']);
+      expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image', 'distill_search', 'distill_url']);
       const result = await client.callTool({ name: 'distill_file', arguments: { path: pdf } });
       expect(result.isError).toBeFalsy();
       const structured = result.structuredContent as { tokens: { raw: number; out: number } };
@@ -246,6 +246,18 @@ describe('distill-llm mcp', () => {
       await client?.close().catch(() => undefined);
       child.kill('SIGTERM');
     }
+  });
+});
+
+describe('distill-llm grep --regex', () => {
+  it('runs a catastrophic regex in linear time', () => {
+    const file = join(work, 'evil.csv');
+    writeFileSync(file, `word\n${'a'.repeat(40)}!\n`);
+    const started = Date.now();
+    const out = runCli(['grep', '--regex', '(a+)+$', file]);
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain('No matches.');
+    expect(Date.now() - started).toBeLessThan(10000);
   });
 });
 

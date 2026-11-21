@@ -27,6 +27,11 @@ describe('detectKind', () => {
     for (const name of ['a.xml', 'a.rss', 'a.atom']) expect(detectKind(name)).toBe('FEED');
   });
 
+  it('detects audio and video, with webm as video and aiff as audio', () => {
+    for (const ext of ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'aiff', 'aif', 'MP3']) expect(detectKind(`a.${ext}`)).toBe('AUDIO');
+    for (const ext of ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v', 'MOV']) expect(detectKind(`a.${ext}`)).toBe('VIDEO');
+  });
+
   it('returns null for unknown or missing extensions', () => {
     expect(detectKind('a.tar.gz')).toBeNull();
     expect(detectKind('noext')).toBeNull();

@@ -12,10 +12,13 @@ describe('check-lock', () => {
   beforeEach(() => {
     sandbox = mkdtempSync(join(tmpdir(), 'distill-check-lock-'));
     mkdirSync(join(sandbox, 'lingua-runtime'));
+    mkdirSync(join(sandbox, 'asr-runtime'));
     cpSync(join(repo, 'package.json'), join(sandbox, 'package.json'));
     cpSync(join(repo, 'package-lock.json'), join(sandbox, 'package-lock.json'));
     cpSync(join(repo, 'lingua-runtime', 'package.json'), join(sandbox, 'lingua-runtime', 'package.json'));
     cpSync(join(repo, 'lingua-runtime', 'package-lock.json'), join(sandbox, 'lingua-runtime', 'package-lock.json'));
+    cpSync(join(repo, 'asr-runtime', 'package.json'), join(sandbox, 'asr-runtime', 'package.json'));
+    cpSync(join(repo, 'asr-runtime', 'package-lock.json'), join(sandbox, 'asr-runtime', 'package-lock.json'));
   });
 
   afterEach(() => rmSync(sandbox, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
@@ -54,5 +57,16 @@ describe('check-lock', () => {
     const result = run();
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('js-tiktoken');
+  });
+
+  it('fails when sherpa-onnx-node is not pinned exactly or drifts from its lockfile', () => {
+    const path = join(sandbox, 'asr-runtime', 'package.json');
+    const manifest = JSON.parse(readFileSync(path, 'utf8'));
+    manifest.dependencies['sherpa-onnx-node'] = '^2.0.2';
+    writeFileSync(path, JSON.stringify(manifest, null, 2));
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('asr-runtime');
+    expect(result.stderr).toContain('sherpa-onnx-node');
   });
 });

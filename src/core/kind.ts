@@ -29,6 +29,21 @@ const KIND_BY_EXTENSION: Record<string, FileKind> = {
   xml: 'FEED',
   rss: 'FEED',
   atom: 'FEED',
+  mp3: 'AUDIO',
+  wav: 'AUDIO',
+  m4a: 'AUDIO',
+  aac: 'AUDIO',
+  flac: 'AUDIO',
+  ogg: 'AUDIO',
+  opus: 'AUDIO',
+  aiff: 'AUDIO',
+  aif: 'AUDIO',
+  mp4: 'VIDEO',
+  mov: 'VIDEO',
+  mkv: 'VIDEO',
+  webm: 'VIDEO',
+  avi: 'VIDEO',
+  m4v: 'VIDEO',
 };
 
 const LEGACY_OFFICE_EXTENSIONS: ReadonlySet<string> = new Set(['doc', 'xls', 'ppt', 'odt', 'ods', 'odp']);

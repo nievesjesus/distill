@@ -70,7 +70,7 @@ function Status({ file }: FileRowProps) {
         <span className="progress" aria-hidden="true">
           <span className="progress-bar" />
         </span>
-        {file.kind === 'IMG' ? S.ocr : <span className="visually-hidden">{S.parsing}</span>}
+        {file.kind === 'IMG' ? S.ocr : file.kind === 'AUDIO' || file.kind === 'VIDEO' ? S.transcribing : <span className="visually-hidden">{S.parsing}</span>}
       </span>
     );
   }

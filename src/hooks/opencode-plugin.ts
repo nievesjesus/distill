@@ -1,6 +1,6 @@
 import { isHookConvertible } from './supported';
 
-const CANDIDATE_EXTENSIONS = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'webp', 'mhtml', 'mht', 'epub', 'eml', 'msg'];
+const CANDIDATE_EXTENSIONS = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'webp', 'mhtml', 'mht', 'epub', 'eml', 'msg', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'aiff', 'aif', 'mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'];
 
 export const PLUGIN_ID = 'distill-llm-opencode-plugin';
 

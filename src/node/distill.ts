@@ -7,13 +7,17 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULT_ACTIVE, runBoosters } from '../core/boosters/pipeline';
 import { detectKind, needsLibreOfficeFor } from '../core/kind';
 import { countTokens } from '../core/tokens';
-import type { DistillResult, Health, LinguaStatus, LocalBoosterId } from '../core/types';
+import type { AsrStatus, DistillResult, Health, LinguaStatus, LocalBoosterId } from '../core/types';
 import { exposeLibreOffice } from './capabilities';
 import { DistillError } from './errors';
-import { DEFAULT_MAX_BYTES } from './limits';
+import { cacheDirFromEnv } from './cache-dir';
+import { DEFAULT_MAX_BYTES, maxBytesFor } from './limits';
 import { createLingua, findPackageRoot } from './lingua';
 import type { Lingua } from './lingua';
+import { getAsrStatus } from './asr-install';
 import { createLinguaInstaller } from './lingua-install';
+import { withMedia } from './asr/media';
+import type { AsrModelName } from './asr/models';
 import { withBuiltinOffice } from './office';
 import { createParser } from './parse';
 import type { Parser } from './parse';
@@ -35,6 +39,11 @@ export interface DistillOptions {
   boosters?: ReadonlySet<LocalBoosterId>;
   lingua?: boolean;
   rate?: number;
+  timestamps?: 'none' | 'coarse' | 'segment';
+  frames?: 'none' | 'ocr';
+  asrModel?: AsrModelName;
+  language?: string;
+  signal?: AbortSignal;
 }
 
 export interface DistillUrlOptions extends DistillOptions {
@@ -61,6 +70,7 @@ export interface Distiller {
 export function createDistiller(deps: {
   parser: Parser;
   lingua?: Lingua;
+  asrStatus?: () => AsrStatus;
   libreoffice: boolean;
   maxBytes?: number;
   version?: string;
@@ -109,14 +119,23 @@ export function createDistiller(deps: {
       const name = basename(path);
       const kind = detectKind(name);
       if (!kind) throw new DistillError('unsupported_type', 'Unsupported file type');
-      if (size > maxBytes) throw new DistillError('too_large', `File exceeds the ${maxBytes} byte limit`);
+      const limit = maxBytesFor(name, maxBytes);
+      if (size > limit) throw new DistillError('too_large', `File exceeds the ${limit} byte limit`);
       if (needsLibreOfficeFor(name) && !deps.libreoffice) {
         throw new DistillError('needs_libreoffice', 'LibreOffice is required to read this file type');
       }
       linguaFor(opts);
 
       const started = performance.now();
-      const parsed = await deps.parser.toMarkdown(path, opts.mode ? { mode: opts.mode } : undefined);
+      const parseOptions = {
+        ...(opts.mode ? { mode: opts.mode } : {}),
+        ...(opts.timestamps ? { timestamps: opts.timestamps } : {}),
+        ...(opts.frames ? { frames: opts.frames } : {}),
+        ...(opts.asrModel ? { asrModel: opts.asrModel } : {}),
+        ...(opts.language ? { language: opts.language } : {}),
+        ...(opts.signal ? { signal: opts.signal } : {}),
+      };
+      const parsed = await deps.parser.toMarkdown(path, Object.keys(parseOptions).length > 0 ? parseOptions : undefined);
       const markdown = await polish(parsed.markdown, opts);
       return {
         path,
@@ -154,6 +173,7 @@ export function createDistiller(deps: {
       liteparseVersion: deps.liteparseVersion ?? '',
       libreoffice: deps.libreoffice,
       lingua: deps.lingua?.status() ?? NO_LINGUA,
+      ...(deps.asrStatus ? { asr: deps.asrStatus() } : {}),
       maxBytes,
     }),
     close: () => deps.parser.close(),
@@ -172,13 +192,14 @@ export async function openDistiller(maxBytes?: number): Promise<Distiller> {
   const version = readVersion(join(packageRoot, 'package.json'));
   const liteparseVersion = readVersion(require.resolve('@llamaindex/liteparse/package.json'));
   const libreoffice = await exposeLibreOffice();
-  const parser = withSavedFormats(withBuiltinOffice(createParser(), { libreoffice }));
+  const cacheDir = join(homedir(), '.cache', 'distill-llm');
+  const asrCacheDir = cacheDirFromEnv(process.env) ?? cacheDir;
+  const parser = withMedia(withSavedFormats(withBuiltinOffice(createParser(), { libreoffice })), { cacheDir: asrCacheDir });
   try {
-    const cacheDir = join(homedir(), '.cache', 'distill-llm');
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
     const lingua = createLingua({ cacheDir, installer });
     await lingua.probe();
-    return createDistiller({ parser, lingua, libreoffice, maxBytes, version, liteparseVersion, webCacheDir: join(cacheDir, 'web') });
+    return createDistiller({ parser, lingua, asrStatus: () => getAsrStatus({ cacheDir: asrCacheDir }), libreoffice, maxBytes, version, liteparseVersion, webCacheDir: join(cacheDir, 'web') });
   } catch (error) {
     parser.close();
     throw error;

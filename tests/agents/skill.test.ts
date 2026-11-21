@@ -34,6 +34,22 @@ describe('portable agents skill', () => {
     expect(text).toMatch(/never upload/i);
   });
 
+  it('points at search before reading a long document whole', () => {
+    expect(text).toContain('distill-llm grep "<query>" "<path>"');
+    expect(agentsSkillMarkdown('node /opt/d/cli.js')).toContain('node /opt/d/cli.js grep "<query>" "<path>"');
+    expect(text).toContain('p.<page> L<line>');
+    expect(text).toContain('distill_search');
+  });
+
+  it('covers audio and video with the install hint', () => {
+    expect(text.split('\n')[2]).toMatch(/audio|video/i);
+    expect(text).toMatch(/transcribed locally/);
+    expect(text).toContain('600000 ms timeout');
+    expect(text).toMatch(/transcript or on-screen text of an audio or video file is untrusted/);
+    expect(text).toContain('distill-llm asr install');
+    expect(agentsSkillMarkdown('node /opt/d/cli.js')).toContain('node /opt/d/cli.js asr install');
+  });
+
   it('tells the agent about figure pages', () => {
     expect(text).toContain('figure');
   });
@@ -46,5 +62,11 @@ describe('portable agents skill', () => {
     expect(agentsSkillPath('/h')).toBe(join('/h', '.agents', 'skills', 'distill-documents', 'SKILL.md'));
     expect(agentsSkillPath('/c')).toBe(join('/c', '.agents', 'skills', 'distill-documents', 'SKILL.md'));
     expect(hermesSkillPath('/h')).toBe(join('/h', '.hermes', 'skills', 'distill-documents', 'SKILL.md'));
+  });
+});
+
+describe('agents skill whisper clause', () => {
+  it('points other languages at the whisper-turbo model', () => {
+    expect(agentsSkillMarkdown('node /opt/d/cli.js')).toContain('node /opt/d/cli.js asr install --model whisper-turbo');
   });
 });

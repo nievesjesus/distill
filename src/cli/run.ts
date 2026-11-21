@@ -30,12 +30,19 @@ import { readLiteparseVersion } from '../node/versions';
 import { findPackageRoot } from '../node/lingua';
 import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
 import type { UpdateChecker } from '../node/update-check';
+import { detectKind } from '../core/kind';
+import { createMediaGate } from '../node/asr/gate';
+import { resolveAsrSelection } from '../node/asr/transcribe';
 import { cacheDirFromEnv } from '../node/cache-dir';
+import { ASR_RUNTIME_APPROX_BYTES, asrDownloadBytes, createAsrInstaller, getAsrStatus, selectAsrModel } from '../node/asr-install';
+import { ASR_MODELS, ASR_MODEL_NAMES, DEFAULT_ASR_MODEL } from '../node/asr/models';
+import type { AsrModelName } from '../node/asr/models';
+import type { AsrInstaller, AsrProgress } from '../node/asr-install';
 import { createGlobalUpdater } from '../node/update-install';
 import type { GlobalUpdater } from '../node/update-install';
 import type { InstallMethod, UpdateCheck } from '../core/types';
-import { parseBoosters, parsePositiveInt, parseRate, runConvert, runOutline } from './convert';
-import type { ConvertOptions, OutlineOptions } from './convert';
+import { parseAsrModel, parseBoosters, parseFrames, parseLanguage, parseNonNegativeInt, parsePositiveInt, parseRate, parseTimestamps, runConvert, runGrep, runOutline } from './convert';
+import type { ConvertOptions, GrepOptions, OutlineOptions } from './convert';
 
 type Server = { url: string; close(): Promise<void> };
 
@@ -63,6 +70,7 @@ export interface CliDeps {
   isGitIgnored?: (cwd: string, file: string) => boolean | null;
   updateChecker?: UpdateChecker;
   globalUpdater?: GlobalUpdater | null;
+  asrInstaller?: AsrInstaller;
 }
 
 function gitCheckIgnore(cwd: string, file: string): boolean | null {
@@ -95,6 +103,25 @@ async function defaultPrompt(question: string): Promise<string> {
   } finally {
     rl.close();
   }
+}
+
+function formatMegabytes(bytes: number, digits: number): string {
+  return `${(bytes / 1_000_000).toFixed(digits)} MB`;
+}
+
+const PROGRESS_INTERVAL_MS = 1000;
+
+function progressReporter(write: (line: string) => void): (progress: AsrProgress) => void {
+  let lastPercent = -1;
+  let lastAt = 0;
+  return ({ done, total }) => {
+    const percent = total > 0 ? Math.floor((done / total) * 100) : 0;
+    const now = Date.now();
+    if (percent === lastPercent || (percent < 100 && percent - lastPercent < 1 && now - lastAt < PROGRESS_INTERVAL_MS)) return;
+    lastPercent = percent;
+    lastAt = now;
+    write(`Downloading speech models: ${percent}% (${formatMegabytes(done, 0)} of ${formatMegabytes(total, 0)})`);
+  };
 }
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -259,6 +286,31 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     return updater;
   };
 
+  const activeAsrModel = (): AsrModelName => {
+    try {
+      return selectAsrModel({ cacheDir, env });
+    } catch {
+      return DEFAULT_ASR_MODEL;
+    }
+  };
+
+  const asrCacheTag = (): string => {
+    try {
+      const selection = resolveAsrSelection({ cacheDir, env });
+      return `${selection.spec.id}${selection.language ? `:${selection.language}` : ''}`;
+    } catch {
+      return 'invalid';
+    }
+  };
+
+  let asr = deps.asrInstaller;
+  const getAsr = (): AsrInstaller => {
+    if (asr) return asr;
+    const packageRoot = findPackageRoot(dirname(fileURLToPath(import.meta.url))) ?? process.cwd();
+    asr = createAsrInstaller({ cacheDir, env, runtimeDir: join(packageRoot, 'asr-runtime') });
+    return asr;
+  };
+
   const showNotice = async (): Promise<void> => {
     try {
       const timeout = new Promise<null>((done) => setTimeout(() => done(null), NOTICE_TIMEOUT_MS).unref());
@@ -351,6 +403,10 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--allow-private', 'allow URLs that resolve to private, loopback or link-local addresses')
     .option('--allow-host <host>', 'allow this host even if it resolves to a private address (repeatable)', collectHost, [])
     .option('--full', 'for web pages and HTML files: keep the whole page instead of extracting the main content')
+    .option('--timestamps <mode>', 'audio and video: none, coarse (default, about one [mm:ss] a minute) or segment', parseTimestamps)
+    .option('--frames <mode>', 'video: ocr (default, adds new on-screen text) or none', parseFrames)
+    .option('--asr-model <name>', `audio and video: speech model, ${ASR_MODEL_NAMES.join(', ')} (default: the installed default)`, parseAsrModel)
+    .option('--language <iso>', 'audio and video with a Whisper model: force the spoken language, for example es, en or ja', parseLanguage)
     .action(async (files: string[], options: ConvertOptions) => {
       const code = await runConvert(files, options, {
         stdout,
@@ -373,6 +429,31 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
     .option('--allow-host <host>', 'allow this host even if it resolves to a private address (repeatable)', collectHost, [])
     .action(async (file: string, options: OutlineOptions) => {
       const code = await runOutline(file, options, { stdout, stderr, openDistiller });
+      if (code !== 0) exit(code);
+    });
+
+  program
+    .command('grep')
+    .description('Find where a word, number or phrase appears in a document or web page, with page and line')
+    .argument('<query>', 'text to find (case-insensitive, matches across line wraps)')
+    .argument('<file>', 'file or http(s) URL to search')
+    .option('--regex', 'treat the query as a regular expression')
+    .option('--context <n>', 'lines of context around each match (default 2)', parseNonNegativeInt)
+    .option('--max <n>', 'maximum number of hits (default 20)', parsePositiveInt)
+    .option('--json', 'print the hits as JSON')
+    .option('--max-size <mb>', 'maximum file size in MB', parseMaxSize, 100)
+    .option('--allow-private', 'allow URLs that resolve to private, loopback or link-local addresses')
+    .option('--allow-host <host>', 'allow this host even if it resolves to a private address (repeatable)', collectHost, [])
+    .option('--asr-model <name>', `audio and video: speech model, ${ASR_MODEL_NAMES.join(', ')} (default: the installed default)`, parseAsrModel)
+    .option('--language <iso>', 'audio and video with a Whisper model: force the spoken language, for example es, en or ja', parseLanguage)
+    .action(async (query: string, file: string, options: GrepOptions) => {
+      const code = await runGrep(query, file, options, {
+        stdout,
+        stderr,
+        openDistiller,
+        savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
+        recordUsage: (kind, savings) => recordUsage({ source: 'cli', kind, savings }, { cacheDir, env }),
+      });
       if (code !== 0) exit(code);
     });
 
@@ -439,6 +520,84 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       stdout(`Updated to ${latest}.`);
     });
 
+  const asrCommand = program.command('asr').description('Manage local speech recognition for audio and video');
+
+  asrCommand
+    .command('status')
+    .description('Show whether speech recognition is installed')
+    .option('--json', 'print the status as JSON')
+    .action((options: { json?: boolean }) => {
+      const current = getAsr().status();
+      if (options.json) {
+        stdout(JSON.stringify(current));
+        return;
+      }
+      const installedModels = current.installedModels ?? [];
+      stdout(`installed: ${current.installed ? 'yes' : 'no'}`);
+      stdout(`runtime: ${current.runtime ? 'yes' : 'no'}`);
+      stdout(`vad: ${current.vad ? 'yes' : 'no'}`);
+      stdout(`models: ${installedModels.length === 0 ? 'none' : installedModels.map((model) => `${model.name} (${formatMegabytes(model.bytes, 1)})`).join(', ')}`);
+      stdout(`default model: ${current.defaultModel ?? 'none'}`);
+      stdout(`ffmpeg: ${current.ffmpeg ?? 'not found'}`);
+      stdout(`disk: ${formatMegabytes(current.diskBytes, 1)}`);
+      if (current.unsupportedReason) stdout(`unsupported: ${current.unsupportedReason}`);
+    });
+
+  asrCommand
+    .command('install')
+    .description('Download the speech runtime and one speech model (parakeet by default)')
+    .option('--model <name>', `speech model to install: ${ASR_MODEL_NAMES.join(', ')} (default ${DEFAULT_ASR_MODEL})`, parseAsrModel)
+    .option('--yes', 'download without asking')
+    .action(async (options: { yes?: boolean; model?: AsrModelName }) => {
+      const model = options.model ?? DEFAULT_ASR_MODEL;
+      const installer = getAsr();
+      const current = installer.status(model);
+      if (current.unsupportedReason) {
+        stderr(current.unsupportedReason);
+        exit(1);
+        return;
+      }
+      if (current.installed && (current.defaultModel === model || (current.defaultModel == null && model === DEFAULT_ASR_MODEL))) {
+        stdout('Speech recognition is already installed.');
+        return;
+      }
+      if (!current.installed) {
+        const modelSize = formatMegabytes(asrDownloadBytes(model), 0);
+        const runtimeSize = formatMegabytes(ASR_RUNTIME_APPROX_BYTES, 0);
+        stdout(`This downloads about ${runtimeSize} of runtime and ${modelSize} of the ${model} model (${ASR_MODELS[model].languages}).`);
+        if (options.yes !== true) {
+          if (!isTTY) {
+            stderr('Refusing to download without confirmation. Re-run with --yes.');
+            exit(1);
+            return;
+          }
+          const answer = (await prompt(`Download about ${runtimeSize} + ${modelSize}? [y/N] `)).trim().toLowerCase();
+          if (answer !== 'y' && answer !== 'yes') {
+            stdout('Aborted.');
+            return;
+          }
+        }
+      }
+      const report = progressReporter(stderr);
+      try {
+        await installer.install({ onProgress: report, model });
+      } catch (error) {
+        stderr(`Speech recognition install failed: ${errorMessage(error)}`);
+        exit(1);
+        return;
+      }
+      stdout(`Speech recognition installed (default model: ${model}).`);
+    });
+
+  asrCommand
+    .command('uninstall')
+    .description('Remove one speech model, or the runtime and every model when no model is given')
+    .option('--model <name>', `speech model to remove: ${ASR_MODEL_NAMES.join(', ')}`, parseAsrModel)
+    .action(async (options: { model?: AsrModelName }) => {
+      await getAsr().uninstall(options.model);
+      stdout(options.model ? `Speech model ${options.model} removed.` : 'Speech recognition removed.');
+    });
+
   program
     .command('mcp')
     .description('Start the MCP server (stdio by default)')
@@ -466,6 +625,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           resolvePath,
           savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
           ...(options.ignoreRobotsTxt ? { ignoreRobotsTxt: true } : {}),
+          mediaTag: asrCacheTag,
           recordUsage: (kind, savings) => recordUsage({ source: 'mcp', kind, savings }, { cacheDir, env }),
           ...(maxResultTokens === undefined ? {} : { maxResultTokens }),
         });
@@ -547,6 +707,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const convertViaCache = (getDistiller: () => Promise<Distiller>, absPath: string) =>
     convertCached(absPath, {
       getDistiller,
+      mediaTag: asrCacheTag,
       cacheDir,
       version: readVersion(),
       liteparseVersion: readLiteparseVersion(),
@@ -583,7 +744,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, cacheDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
+        }, { homeDir, cacheDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), asrInstalled: () => getAsrStatus({ cacheDir, env, model: activeAsrModel() }).installed, asrHint: () => { const model = activeAsrModel(); return { model, megabytes: Math.round(asrDownloadBytes(model) / 1_000_000) }; }, mediaGate: createMediaGate({ cacheDir, env }), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);
@@ -606,6 +767,15 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       const getDistiller = async (): Promise<Distiller> => (distiller ??= await openDistiller());
       try {
         const absPath = isAbsolute(file) ? file : resolve(cwd, file);
+        const mediaKind = detectKind(absPath);
+        if (mediaKind === 'AUDIO' || mediaKind === 'VIDEO') {
+          const plan = await createMediaGate({ cacheDir, env })(absPath);
+          if (plan !== 'convert') {
+            stderr(`distill hook: ${plan.defer}`);
+            exit(1);
+            return;
+          }
+        }
         const { mdPath: path } = await convertViaCache(getDistiller, absPath);
         stdout(JSON.stringify({ path }));
       } catch (error) {

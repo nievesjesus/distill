@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_ACTIVE, runBoosters } from '../../src/core/boosters/pipeline';
+import { estimateSavings } from '../../src/core/savings';
 import { countTokens } from '../../src/core/tokens';
 import type { LinguaStatus } from '../../src/core/types';
 import { createDistiller } from '../../src/node/distill';
@@ -65,6 +66,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
+
+describe('health', () => {
+  it('reports the asr status when provided and omits it otherwise', () => {
+    const asr = { installed: true, runtime: true, models: true, ffmpeg: null, installable: true, diskBytes: 1 };
+    expect(createDistiller({ parser: fakeParser(), libreoffice: true, asrStatus: () => asr }).health().asr).toEqual(asr);
+    expect(createDistiller({ parser: fakeParser(), libreoffice: true }).health().asr).toBeUndefined();
+  });
 });
 
 describe('renderPage', () => {
@@ -201,6 +210,48 @@ describe('createDistiller with a fake parser', () => {
     const parser = fakeParser();
     createDistiller({ parser, libreoffice: true }).close();
     expect(parser.close).toHaveBeenCalled();
+  });
+});
+
+describe('createDistiller with audio and video', () => {
+  it('passes the transcript options to the parser and reports SRT tokens as raw', async () => {
+    const audio = join(dir, 'talk.m4a');
+    await writeFile(audio, 'x');
+    const toMarkdown = vi.fn(async () => ({ markdown: '[00:00] hello world', pages: 1, rawTokens: 40 }));
+    const parser = { ...fakeParser(), toMarkdown } as Parser;
+    const controller = new AbortController();
+    const result = await createDistiller({ parser, libreoffice: true }).distillFile(audio, { timestamps: 'none', frames: 'none', signal: controller.signal });
+    expect(toMarkdown).toHaveBeenCalledWith(audio, { timestamps: 'none', frames: 'none', signal: controller.signal });
+    expect(result.kind).toBe('AUDIO');
+    expect(result.tokens.raw).toBe(40);
+    expect(estimateSavings(result).basis).toBe('srt');
+  });
+
+  it('allows audio and video up to 2 GB under the default limit but not beyond', async () => {
+    const parser = { ...fakeParser(), toMarkdown: vi.fn(async () => ({ markdown: 'x', pages: 1 })) } as Parser;
+    const distiller = createDistiller({ parser, libreoffice: true });
+    const big = join(dir, 'big-talk.mp4');
+    await writeFile(big, '');
+    await truncate(big, 150 * 1024 * 1024);
+    await expect(distiller.distillFile(big)).resolves.toMatchObject({ kind: 'VIDEO' });
+    await truncate(big, 2 * 1024 * 1024 * 1024 + 1);
+    await expectCode(distiller.distillFile(big), 'too_large');
+    const doc = join(dir, 'big-doc.pdf');
+    await writeFile(doc, '');
+    await truncate(doc, 150 * 1024 * 1024);
+    await expectCode(distiller.distillFile(doc), 'too_large');
+  });
+
+  it('surfaces asr_unavailable from the parser', async () => {
+    const video = join(dir, 'clip.mp4');
+    await writeFile(video, 'x');
+    const parser = {
+      ...fakeParser(),
+      toMarkdown: vi.fn(async () => {
+        throw new DistillError('asr_unavailable', 'Speech recognition is not installed.');
+      }),
+    } as Parser;
+    await expectCode(createDistiller({ parser, libreoffice: true }).distillFile(video), 'asr_unavailable');
   });
 });
 

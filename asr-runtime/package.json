@@ -1,0 +1,11 @@
+{
+  "name": "distill-llm-asr-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Speech recognition stack that distill installs on demand",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "sherpa-onnx-node": "2.0.2"
+  }
+}

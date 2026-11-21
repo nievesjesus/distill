@@ -52,6 +52,11 @@ const STATUS_BY_CODE: Record<ErrorCode, ContentfulStatusCode> = {
   forbidden: 403,
   needs_javascript: 422,
   fetch_failed: 502,
+  asr_unavailable: 503,
+  ffmpeg_missing: 503,
+  no_audio: 422,
+  asr_failed: 500,
+  aborted: 408,
 };
 
 function fail(c: Context, code: ErrorCode, message: string) {

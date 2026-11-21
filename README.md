@@ -51,6 +51,7 @@ On top of that, distill's lossless boosters trim another 10% from LiteParse's Ma
 - **One engine, many doors.** The same local pipeline behind a web app, a desktop app, a Docker image, a CLI, an MCP server and hooks for Claude Code and OpenCode.
 - **Real parsing.** [LiteParse](https://github.com/run-llama/liteparse) by LlamaIndex reads PDFs and images (with OCR). DOCX, PPTX, XLSX and CSV use a built-in reader, or LiteParse through LibreOffice when it is installed; legacy Office and ODF go through LibreOffice.
 - **Web pages, books and mail.** `distill-llm convert <url>` and the MCP tool `distill_url` turn a public page into clean Markdown; saved `.html`, `.mhtml`, `.epub`, `.eml`, `.msg` and RSS/Atom files work too. See [Web pages](#web-pages).
+- **Audio and video.** Recordings are transcribed on your machine into a compact transcript, with the on-screen text of videos. See [Supported formats](#supported-formats).
 - **Lossless boosters.** Small, deterministic passes drop repeated boilerplate, image paths and link targets, table padding and extra whitespace. Content words stay.
 - **Optional LLMLingua-2.** A local model for when you want to go further and accept a lossy result. Off by default, installed on demand.
 - **Honest numbers.** Every file's before and after token counts come from a real tokenizer, live in the UI.
@@ -74,11 +75,13 @@ This starts a local server at `http://127.0.0.1:4321` and opens the web UI. Drop
 
 ### MCP server
 
-Give any MCP client six tools: `distill_file`, `distill_files`, `distill_outline`, `distill_page_image`, `distill_url` and `distill_capabilities`. All of them are read-only and say so in their annotations (`distill_url` also says it reaches the internet). From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`. Results end with a `[distill] tokens saved ≈ …` line telling the model how many tokens distill saved (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
+Give any MCP client seven tools: `distill_file`, `distill_files`, `distill_outline`, `distill_page_image`, `distill_search`, `distill_url` and `distill_capabilities`. All of them are read-only and say so in their annotations (`distill_url` and `distill_search` also say they can reach the internet; `distill_search` only does so when you pass a `url`). From 0.4.0 on, every release is listed in the official MCP registry as `io.github.nievesjesus/distill`. Results end with a `[distill] tokens saved ≈ …` line telling the model how many tokens distill saved (the PDF baseline is an estimate of Claude reading the PDF directly: its text plus about 1,560 tokens per page; the Office baseline is the raw extracted text), and `DISTILL_NO_SAVINGS_NOTE=1` turns the line off.
 
 Results are capped at 10,000 tokens (`DISTILL_MCP_MAX_TOKENS` changes it) so they fit an agent's tool-result limit. A larger document comes back one page at a time: pass the `nextOffset` from the previous `distill_file` result as `offset` to continue, and `distill_files` returns what fits and tells the model which files to request on their own.
 
 For long documents, call `distill_outline({ path })` first. It returns an index: one line per section with its line range, page and token count. Then read only what you need with `distill_file({ path, section })` (a title from the index, case-insensitive) or `distill_file({ path, offset, limit })`. When a first read is cut short, `distill_file` adds the same index to the result so the model can jump.
+
+To find a word, number or phrase without reading the whole document, call `distill_search({ path | url, query, regex?, context?, maxHits? })` or run `distill-llm grep`. See [Search](#search) for the details.
 
 Pages with a chart, figure or scan are flagged in the page markers and in `visualPages` (returned by `distill_file` on a first read and by `distill_outline`). Each `visualPages` entry is `{ page, label?, kind }`: `page` is the physical page number (1-based position in the PDF, what `distill_page_image` and Claude Code's Read `pages` take) and `label` is the printed page label, present only when it differs. When the question depends on a figure page, `distill_page_image({ path, page })` returns that one page as a PNG (about 100 dpi, roughly 0.3 MB for a Letter page); for an image file it returns the image itself.
 
@@ -134,6 +137,7 @@ distill-llm hooks install --opencode   # OpenCode
 ```
 
 - **Claude Code:** adds a `PreToolUse` hook on `Read` to `~/.claude/settings.json` (or your personal `.claude/settings.local.json` with `--project`). When Claude reads a PDF (or a saved `.mhtml`, `.epub`, `.eml` or `.msg` file) inside the project it is working in, the hook converts it once, caches it by content hash in `~/.cache/distill-llm/out/` (private to your user) and points the read at the Markdown. It also adds the permission rule `Read(~/.cache/distill-llm/out/**)` so those reads do not prompt. Claude Code refuses Office files before any hook runs (checked on Claude Code 2.1.296), so the installer also writes the skill `distill-office-documents` to `~/.claude/skills/` (or `.claude/skills/` with `--project`). It has Claude run `distill-llm convert --stdout` through Bash for `.docx`, `.doc`, `.xlsx`, `.xls`, `.pptx`, `.ppt`, `.odt`, `.ods` and `.odp` files. Claude Code asks before each of those Bash calls unless you allow it; distill does not add that permission, because Bash is not subject to `Read` deny rules. A `SKILL.md` you wrote yourself is left alone.
+- **Audio and video:** Claude Code's Read tool refuses binary files such as `.mp3` or `.mp4` before any hook runs (the same reason as Office files), so the hook does not transcribe recordings. The installed skill instead has Claude run `distill-llm convert --stdout <file>` through Bash, and Claude can also call the MCP tool `distill_file`. Both need [speech recognition installed](#audio-and-video); the transcript is cached, so repeat requests are instant.
 - **Reads with `pages`:** Claude Code asks for `pages` on longer PDFs. Those reads get just those pages as Markdown; figure-only pages are read from the original.
 - **Large documents:** when the Markdown is over 8,000 tokens and the read has no `offset` or `limit`, the hook loads the first part (about 2,000 tokens) and adds an index of the whole document to the context: line ranges, pages and tokens per section. Claude then reads the sections it needs with `offset` and `limit` (or `pages`, for a PDF). When a multi-page PDF has figure pages (charts or images that are not in the text), the hook's context also names them and tells Claude to Read those pages of the original with `pages`; scanned pages are not flagged this way. `DISTILL_INDEX_MIN_TOKENS` changes the threshold; `0` turns the index off. LiteParse can emit a whole page as one very long line, which Claude Code's Read truncates, so the cached Markdown wraps lines longer than 1,500 characters (never table rows or code).
 - **OpenCode** (experimental): writes a plugin to `~/.config/opencode/plugins/distill.js` (or `.opencode/plugins/` with `--project`) that does the same on `tool.execute.before` for `read`. OpenCode's plugin API is changing; if the plugin does not apply, OpenCode simply reads the original file.
@@ -222,12 +226,16 @@ npx distill-llm convert report.pdf deck.pptx --out md/
 | `--stdout` | Print the Markdown of a single file instead of writing it |
 | `--offset <n>` `--limit <n>` | With `--stdout`: print only these lines (1-based) |
 | `--max-tokens <n>` | With `--stdout`: if the document is larger than this, print an index and the first lines instead of everything |
+| `--timestamps <mode>` | Audio and video: `none`, `coarse` (default, a `[mm:ss]` about once a minute) or `segment` |
+| `--frames <mode>` | Video: `ocr` (default, adds new on-screen text) or `none` |
 | `--full` | For a web page or saved HTML: keep the whole page instead of extracting the main content |
 | `--allow-private` `--allow-host <host>` | For a URL only: allow addresses that resolve to private, loopback or link-local ranges (everything, or just that host; repeatable). See [Web pages](#web-pages) |
 
 Multi-page PDFs carry a `<!-- page N -->` marker before each page (it uses the page label when the PDF has one), so an agent can cite pages and the index can list them.
 
 `distill-llm outline <file> [--json]` prints the index without the content: one line per heading (levels 1 to 3), or per page when the document has no headings, with its line range, page and token count. Line numbers refer to the converted Markdown. With `--json` you get `{ kind, pages, lines, tokens, entries }`.
+
+`distill-llm asr install [--model parakeet|whisper-turbo|whisper-small] [--yes]`, `asr status [--json]` and `asr uninstall [--model <name>]` manage the local speech recognition used for [audio and video](#audio-and-video). `distill-llm grep <query> <file|url>` searches a document; see [Search](#search).
 
 `distill-llm stats [--json] [--price <usd>]` shows how many tokens distill has saved on this machine: all time, last 30 days and last 7 days, by source (hook, MCP, CLI) and by kind. `--price` values the saved tokens at that many dollars per million input tokens. There is no built-in price table.
 
@@ -314,6 +322,58 @@ Boosters are pure, idempotent functions and never touch fenced code blocks or fr
 LLMLingua-2 is optional and experimental. It needs Apple Silicon, Windows x64 or Linux x64: its ONNX runtime has no Intel Mac build, so on Intel Macs the row explains this instead of offering an install. When `npm` is available, its row shows **Install (~520 MB)**: one click runs `npm ci --omit=dev --include=peer --ignore-scripts` against a lockfile with pinned versions and integrity hashes and installs the runtime into `~/.cache/distill-llm/lingua`. The first use downloads the model (TinyBERT, about 57 MB) from Hugging Face into `~/.cache/distill-llm/models`; after that it runs offline. Behind a proxy that intercepts HTTPS, give Node your organization's CA with `NODE_EXTRA_CA_CERTS=/path/to/ca.pem`. Never turn off certificate checks.
 </details>
 
+## Audio and video
+
+Recordings are transcribed on your machine. Nothing is uploaded and no cloud speech service is involved: audio never leaves the computer.
+
+```bash
+distill-llm asr install                 # one time: about 35 MB runtime + 670 MB Parakeet model
+distill-llm convert --stdout meeting.mp4
+
+distill-llm asr install --model whisper-turbo       # other languages: about 1,040 MB
+distill-llm convert --stdout --asr-model whisper-small --language ja clip.mp3
+```
+
+- **Formats.** Audio: MP3, WAV, M4A, AAC, FLAC, OGG, OPUS, AIFF/AIF. Video: MP4, MOV, MKV, WEBM, AVI, M4V. Up to 2 GB per file in the CLI, the hook and the MCP server (the web app's upload limit stays 100 MB). [ffmpeg](https://ffmpeg.org/) is required for everything except WAV; distill finds it on your `PATH` or through `DISTILL_FFMPEG` (`brew install ffmpeg`, `apt install ffmpeg` or `winget install Gyan.FFmpeg`).
+- **Install.** `distill-llm asr install` downloads the runtime ([sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)) and the models into the cache folder (`DISTILL_CACHE_DIR` is respected). On Apple Silicon it took 34 s and 706 MB on disk. `distill-llm asr status` shows what is installed and `distill-llm asr uninstall` removes it. Transcribing needs about 2 GB of memory at peak per file, so distill runs one transcription at a time and queues the rest; set `DISTILL_ASR_CONCURRENCY` (a positive integer) to run more in parallel if you have the memory.
+- **Models.** Each user downloads only the model they choose. Installing a model makes it the default, and several can live side by side. Voice activity detection is Silero VAD, shared by all of them.
+
+  | Model | Languages | Download | Relative speed | License |
+  | --- | --- | --- | --- | --- |
+  | `parakeet` (default) | 25 European | ~670 MB | fastest | CC-BY-4.0 |
+  | `whisper-turbo` | ~99 | ~1,040 MB | ~8× slower than Parakeet on CPU | MIT |
+  | `whisper-small` | ~99 | ~375 MB | ~6–7× slower | MIT |
+
+  Parakeet covers English and Spanish among its 25 European languages. For other languages install a Whisper model. Whisper uses more memory (about 2.3 GB at peak for `whisper-turbo`), and `distill-llm hook` only converts recordings up to 10 min with Parakeet, 2 min with `whisper-small` and 90 s with `whisper-turbo`; longer ones go through the MCP tool or the CLI.
+- **Choosing a model.** The order is the `DISTILL_ASR_MODEL` environment variable, then `--asr-model <name>` on `convert` and `grep`, then the default saved by `asr install`, then `parakeet`. If the chosen model is not installed, the error names the exact `distill-llm asr install --model <name>` command. The MCP tools have no model parameter; `distill_capabilities` lists the installed models and the default. `asr uninstall --model <name>` removes one model (the default falls back to another installed one); `asr uninstall` alone removes the runtime and every model.
+- **Whisper language.** Whisper detects the language itself. To avoid noisy per-segment guesses, distill takes the majority language of the first five segments and fixes it for the rest of the file. Force it with `--language <iso>` (two or three lowercase letters, for example `es`) or `DISTILL_ASR_LANGUAGE`; Parakeet ignores both. The header comment names the real model and the detected language. Filler-word removal stays limited to English and Spanish; other languages only get paragraphs, timestamps and spacing.
+- **Transcript.** Compact paragraphs with a `[mm:ss]` at most about once a minute (`--timestamps none|coarse|segment`), a short header comment, glued punctuation fixed and filler words removed conservatively (English and Spanish).
+- **Video.** Key frames are OCR'd and only on-screen text that is new is added, as `> [slide mm:ss]` blocks (`--frames none` skips it). A video with no speech still gets its slides.
+- **Cache.** Transcripts are cached by the file's sha256, so asking again is instant. A long recording takes a while the first time.
+- **Agents.** `distill_file` accepts audio and video (with `timestamps` and `frames`) and `distill_capabilities` reports whether speech recognition is installed, which models and which default. In Claude Code the plugin's skill runs `distill-llm convert --stdout <file>` (Claude's Read tool refuses these files before hooks run), or Claude calls `distill_file`. Once you have a transcript, [search](#search) works on it like on any document.
+
+### Tokens
+
+The savings note counts the transcript against the same speech as an SRT file, which is what a typical transcription tool hands a model. Two public-domain LibriVox recordings, measured on 2026-11-19 on an Apple Silicon Mac with 4 threads:
+
+| Recording | Length | Transcribe time | distill transcript | SRT | Gemini audio | OpenAI audio |
+|---|---:|---:|---:|---:|---:|---:|
+| Spanish, "Tirano Banderas" ch. 2 | 27:55 | about 39 s | 4,328 | 13,109 (**−67%**) | about 53,600 (**−92%**) | about 16,750 (**−74%**) |
+| English, "The Art of War" ch. 9-11 | 27:39 | about 41 s | 5,080 | 11,039 (**−54%**) | about 53,100 (**−90%**) | about 16,600 (**−69%**) |
+
+<sub>Tokens are counted with <code>o200k_base</code>, like the rest of this page. The Gemini and OpenAI figures are computed from their published audio rates (32 tokens per second and 600 tokens per minute), not measured. Claude has no audio input, so a Claude agent needs a transcript anyway. Audiobooks have few fillers; meetings and interviews may compress more.</sub>
+
+## Search
+
+To find a word, number or phrase in a long document without reading all of it, use the MCP tool `distill_search` or the CLI:
+
+```bash
+distill-llm grep "termination clause" contract.pdf --context 3 --max 10
+distill-llm grep --regex "Q[1-4] 20\d\d" report.pdf --json
+```
+
+Each hit prints as `p.<page> L<line>: text`; `--json` prints `{ hits, total, truncated }`, where each hit has `line`, `text` and, when known, `page` and `section` (the nearest heading). Options: `--regex`, `--context <n>` (default 2), `--max <n>` (default 20). Matching ignores case and line wraps. It also takes a URL, and works on audio and video transcripts. `--regex` uses RE2 syntax: like JavaScript's, but no lookarounds or backreferences, and it always runs in linear time. Then read around the hit with `distill_file` (`section` or `offset`). See [MCP server](#mcp-server) for the tool's parameters.
+
 ## Supported formats
 
 | Format | Needs |
@@ -327,12 +387,13 @@ LLMLingua-2 is optional and experimental. It needs Apple Silicon, Windows x64 or
 | EPUB | nothing else (chapters in reading order with titles from the table of contents; DRM-protected books are refused) |
 | EML, MSG | nothing else (headers, body and a list of attachments; attachment contents are not converted) |
 | RSS, Atom (`.xml`, `.rss`, `.atom`) | nothing else (a list of entries with date, link and summary) |
+| MP3, WAV, M4A, AAC, FLAC, OGG, OPUS, AIFF/AIF; MP4, MOV, MKV, WEBM, AVI, M4V | a one-time `distill-llm asr install` (about 700 MB, runs offline afterwards) and, for everything but WAV, [ffmpeg](https://ffmpeg.org/) on your `PATH` (or `DISTILL_FFMPEG`). The speech is transcribed locally with Parakeet TDT 0.6B v3 (25 languages including English and Spanish): paragraphs, a `[mm:ss]` about once a minute (`--timestamps none\|coarse\|segment`), fillers and glued punctuation cleaned. For video, new on-screen text is OCR'd and added once, as `> [slide mm:ss]` blocks (`--frames none` skips it). Transcripts are cached by file content. Savings are counted against the same transcript as SRT, which is what a typical transcription tool hands the model |
 
 Password-protected PDFs are reported as an error. Parsing quality is whatever LiteParse gives you: it varies on dense tables and complex scans, and distill does not try to hide that.
 
 ## Privacy
 
-Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. distill makes at most three one-time downloads, all of data and never of your documents (the only other network traffic is fetching a web page when you or your agent pass a URL, see [Web pages](#web-pages)): the Tesseract English data for the first OCR (skip it with `DISTILL_TESSDATA` or `TESSDATA_PREFIX`; `DISTILL_OCR_LANG` sets the language), and, only if you enable LLMLingua-2, its runtime from npm and its model from Hugging Face.
+Files are parsed locally and never leave your machine. There is no telemetry, no analytics and no CDN: fonts are bundled. distill makes a few one-time downloads, all of data and never of your documents (the only other network traffic is fetching a web page when you or your agent pass a URL, see [Web pages](#web-pages)): the Tesseract English data for the first OCR (skip it with `DISTILL_TESSDATA` or `TESSDATA_PREFIX`; `DISTILL_OCR_LANG` sets the language), and, only if you enable them, the LLMLingua-2 runtime from npm and its model from Hugging Face, and the speech recognition runtime and models (`distill-llm asr install`).
 
 Once a day distill also asks `registry.npmjs.org` for the latest `distill-llm` version, sending only its own version in the User-Agent, and caches the answer in `~/.cache/distill-llm/update-check.json`. Turn it off with `DISTILL_NO_UPDATE_CHECK=1` or in the web app (click the version in the header, then "Check for updates daily"). The desktop app does not ask `registry.npmjs.org`; it asks `github.com` for its release manifest instead, with the same toggle. The hooks and the MCP server never check.
 
@@ -402,5 +463,15 @@ Build one architecture per host: `npm run dist:full -- --arm64` on Apple Silicon
 ## License
 
 [Apache-2.0](LICENSE). Built on [LiteParse](https://github.com/run-llama/liteparse) by LlamaIndex.
+
+### Third-party notices
+
+The speech models are not bundled with distill. `distill-llm asr install` downloads them on demand and they stay on your machine:
+
+- [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), by NVIDIA, licensed [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). distill uses the int8 export, unmodified apart from that conversion.
+- The int8 ONNX export and the [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) runtime (`sherpa-onnx-node`), by k2-fsa, licensed Apache-2.0.
+- [OpenAI Whisper](https://github.com/openai/whisper) (large-v3-turbo and small), by OpenAI, licensed MIT. distill uses the sherpa-onnx int8 exports (k2-fsa, Apache-2.0 tooling), which you only download if you run `asr install --model whisper-turbo` or `--model whisper-small`.
+- [Silero VAD](https://github.com/snakers4/silero-vad), licensed MIT.
+- [re2js](https://github.com/le0pard/re2js), a linear-time RE2 port, licensed MIT. Unlike the items above it is a regular npm dependency: it runs the patterns of `--regex` searches.
 
 If distill saves you tokens, a ⭐ helps other people find it.

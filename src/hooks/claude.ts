@@ -6,6 +6,7 @@ import { countTokens } from '../core/tokens';
 import { isInside } from '../node/inside';
 import { isOwnCommand } from './install-claude';
 import { type MatchContext, type ReadRule, parseReadRule, ruleMayMatch } from './read-rules';
+import { detectKind } from '../core/kind';
 import { isHookConvertible } from './supported';
 
 export interface ClaudeHookDeps {
@@ -18,7 +19,12 @@ export interface ClaudeHookDeps {
   savingsNote?: boolean;
   recordUsage?: (path: string, savings: SavingsEstimate) => void;
   indexMinTokens?: number;
+  asrInstalled?: () => boolean;
+  asrHint?: () => { model: string; megabytes: number };
+  mediaGate?: (absPath: string) => Promise<'convert' | { defer: string }>;
 }
+
+const SPEECH_ERROR_CODES: ReadonlySet<string> = new Set(['asr_unavailable', 'ffmpeg_missing', 'no_audio', 'asr_failed', 'timeout', 'aborted']);
 
 const DEFAULT_INDEX_MIN_TOKENS = 8000;
 const FIRST_PART_TOKENS = 2000;
@@ -82,6 +88,12 @@ function sliceOfPages(markdown: string, physical: string[]): PageSlice | null {
   const figures = indexes.filter((index) => markers[index].visual === 'figure').map((index) => String(index + 1));
   if (figures.length === indexes.length) return null;
   return { from, to, text: lines.slice(from - 1, to).join('\n'), figures, count: physical.length };
+}
+
+function asrMissingContext(name: string, original: string, hint?: { model: string; megabytes: number }): string {
+  const command = hint ? `distill-llm asr install --model ${hint.model}` : 'distill-llm asr install';
+  const size = hint ? hint.megabytes : 700;
+  return `distill can transcribe ${name} locally to save tokens, but speech recognition is not installed, so this read was not converted. To enable it, run \`${command}\` once (about ${size} MB), then read ${original} again.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -203,7 +215,25 @@ export async function handleClaudePreToolUse(
     const files = settingsFiles(realCwd, realProject, deps);
     if (await anyReadRestriction(files, candidates, ctx)) return null;
     if (deps.plugin === true && (await anyOwnHook(files))) return null;
-    const converted = await convert(realOriginal);
+    const mediaKind = detectKind(original);
+    if ((mediaKind === 'AUDIO' || mediaKind === 'VIDEO') && deps.asrInstalled?.() === false) {
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: asrMissingContext(basename(original), original, deps.asrHint?.()) } };
+    }
+    const isMedia = mediaKind === 'AUDIO' || mediaKind === 'VIDEO';
+    if (isMedia && deps.mediaGate !== undefined) {
+      const plan = await deps.mediaGate(realOriginal);
+      if (plan !== 'convert') return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: plan.defer } };
+    }
+    let converted: Awaited<ReturnType<typeof convert>>;
+    try {
+      converted = await convert(realOriginal);
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      if (isMedia && typeof code === 'string' && SPEECH_ERROR_CODES.has(code) && error instanceof Error) {
+        return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `distill could not transcribe ${basename(original)}, so this read was not converted: ${error.message}` } };
+      }
+      throw error;
+    }
     if (pageLabels !== null) {
       if (converted.markdown === undefined) return null;
       const slice = sliceOfPages(converted.markdown, pageLabels);
@@ -251,7 +281,7 @@ export async function handleClaudePreToolUse(
             updatedInput: { ...toolInput, file_path: converted.path, offset: 1, limit },
             permissionDecision: 'allow',
             permissionDecisionReason: 'distill: converted copy in its cache',
-            additionalContext: `${lead} This is a large document: ${lines} lines, ~${tokens} tokens. Only lines 1-${limit} were loaded. Read the sections you need with Read on ${original} using offset and limit (for a PDF, pages works too) from this index:\n${index}${note}`,
+            additionalContext: `${lead} This is a large document: ${lines} lines, ~${tokens} tokens. Only lines 1-${limit} were loaded. To find a word or number, search with distill_search or \`distill-llm grep\`, then read that page with \`pages\` (PDF) or use distill_file with offset. Search line numbers are lines of the converted Markdown, not Read offsets of the original. Read the sections you need with Read on ${original} using offset and limit (for a PDF, pages works too) from this index:\n${index}${note}`,
           },
         };
       }

@@ -313,6 +313,56 @@ describe('convert --offset, --limit and --max-tokens', () => {
   });
 });
 
+describe('convert audio and video options', () => {
+  it('passes --timestamps and --frames to the distiller', async () => {
+    const h = harness();
+    const [video] = touch('talk.mp4');
+    await run(['convert', video, '--stdout', '--timestamps', 'segment', '--frames', 'none'], h.deps);
+    expect(h.calls[0].opts).toMatchObject({ timestamps: 'segment', frames: 'none' });
+  });
+
+  it('leaves both unset by default so the engine picks coarse and ocr', async () => {
+    const h = harness();
+    const [video] = touch('talk.mp4');
+    await run(['convert', video, '--stdout'], h.deps);
+    expect(h.calls[0].opts).not.toHaveProperty('timestamps');
+    expect(h.calls[0].opts).not.toHaveProperty('frames');
+  });
+
+  it.each([['--timestamps', 'fine'], ['--frames', 'all']])('rejects %s %s', async (flag, value) => {
+    const h = harness();
+    const [video] = touch('talk.mp4');
+    await run(['convert', video, '--stdout', flag, value], h.deps);
+    expect(h.exit).toHaveBeenCalledWith(2);
+    expect(h.openDistiller).not.toHaveBeenCalled();
+  });
+});
+
+describe('convert speech model options', () => {
+  it('passes --asr-model and --language to the distiller', async () => {
+    const h = harness();
+    const [audio] = touch('talk.mp3');
+    await run(['convert', audio, '--stdout', '--asr-model', 'whisper-small', '--language', 'ja'], h.deps);
+    expect(h.calls[0].opts).toMatchObject({ asrModel: 'whisper-small', language: 'ja' });
+  });
+
+  it('leaves them unset by default', async () => {
+    const h = harness();
+    const [audio] = touch('talk.mp3');
+    await run(['convert', audio, '--stdout'], h.deps);
+    expect(h.calls[0].opts).not.toHaveProperty('asrModel');
+    expect(h.calls[0].opts).not.toHaveProperty('language');
+  });
+
+  it.each([['--asr-model', 'whisper-large'], ['--language', 'EN'], ['--language', 'english'], ['--language', 'e']])('rejects %s %s', async (flag, value) => {
+    const h = harness();
+    const [audio] = touch('talk.mp3');
+    await run(['convert', audio, '--stdout', flag, value], h.deps);
+    expect(h.exit).toHaveBeenCalledWith(2);
+    expect(h.openDistiller).not.toHaveBeenCalled();
+  });
+});
+
 describe('outline', () => {
   it('prints the rendered index with the file name', async () => {
     const h = harness(undefined, LARGE);

@@ -8,6 +8,7 @@ import { buildOutline, renderOutline } from '../../src/core/outline';
 import { estimateSavings, savingsNote } from '../../src/core/savings';
 import { countTokens } from '../../src/core/tokens';
 import { handleClaudePreToolUse } from '../../src/hooks/claude';
+import { DistillError } from '../../src/node/errors';
 
 let base: string;
 let proj: string;
@@ -42,6 +43,114 @@ const pdf = (name = 'b.pdf', dir = proj): string => {
 };
 
 const deps = (extra: Record<string, unknown> = {}) => ({ homeDir: home, managedSettingsPaths: [], ...extra });
+
+describe('audio and video reads', () => {
+  const media = (name: string): string => {
+    const file = join(proj, name);
+    writeFileSync(file, 'x');
+    return file;
+  };
+
+  it('lets the read proceed and tells the agent how to install speech recognition when it is missing', async () => {
+    const file = media('call.mp3');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    const result = (await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => false }))) as {
+      hookSpecificOutput: Record<string, unknown>;
+    };
+    expect(convert).not.toHaveBeenCalled();
+    expect(result.hookSpecificOutput.hookEventName).toBe('PreToolUse');
+    expect(result.hookSpecificOutput).not.toHaveProperty('updatedInput');
+    expect(result.hookSpecificOutput).not.toHaveProperty('permissionDecision');
+    expect(result.hookSpecificOutput.additionalContext).toContain('distill-llm asr install');
+    expect(result.hookSpecificOutput.additionalContext).toContain('call.mp3');
+  });
+
+  it('names the selected model and its size in the install hint', async () => {
+    const file = media('call.mp3');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    const result = (await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => false, asrHint: () => ({ model: 'whisper-small', megabytes: 376 }) }))) as {
+      hookSpecificOutput: Record<string, unknown>;
+    };
+    const text = String(result.hookSpecificOutput.additionalContext);
+    expect(text).toContain('distill-llm asr install --model whisper-small');
+    expect(text).toContain('376 MB');
+    expect(text).not.toContain('700 MB');
+  });
+
+  it('converts to a transcript once speech recognition is installed, with an SRT-based note', async () => {
+    const file = media('talk.mp4');
+    const savings = estimateSavings({ kind: 'VIDEO', pages: 1, tokens: { raw: 2000, out: 1200 } });
+    const convert = vi.fn(async () => ({ path: '/cache/t.md', savings }));
+    const record = vi.fn();
+    const result = (await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => true, recordUsage: record }))) as {
+      hookSpecificOutput: { updatedInput: { file_path: string }; additionalContext: string };
+    };
+    expect(convert).toHaveBeenCalledWith(file);
+    expect(result.hookSpecificOutput.updatedInput.file_path).toBe('/cache/t.md');
+    expect(result.hookSpecificOutput.additionalContext).toContain('vs an SRT transcript');
+    expect(record).toHaveBeenCalledOnce();
+  });
+
+  it('lets a long recording through unchanged and points at distill_file and the CLI', async () => {
+    const file = media('long.m4a');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    const gate = vi.fn(async () => ({ defer: 'This recording is about 45 min. Use distill_file or run distill-llm convert --stdout "long.m4a".' }));
+    const result = (await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => true, mediaGate: gate }))) as { hookSpecificOutput: Record<string, unknown> };
+    expect(convert).not.toHaveBeenCalled();
+    expect(result.hookSpecificOutput).not.toHaveProperty('updatedInput');
+    expect(result.hookSpecificOutput.additionalContext).toContain('distill_file');
+    expect(result.hookSpecificOutput.additionalContext).toContain('distill-llm convert --stdout');
+  });
+
+  it('converts when the gate allows it', async () => {
+    const file = media('short.m4a');
+    const convert = vi.fn(async () => ({ path: '/cache/t.md' }));
+    const result = (await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => true, mediaGate: async () => 'convert' as const }))) as { hookSpecificOutput: { updatedInput: { file_path: string } } };
+    expect(result.hookSpecificOutput.updatedInput.file_path).toBe('/cache/t.md');
+  });
+
+  it('does not gate documents', async () => {
+    const gate = vi.fn(async () => ({ defer: 'x' }));
+    await handleClaudePreToolUse(payload({ file_path: pdf() }), async () => ({ path: '/c.md' }), deps({ mediaGate: gate }));
+    expect(gate).not.toHaveBeenCalled();
+  });
+
+  it('passes the transcription error message to the agent instead of failing silently', async () => {
+    const file = media('talk.m4a');
+    const message = 'ffmpeg is required to read this audio or video format but was not found. Install it (macOS: brew install ffmpeg).';
+    const convert = vi.fn(async () => {
+      throw new DistillError('ffmpeg_missing', message);
+    });
+    const result = (await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => true }))) as { hookSpecificOutput: Record<string, unknown> };
+    expect(result.hookSpecificOutput).not.toHaveProperty('updatedInput');
+    expect(result.hookSpecificOutput.additionalContext).toContain('brew install ffmpeg');
+  });
+
+  it('stays silent for errors that are not speech errors', async () => {
+    const file = media('talk.m4a');
+    const convert = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    expect(await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => true }))).toBeNull();
+  });
+
+  it('converts when no installation check is wired', async () => {
+    const file = media('talk.m4a');
+    const convert = vi.fn(async () => ({ path: '/cache/t.md' }));
+    await handleClaudePreToolUse(payload({ file_path: file }), convert, deps());
+    expect(convert).toHaveBeenCalledOnce();
+  });
+
+  it('does not add install context for files outside the project or a pdf', async () => {
+    const outside = join(base, 'outside.mp3');
+    writeFileSync(outside, 'x');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    expect(await handleClaudePreToolUse(payload({ file_path: outside }), convert, deps({ asrInstalled: () => false }))).toBeNull();
+    const result = await handleClaudePreToolUse(payload({ file_path: pdf() }), convert, deps({ asrInstalled: () => false }));
+    expect(convert).toHaveBeenCalledOnce();
+    expect(result).not.toBeNull();
+  });
+});
 
 describe('handleClaudePreToolUse', () => {
   it('rewrites a pdf read and keeps offset and limit', async () => {
@@ -393,6 +502,8 @@ describe('large document index', () => {
     const ctx = context(result);
     expect(ctx).toContain(`distill converted b.pdf to Markdown to save tokens. Original file: ${file}.`);
     expect(ctx).toContain(`This is a large document: ${lines.length} lines, ~${countTokens(markdown)} tokens. Only lines 1-${limit} were loaded.`);
+    expect(ctx).toContain('search with distill_search or `distill-llm grep`, then read that page with `pages` (PDF) or use distill_file with offset');
+    expect(ctx).toContain('Search line numbers are lines of the converted Markdown, not Read offsets of the original');
     expect(ctx).toContain(`Read on ${file} using offset and limit (for a PDF, pages works too) from this index:\n${renderOutline(buildOutline(markdown), { name: 'b.pdf' })}`);
   });
 
@@ -587,6 +698,17 @@ describe('run hook convert', () => {
     await run(['hook', 'convert', 'rel.pdf'], { ...h.deps, cwd: proj });
     expect(h.exit).not.toHaveBeenCalled();
     expect(JSON.parse(h.stdout[0]).path).toMatch(/\.md$/);
+  });
+
+  it('explains on stderr why long or unreadable media was not converted', async () => {
+    const file = join(proj, 'long.mp3');
+    writeFileSync(file, 'not a wav');
+    const h = harness('', { PATH: '' });
+    await run(['hook', 'convert', file], h.deps);
+    expect(h.stdout).toEqual([]);
+    expect(h.exit).toHaveBeenCalledWith(1);
+    expect(h.stderr.join('\n')).toContain('ffmpeg is required');
+    expect(h.openDistiller).not.toHaveBeenCalled();
   });
 
   it('exits 1 for unsupported kinds without opening the distiller', async () => {

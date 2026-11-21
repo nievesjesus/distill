@@ -41,6 +41,7 @@ interface ConnectDeps {
   maxResultTokens?: number;
   stat?: (p: string) => Promise<{ size: number; mtimeMs: number }>;
   recordUsage?: (kind: string, savings: unknown) => void;
+  mediaTag?: () => string;
 }
 
 const LINE = 'row alpha beta gamma\n';
@@ -66,12 +67,13 @@ const fixedStat = async () => ({ size: 1, mtimeMs: 1 });
 async function connect(deps: ConnectDeps = {}) {
   const server = createMcpServer({
     distiller: deps.distiller ?? fakeDistiller(),
-    health: () => HEALTH,
+    health: () => deps.distiller?.health() ?? HEALTH,
     resolvePath: deps.resolvePath ?? (async (p) => p),
     ...(deps.savingsNote === undefined ? {} : { savingsNote: deps.savingsNote }),
     ...(deps.maxResultTokens === undefined ? {} : { maxResultTokens: deps.maxResultTokens }),
     ...(deps.stat === undefined ? {} : { stat: deps.stat }),
     ...(deps.recordUsage === undefined ? {} : { recordUsage: deps.recordUsage }),
+    ...(deps.mediaTag === undefined ? {} : { mediaTag: deps.mediaTag }),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test', version: '0.0.0' });
@@ -85,12 +87,12 @@ afterEach(async () => {
 });
 
 describe('createMcpServer', () => {
-  it('lists the six tools, all read-only with a title', async () => {
+  it('lists the seven tools, all read-only with a title', async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image', 'distill_url']);
+    expect(tools.map((tool) => tool.name).sort()).toEqual(['distill_capabilities', 'distill_file', 'distill_files', 'distill_outline', 'distill_page_image', 'distill_search', 'distill_url']);
     for (const tool of tools) {
-      expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: tool.name === 'distill_url' });
+      expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: tool.name === 'distill_url' || tool.name === 'distill_search' });
       expect(tool.title?.length).toBeGreaterThan(0);
     }
   });
@@ -205,7 +207,120 @@ describe('createMcpServer', () => {
     });
     expect(Object.keys(result.structuredContent as object)).toEqual(['note', 'kind', 'pages', 'lines', 'tokens', 'savings', 'markdown']);
     expect(calls[0]?.path).toBe('/x/doc.pdf');
-    expect(calls[0]?.opts).toEqual({ boosters: new Set(['dedupe', 'ws']), lingua: false });
+    expect(calls[0]?.opts).toEqual({ boosters: new Set(['dedupe', 'ws']), lingua: false, signal: expect.any(AbortSignal) });
+  });
+
+  describe('audio and video', () => {
+    function mediaDistiller(calls: { path: string; opts: any }[], error?: DistillError): Distiller {
+      return {
+        ...fakeDistiller(),
+        async distillFile(path, opts) {
+          calls.push({ path, opts });
+          if (error) throw error;
+          return { path, name: 'talk.mp3', kind: 'AUDIO', pages: 1, markdown: '[00:00] hello', tokens: { raw: 100, out: 60 }, ms: 5 };
+        },
+      };
+    }
+
+    it('accepts timestamps and frames and passes them on', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      const client = await connect({ distiller: mediaDistiller(calls) });
+      const result = await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4', timestamps: 'segment', frames: 'none' } });
+      expect(result.isError).toBeFalsy();
+      expect(calls[0].opts).toMatchObject({ timestamps: 'segment', frames: 'none' });
+    });
+
+    it('reports an SRT-based estimate in structured savings and the note', async () => {
+      const client = await connect({ distiller: mediaDistiller([]) });
+      const result = await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(result.isError).toBeFalsy();
+      expect((result.structuredContent as any).savings.basis).toBe('srt');
+      expect((result.structuredContent as any).note).toContain('vs an SRT transcript');
+    });
+
+    it('does not reuse a cached transcript for different timestamps or frames', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      const client = await connect({ distiller: mediaDistiller(calls), stat: fixedStat });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4' } });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4' } });
+      expect(calls).toHaveLength(1);
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4', timestamps: 'none' } });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4', frames: 'none' } });
+      expect(calls).toHaveLength(3);
+    });
+
+    it('does not reuse a transcript made by another speech model, but keeps document keys', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      let tag = 'whisper-small-int8';
+      const client = await connect({ distiller: mediaDistiller(calls), stat: fixedStat, mediaTag: () => tag });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(calls).toHaveLength(1);
+      tag = 'whisper-turbo-int8';
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(calls).toHaveLength(2);
+      tag = 'whisper-turbo-int8:ja';
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(calls).toHaveLength(3);
+      const docs: { path: string; opts: unknown }[] = [];
+      const docClient = await connect({ distiller: fakeDistiller(docs), stat: fixedStat, mediaTag: () => tag });
+      await docClient.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      tag = 'other';
+      await docClient.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      expect(docs).toHaveLength(1);
+    });
+
+    it('rejects an unknown timestamps or frames value', async () => {
+      const client = await connect();
+      expect((await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.mp3', timestamps: 'fine' } })).isError).toBe(true);
+      expect((await client.callTool({ name: 'distill_file', arguments: { path: '/x/a.mp3', frames: 'all' } })).isError).toBe(true);
+    });
+
+    it('passes the request abort signal for long transcriptions', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      const client = await connect({ distiller: mediaDistiller(calls) });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(calls[0].opts.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('passes the request abort signal through distill_files and distill_outline', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      const client = await connect({ distiller: mediaDistiller(calls) });
+      await client.callTool({ name: 'distill_files', arguments: { paths: ['/x/talk.mp3'] } });
+      await client.callTool({ name: 'distill_outline', arguments: { path: '/x/talk2.mp3' } });
+      expect(calls).toHaveLength(2);
+      expect(calls[0].opts.signal).toBeInstanceOf(AbortSignal);
+      expect(calls[1].opts.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('describes both size limits instead of a single cap', async () => {
+      const client = await connect();
+      const tools = (await client.listTools()).tools;
+      const text = tools.find((tool) => tool.name === 'distill_file')?.description ?? '';
+      expect(text).toMatch(/documents/);
+      expect(text).toMatch(/2 GB/);
+      const capabilities = tools.find((tool) => tool.name === 'distill_capabilities')?.description ?? '';
+      expect(capabilities).toContain('mediaMaxBytes');
+    });
+
+    it('surfaces asr_unavailable with the install command', async () => {
+      const error = new DistillError('asr_unavailable', 'Speech recognition is not installed. Run `distill-llm asr install` to download it (about 700 MB, one time).');
+      const client = await connect({ distiller: mediaDistiller([], error) });
+      const result = await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain('asr_unavailable');
+      expect(JSON.stringify(result.content)).toContain('distill-llm asr install');
+    });
+
+    it('describes local transcription and the wait on long recordings', async () => {
+      const client = await connect();
+      const { tools } = await client.listTools();
+      const text = tools.find((tool) => tool.name === 'distill_file')?.description ?? '';
+      expect(text).toMatch(/MP3|audio/i);
+      expect(text).toContain('transcribes locally');
+      expect(text).toMatch(/first run of a long recording takes a while/i);
+      expect(text).toContain('asr_unavailable');
+    });
   });
 
   it('distill_file returns isError with code and message', async () => {
@@ -292,7 +407,44 @@ describe('createMcpServer', () => {
   it('distill_capabilities returns the health object', async () => {
     const client = await connect();
     const result = await client.callTool({ name: 'distill_capabilities', arguments: {} });
-    expect(result.structuredContent).toEqual({ ...HEALTH, maxResultTokens: 10000 });
+    expect(result.structuredContent).toEqual({ ...HEALTH, mediaMaxBytes: 2 * 1024 * 1024 * 1024, maxResultTokens: 10000 });
+  });
+});
+
+describe('asr capability', () => {
+  it('distill_capabilities passes the asr status through', async () => {
+    const asr = { installed: false, runtime: true, models: false, ffmpeg: '/usr/bin/ffmpeg', installable: true, diskBytes: 123 };
+    const distiller = { ...fakeDistiller(), health: () => ({ ...HEALTH, asr }) };
+    const client = await connect({ distiller });
+    const result = await client.callTool({ name: 'distill_capabilities', arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect((result.structuredContent as { asr: unknown }).asr).toEqual(asr);
+  });
+
+  it('reports the installed speech models and the default', async () => {
+    const asr = {
+      installed: true,
+      runtime: true,
+      models: true,
+      vad: true,
+      model: 'whisper-small',
+      defaultModel: 'whisper-small',
+      installedModels: [{ name: 'parakeet', bytes: 670576784 }, { name: 'whisper-small', bytes: 375484327 }],
+      ffmpeg: null,
+      installable: true,
+      diskBytes: 5,
+    };
+    const distiller = { ...fakeDistiller(), health: () => ({ ...HEALTH, asr }) };
+    const client = await connect({ distiller });
+    const result = await client.callTool({ name: 'distill_capabilities', arguments: {} });
+    expect((result.structuredContent as { asr: unknown }).asr).toEqual(asr);
+  });
+
+  it('leaves the file tools without a model parameter', async () => {
+    const client = await connect({});
+    const tools = (await client.listTools()).tools;
+    const file = tools.find((t) => t.name === 'distill_file')!;
+    expect(Object.keys((file.inputSchema as { properties: object }).properties).join(' ')).not.toMatch(/model|language/);
   });
 });
 

@@ -36,7 +36,9 @@
     "dist/*.js",
     "dist/web",
     "lingua-runtime/package.json",
-    "lingua-runtime/package-lock.json"
+    "lingua-runtime/package-lock.json",
+    "asr-runtime/package.json",
+    "asr-runtime/package-lock.json"
   ],
   "scripts": {
     "test": "vitest run",
@@ -104,6 +106,7 @@
     "linkedom": "0.18.15",
     "mammoth": "1.13.0",
     "postal-mime": "4.2.1",
+    "re2js": "2.10.0",
     "robots-parser": "3.0.1",
     "turndown": "7.2.5",
     "zod": "^4.6.7"

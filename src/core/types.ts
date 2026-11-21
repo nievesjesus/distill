@@ -1,8 +1,8 @@
 export type LocalBoosterId = 'dedupe' | 'media' | 'tables' | 'ws';
 export type BoosterId = LocalBoosterId | 'lingua';
 export interface BoosterMeta { id: BoosterId; name: string; hint: string; lossy: boolean; estimate: number }
-export type FileKind = 'PDF' | 'DOCX' | 'PPTX' | 'XLSX' | 'ODF' | 'IMG' | 'HTML' | 'EPUB' | 'EMAIL' | 'FEED';
-export type ErrorCode = 'unsupported_type' | 'needs_libreoffice' | 'too_large' | 'password_protected' | 'timeout' | 'parse_failed' | 'bad_request' | 'not_found' | 'lingua_unavailable' | 'forbidden' | 'needs_javascript' | 'fetch_failed';
+export type FileKind = 'PDF' | 'DOCX' | 'PPTX' | 'XLSX' | 'ODF' | 'IMG' | 'HTML' | 'EPUB' | 'EMAIL' | 'FEED' | 'AUDIO' | 'VIDEO';
+export type ErrorCode = 'unsupported_type' | 'needs_libreoffice' | 'too_large' | 'password_protected' | 'timeout' | 'parse_failed' | 'bad_request' | 'not_found' | 'lingua_unavailable' | 'forbidden' | 'needs_javascript' | 'fetch_failed' | 'asr_unavailable' | 'ffmpeg_missing' | 'no_audio' | 'asr_failed' | 'aborted';
 export type VisualKind = 'figure' | 'scan';
 export interface VisualPage { page: number; label?: string; kind: VisualKind }
 export interface ApiError { code: ErrorCode; message: string }
@@ -20,7 +20,9 @@ export interface LinguaStatus {
   unsupportedReason?: string;
   modelError?: string;
 }
-export interface Health { version: string; liteparseVersion: string; libreoffice: boolean; lingua: LinguaStatus; maxBytes: number }
+export interface AsrInstalledModel { name: string; bytes: number }
+export interface AsrStatus { installed: boolean; runtime: boolean; models: boolean; vad?: boolean; model?: string; defaultModel?: string | null; installedModels?: AsrInstalledModel[]; ffmpeg: string | null; installable: boolean; unsupportedReason?: string; diskBytes: number }
+export interface Health { version: string; liteparseVersion: string; libreoffice: boolean; lingua: LinguaStatus; asr?: AsrStatus; maxBytes: number }
 export interface DistillResult { path: string; name: string; kind: FileKind; pages: number; markdown: string; tokens: { raw: number; out: number }; ms: number; engine?: 'liteparse' | 'builtin'; visualPages?: VisualPage[]; markdownServed?: boolean }
 export type InstallMethod = 'npm-global' | 'npx' | 'docker' | 'desktop' | 'source';
 export interface UpdateCheck { current: string; latest: string | null; available: boolean; method: InstallMethod; enabled: boolean; disabledBy: 'env' | 'setting' | null; checkedAt: string | null }

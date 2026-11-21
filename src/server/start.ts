@@ -10,6 +10,7 @@ import type { InstallMethod } from '../core/types';
 import { exposeLibreOffice } from '../node/capabilities';
 import { createLingua, findPackageRoot } from '../node/lingua';
 import { createLinguaInstaller } from '../node/lingua-install';
+import { withMedia } from '../node/asr/media';
 import { withBuiltinOffice } from '../node/office';
 import { createParser } from '../node/parse';
 import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
@@ -40,9 +41,9 @@ export async function startServer(opts: {
   const webRoot = join(packageRoot, 'dist', 'web');
 
   const libreoffice = await exposeLibreOffice();
-  const parser = withBuiltinOffice(createParser(), { libreoffice });
+  const cacheDir = cacheDirFromEnv(process.env) ?? join(homedir(), '.cache', 'distill-llm');
+  const parser = withMedia(withBuiltinOffice(createParser(), { libreoffice }), { cacheDir });
   try {
-    const cacheDir = cacheDirFromEnv(process.env) ?? join(homedir(), '.cache', 'distill-llm');
     const installer = createLinguaInstaller({ cacheDir, runtimeDir: join(packageRoot, 'lingua-runtime') });
     const lingua = createLingua({ cacheDir, installer });
     await lingua.probe();

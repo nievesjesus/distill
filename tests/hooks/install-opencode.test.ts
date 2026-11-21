@@ -82,6 +82,15 @@ describe('opencodePluginSource', () => {
     expect(output.args.filePath).toBe('/cache/out/x.md');
   });
 
+  it.skipIf(posixOnly)('rewrites audio and video reads too', async () => {
+    const before = await loadPlugin(OK);
+    for (const name of ['a.mp3', 'a.m4a', 'a.wav', 'a.mp4', 'a.mov', 'a.mkv', 'a.webm']) {
+      const output = { args: { filePath: real(name) } };
+      await before({ tool: 'read' }, output);
+      expect(output.args.filePath, name).toBe('/cache/out/x.md');
+    }
+  });
+
   it('leaves non-convertible extensions alone', async () => {
     const before = await loadPlugin(OK);
     for (const name of [real('a.ts'), real('a.png'), real('a.csv'), real('noext')]) {

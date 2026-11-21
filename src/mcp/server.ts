@@ -1,14 +1,17 @@
+import { detectKind } from '../core/kind';
 import { stat } from 'node:fs/promises';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { BOOSTER_ORDER } from '../core/boosters/pipeline';
 import { buildOutline, renderOutline } from '../core/outline';
 import { closestHeadings, findSection } from './sections';
-import { type SavingsEstimate, estimateSavings, savingsNote, sumSavings } from '../core/savings';
+import { type SavingsEstimate, estimateSavings, estimateSearchSavings, savingsNote, sumSavings } from '../core/savings';
+import { SearchQueryError, renderHits, searchMarkdown, type SearchResult } from '../core/search';
 import { countTokens } from '../core/tokens';
 import type { DistillResult, Health, LocalBoosterId } from '../core/types';
 import type { DistillOptions, Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
+import { maxBytesFor } from '../node/limits';
 
 const MAX_PATHS = 20;
 const SERVER_NAME = 'distill-llm';
@@ -21,6 +24,7 @@ const SKIPPED_NOTE = 'Not included to stay under the size limit. Call distill_fi
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const READ_ONLY_WEB = { ...READ_ONLY, openWorldHint: true };
+const NO_MATCHES = 'No matches.';
 const URL_TTL_MS = 5 * 60 * 1000;
 
 const boostersSchema = z
@@ -33,6 +37,14 @@ const linguaSchema = z
   .boolean()
   .optional()
   .describe('Optional LLMLingua-2 compression, lossy: it removes words. Only works when installed (see distill_capabilities); avoid it for contracts and other exact text');
+const timestampsSchema = z
+  .enum(['none', 'coarse', 'segment'])
+  .optional()
+  .describe('Audio and video only. Timestamps in the transcript: coarse (default, a [mm:ss] about once a minute), none (fewest tokens) or segment (one per spoken segment, to quote precise moments)');
+const framesSchema = z
+  .enum(['none', 'ocr'])
+  .optional()
+  .describe('Video only. ocr (default) adds the on-screen text that appears, once each, as > [slide mm:ss] blocks between the speech; none skips it and is faster');
 const visualPagesSchema = z.array(z.object({ page: z.number().int().min(1), label: z.string().optional(), kind: z.enum(['figure', 'scan']) }));
 const VISUAL_HINT = 'Pages listed in visualPages contain charts or images that are not in the text; if the question depends on them, view the original page with distill_page_image. visualPages[].page is the physical page number (1-based position in the PDF); label is the printed page label, only present when it differs.';
 const entrySchema = z.object({
@@ -46,6 +58,7 @@ const entrySchema = z.object({
 });
 
 function formatLimit(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10} GB`;
   return bytes >= 1024 * 1024 ? `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
@@ -55,7 +68,7 @@ const savingsSchema = z.object({
   out: z.number(),
   saved: z.number(),
   percent: z.number(),
-  basis: z.enum(['pdf-pages', 'raw-text', 'raw-html', 'served-markdown']),
+  basis: z.enum(['pdf-pages', 'raw-text', 'raw-html', 'served-markdown', 'search', 'srt']),
 });
 const linesSchema = z.object({ from: z.number(), to: z.number(), total: z.number() });
 const errorSchema = z.object({ code: z.string(), message: z.string() });
@@ -71,6 +84,20 @@ const linguaStatusSchema = z.object({
   unsupportedReason: z.string().optional(),
 });
 
+const asrStatusSchema = z.object({
+  installed: z.boolean(),
+  runtime: z.boolean(),
+  models: z.boolean(),
+  vad: z.boolean().optional(),
+  model: z.string().optional(),
+  defaultModel: z.string().nullable().optional(),
+  installedModels: z.array(z.object({ name: z.string(), bytes: z.number() })).optional(),
+  ffmpeg: z.string().nullable(),
+  installable: z.boolean(),
+  unsupportedReason: z.string().optional(),
+  diskBytes: z.number(),
+});
+
 export interface McpDeps {
   distiller: Distiller;
   health: () => Health;
@@ -81,6 +108,7 @@ export interface McpDeps {
   ignoreRobotsTxt?: boolean;
   now?: () => number;
   recordUsage?: (kind: string, savings: SavingsEstimate) => void;
+  mediaTag?: () => string;
 }
 
 interface Page {
@@ -121,10 +149,20 @@ function continuationFor(page: Page, windowed: boolean, tool: string): string {
   return `Showing lines ${page.from}-${page.to} of ${page.total}. Call ${tool} again with offset ${page.to + 1}${rest} to continue.`;
 }
 
-function toOptions(args: { boosters?: LocalBoosterId[]; lingua?: boolean }): DistillOptions {
+interface FileArgs {
+  boosters?: LocalBoosterId[];
+  lingua?: boolean;
+  timestamps?: 'none' | 'coarse' | 'segment';
+  frames?: 'none' | 'ocr';
+}
+
+function toOptions(args: FileArgs, signal?: AbortSignal): DistillOptions {
   const opts: DistillOptions = {};
   if (args.boosters !== undefined) opts.boosters = new Set(args.boosters);
   if (args.lingua !== undefined) opts.lingua = args.lingua;
+  if (args.timestamps !== undefined) opts.timestamps = args.timestamps;
+  if (args.frames !== undefined) opts.frames = args.frames;
+  if (signal !== undefined) opts.signal = signal;
   return opts;
 }
 
@@ -146,10 +184,14 @@ export function createMcpServer(deps: McpDeps): McpServer {
   const statFile = deps.stat ?? stat;
   const cache = new Map<string, DistillResult>();
 
-  async function cacheKey(resolved: string, args: { boosters?: LocalBoosterId[]; lingua?: boolean }): Promise<string | null> {
+  async function cacheKey(resolved: string, args: FileArgs): Promise<string | null> {
     try {
       const info = await statFile(resolved);
-      return JSON.stringify([resolved, info.size, info.mtimeMs, [...(args.boosters ?? [])].sort(), args.lingua ?? null]);
+      const key: unknown[] = [resolved, info.size, info.mtimeMs, [...(args.boosters ?? [])].sort(), args.lingua ?? null];
+      if (args.timestamps !== undefined || args.frames !== undefined) key.push(args.timestamps ?? null, args.frames ?? null);
+      const kind = detectKind(resolved);
+      if ((kind === 'AUDIO' || kind === 'VIDEO') && deps.mediaTag) key.push(deps.mediaTag());
+      return JSON.stringify(key);
     } catch {
       return null;
     }
@@ -165,10 +207,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     return true;
   }
 
-  async function distillOne(
-    path: string,
-    args: { boosters?: LocalBoosterId[]; lingua?: boolean },
-  ): Promise<{ result: DistillResult; key: string | null }> {
+  async function distillOne(path: string, args: FileArgs, signal?: AbortSignal): Promise<{ result: DistillResult; key: string | null }> {
     const resolved = await deps.resolvePath(path);
     const key = await cacheKey(resolved, args);
     const hit = key === null ? undefined : cache.get(key);
@@ -177,7 +216,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       cache.set(key, hit);
       return { result: hit, key };
     }
-    const result = await deps.distiller.distillFile(resolved, toOptions(args));
+    const result = await deps.distiller.distillFile(resolved, toOptions(args, signal));
     if (key !== null) {
       cache.set(key, result);
       if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value as string);
@@ -264,13 +303,15 @@ export function createMcpServer(deps: McpDeps): McpServer {
     return { result, key };
   }
 
-  const maxSize = formatLimit(deps.health().maxBytes);
+  const documentLimit = formatLimit(deps.health().maxBytes);
+  const mediaLimit = formatLimit(maxBytesFor('a.mp3', deps.health().maxBytes));
+  const maxSize = `${documentLimit} for documents, ${mediaLimit} for audio and video`;
 
   server.registerTool(
     'distill_file',
     {
       title: 'Read a document as Markdown',
-      description: `Read one local document (PDF, DOCX, PPTX, XLSX, ODT/ODS/ODP, CSV, PNG/JPG/TIFF/WebP, saved web pages HTML/MHTML, EPUB, emails EML/MSG, RSS/Atom feeds) as token-lean Markdown. For a live web page use distill_url. Read-only: never modifies or uploads the file. Use distill_files for several files at once and distill_outline first for long documents, then pass \`section\` or \`offset\`/\`limit\`. Output is capped at about ${budget} tokens per call; follow \`nextOffset\`. Fails with password_protected, needs_libreoffice (legacy .doc/.xls/.ppt and OpenDocument), forbidden (outside allowed roots), too_large (over ${maxSize}) or parse_failed. Tables and scans are only as faithful as the parser. ${VISUAL_HINT}`,
+      description: `Read one local document (PDF, DOCX, PPTX, XLSX, ODT/ODS/ODP, CSV, PNG/JPG/TIFF/WebP, saved web pages HTML/MHTML, EPUB, emails EML/MSG, RSS/Atom feeds) or audio/video file (MP3, WAV, M4A, AAC, FLAC, OGG, OPUS, AIFF, MP4, MOV, MKV, WEBM, AVI, M4V) as token-lean Markdown. Audio and video: this transcribes locally with an on-device speech model (nothing is uploaded), the first run of a long recording takes a while (the result is cached by content), video also lists new on-screen text, and it needs ffmpeg for formats other than WAV and a one-time install (see distill_capabilities; fails with asr_unavailable until \`distill-llm asr install\` is run). For a live web page use distill_url. Read-only: never modifies or uploads the file. Use distill_files for several files at once and distill_outline first for long documents, then pass \`section\` or \`offset\`/\`limit\`. Output is capped at about ${budget} tokens per call; follow \`nextOffset\`. Fails with password_protected, needs_libreoffice (legacy .doc/.xls/.ppt and OpenDocument), forbidden (outside allowed roots), too_large (over ${maxSize}), asr_unavailable, ffmpeg_missing, no_audio or parse_failed. Tables and scans are only as faithful as the parser. ${VISUAL_HINT}`,
       annotations: READ_ONLY,
       inputSchema: {
         path: z.string().min(1).describe(PATH_HINT),
@@ -292,6 +333,8 @@ export function createMcpServer(deps: McpDeps): McpServer {
           .describe('Title of a section from distill_outline (case-insensitive; exact match first, then substring). Reads just that section; cannot be combined with offset'),
         boosters: boostersSchema,
         lingua: linguaSchema,
+        timestamps: timestampsSchema,
+        frames: framesSchema,
       },
       outputSchema: {
         continuation: z.string().optional(),
@@ -308,12 +351,12 @@ export function createMcpServer(deps: McpDeps): McpServer {
         markdown: z.string(),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       try {
         if (args.section !== undefined && args.offset !== undefined) {
           throw new DistillError('bad_request', 'Pass either section or offset, not both');
         }
-        const { result, key } = await distillOne(args.path, args);
+        const { result, key } = await distillOne(args.path, args, extra?.signal);
         return respond(result, key, args, 'distill_file');
       } catch (error) {
         const { code, message } = describeError(error);
@@ -398,9 +441,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
         visualPages: visualPagesSchema.optional(),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       try {
-        const { result, key } = await distillOne(args.path, args);
+        const { result, key } = await distillOne(args.path, args, extra?.signal);
         const outline = buildOutline(result.markdown);
         const text = renderOutline(outline, { name: result.name });
         const savings = claimReport(key) ? estimateSavings(result) : undefined;
@@ -429,10 +472,83 @@ export function createMcpServer(deps: McpDeps): McpServer {
   );
 
   server.registerTool(
+    'distill_search',
+    {
+      title: 'Search inside a document',
+      description: `Find where a word, number or phrase appears in one document without reading it: use it instead of reading a long document whole, and instead of shelling out to pdftotext or grep. Takes a local \`path\` (same formats as distill_file) or a \`url\` (same as distill_url); the document is converted once and the cached Markdown is searched. Matching is case-insensitive, ignores line wraps and extra whitespace, and finds numbers split across lines; set \`regex\` for a JavaScript regular expression (at most 200 characters; a regex that runs longer than 2 s is stopped with bad_request). Each hit has the line, the physical page number (1-based position in the PDF, not the printed label; absent for documents without pages), the nearest heading above it and a few lines of context; neighbouring matches are merged into one hit. Next step after a hit: read around it with distill_file using \`section\` (the hit's heading) or \`offset\`/\`limit\` (from the hit's line), or look at the original page with distill_page_image. Read-only: never modifies or uploads anything. A \`path\` stays on this machine; only a \`url\` reaches the internet (public pages only, with the safety rules of distill_url), which is why the tool is marked as open-world. Fails like distill_file or distill_url (password_protected, needs_libreoffice, forbidden, too_large over ${maxSize}, parse_failed, fetch_failed) or with bad_request (neither or both of path and url, an invalid or over-long regex, or one using lookarounds or backreferences).`,
+      annotations: READ_ONLY_WEB,
+      inputSchema: {
+        path: z.string().min(1).optional().describe(`${PATH_HINT}. Pass either path or url`),
+        url: z.string().min(1).optional().describe('Absolute http or https URL of a page. Pass either path or url'),
+        query: z.string().min(1).describe('Text to find. Plain text by default: case-insensitive, whitespace-insensitive, matches across line wraps'),
+        regex: z.boolean().optional().describe('Treat query as an RE2 regular expression (case-insensitive, at most 200 characters; JavaScript-like syntax but no lookarounds or backreferences, always linear time)'),
+        context: z.number().int().min(0).max(20).optional().describe('Lines of context before and after each match (default 2)'),
+        maxHits: z.number().int().min(1).max(200).optional().describe('Maximum number of hits to return (default 20); total says how many there are'),
+      },
+      outputSchema: {
+        note: z.string().optional(),
+        hits: z.array(z.object({ line: z.number(), page: z.number().optional(), section: z.string().optional(), text: z.string() })),
+        total: z.number(),
+        truncated: z.boolean(),
+        tokens: tokensSchema,
+      },
+    },
+    async (args, extra) => {
+      try {
+        if (args.path !== undefined && args.url !== undefined) throw new DistillError('bad_request', 'Pass either path or url, not both');
+        if (args.path === undefined && args.url === undefined) throw new DistillError('bad_request', 'Pass path or url');
+        const { result, key } = args.url !== undefined ? await distillUrlOne(args.url, {}) : await distillOne(args.path as string, {}, extra?.signal);
+        let found: SearchResult;
+        try {
+          found = searchMarkdown(result.markdown, args.query, {
+            ...(args.regex === undefined ? {} : { regex: args.regex }),
+            ...(args.context === undefined ? {} : { context: args.context }),
+            ...(args.maxHits === undefined ? {} : { maxHits: args.maxHits }),
+          });
+        } catch (error) {
+          if (error instanceof SearchQueryError) throw new DistillError('bad_request', error.message);
+          throw error;
+        }
+        const shown: typeof found.hits = [];
+        let used = 0;
+        for (const hit of found.hits) {
+          const cost = countTokens(renderHits([hit])) + 1;
+          if (shown.length > 0 && used + cost > budget) break;
+          shown.push(hit);
+          used += cost;
+        }
+        const truncated = found.truncated || shown.length < found.hits.length;
+        const body = shown.length === 0 ? NO_MATCHES : renderHits(shown);
+        const more = truncated ? `\n${found.total - shown.length} more not shown (${found.total} in total). Raise maxHits or narrow the query.` : '';
+        const text = `${body}${more}`;
+        const hitTokens = countTokens(text);
+        const savings = claimReport(key) ? estimateSearchSavings(result, hitTokens) : undefined;
+        if (savings) track(result.kind, savings);
+        const note = withNote && savings ? savingsNote(savings) : undefined;
+        const content: { type: 'text'; text: string }[] = [{ type: 'text', text }];
+        if (note) content.push({ type: 'text', text: note });
+        return {
+          content,
+          structuredContent: {
+            ...(note ? { note } : {}),
+            hits: shown,
+            total: found.total,
+            truncated,
+            tokens: { raw: result.tokens.out, out: hitTokens },
+          },
+        };
+      } catch (error) {
+        const { code, message } = describeError(error);
+        return { isError: true, content: [{ type: 'text' as const, text: `${code}: ${message}` }] };
+      }
+    },
+  );
+
+  server.registerTool(
     'distill_page_image',
     {
       title: 'View one page of a PDF as an image',
-      description: `Render one page of a local PDF as a PNG image (about 100 dpi), or return an image file (PNG, JPG, WebP) itself. Read-only: never modifies or uploads the file. Use it only for pages listed in visualPages by distill_file or distill_outline, and only when the question depends on the chart or image on that page: it costs far more tokens than the Markdown. One page per call (page is the physical page number, 1-based, as listed in visualPages.page). Fails with bad_request (other file types, page out of range), forbidden (outside allowed roots), too_large (over ${maxSize}), not_found or parse_failed.`,
+      description: `Render one page of a local PDF as a PNG image (about 100 dpi), or return an image file (PNG, JPG, WebP) itself. Read-only: never modifies or uploads the file. Use it only for pages listed in visualPages by distill_file or distill_outline, and only when the question depends on the chart or image on that page: it costs far more tokens than the Markdown. One page per call (page is the physical page number, 1-based, as listed in visualPages.page). Fails with bad_request (other file types, page out of range), forbidden (outside allowed roots), too_large (over ${documentLimit}), not_found or parse_failed.`,
       annotations: READ_ONLY,
       inputSchema: {
         path: z.string().min(1).describe(PATH_HINT),
@@ -498,7 +614,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         note: z.string().optional(),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       type Entry =
         | {
             path: string;
@@ -528,7 +644,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
           continue;
         }
         try {
-          const { result, key } = await distillOne(path, args);
+          const { result, key } = await distillOne(path, args, extra?.signal);
           const savings = claimReport(key) ? estimateSavings(result) : undefined;
           const cost = countTokens(result.markdown);
           if (cost <= remaining) {
@@ -584,19 +700,22 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_capabilities',
     {
       title: 'Report distill capabilities',
-      description: `Report the server version, the maximum file size in bytes (maxBytes), the per-call output cap in tokens (maxResultTokens) and which optional features are available (LibreOffice for legacy .doc/.xls/.ppt and OpenDocument, LLMLingua-2 for the lossy lingua option). Read-only and cheap; call it when a conversion fails with needs_libreoffice or before using lingua. Does not read any document.`,
+      description: `Report the server version, the maximum file size in bytes for documents (maxBytes) and for audio and video (mediaMaxBytes), the per-call output cap in tokens (maxResultTokens) and which optional features are available (LibreOffice for legacy .doc/.xls/.ppt and OpenDocument, LLMLingua-2 for the lossy lingua option, and the local speech-recognition stack for audio and video, with the installed speech models and the default one in asr.installedModels and asr.defaultModel; the user installs it with the command distill-llm asr install [--model parakeet|whisper-turbo|whisper-small], this server never does). Read-only and cheap; call it when a conversion fails with needs_libreoffice or before using lingua. Does not read any document.`,
       annotations: READ_ONLY,
       outputSchema: {
         version: z.string(),
         liteparseVersion: z.string(),
         libreoffice: z.boolean(),
         lingua: linguaStatusSchema,
+        asr: asrStatusSchema.optional(),
         maxBytes: z.number(),
+        mediaMaxBytes: z.number(),
         maxResultTokens: z.number(),
       },
     },
     async () => {
-      const health = { ...deps.health(), maxResultTokens: budget };
+      const base = deps.health();
+      const health = { ...base, mediaMaxBytes: maxBytesFor('a.mp3', base.maxBytes), maxResultTokens: budget };
       return { content: [{ type: 'text' as const, text: JSON.stringify(health) }], structuredContent: health };
     },
   );

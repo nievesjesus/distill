@@ -229,6 +229,10 @@ describe('server app', () => {
     ['timeout', 504],
     ['password_protected', 422],
     ['parse_failed', 422],
+    ['asr_unavailable', 503],
+    ['ffmpeg_missing', 503],
+    ['no_audio', 422],
+    ['asr_failed', 500],
   ] as const)('maps parser %s to %i', async (code, status) => {
     const { app } = setup({
       parser: {
@@ -240,6 +244,19 @@ describe('server app', () => {
     const res = await app.request('/api/parse', upload('a.pdf'));
     expect(res.status).toBe(status);
     expect(await res.json()).toEqual({ code, message: 'boom' });
+  });
+
+  it('accepts an audio upload and reports a missing speech model cleanly', async () => {
+    const { app } = setup({
+      parser: {
+        async toMarkdown() {
+          throw new DistillError('asr_unavailable', 'Speech recognition is not installed.');
+        },
+      },
+    });
+    const res = await app.request('/api/parse', upload('talk.mp3'));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ code: 'asr_unavailable', message: 'Speech recognition is not installed.' });
   });
 
   it('deletes the temp file after parsing, even on error', async () => {
