@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,7 +23,8 @@ function installFake(): void {
   mkdirSync(paths.modelDir, { recursive: true });
   for (const file of ASR_FILES) {
     const target = file.dir === 'vad' ? paths.vadPath : join(paths.modelDir, file.name);
-    writeFileSync(target, Buffer.alloc(file.size));
+    writeFileSync(target, '');
+    truncateSync(target, file.size);
   }
 }
 
