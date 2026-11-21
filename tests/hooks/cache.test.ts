@@ -287,3 +287,58 @@ describe('convertCached', () => {
     expect((await stat(join(cacheDir, 'out'))).mode & 0o777).toBe(0o700);
   });
 });
+
+describe('convertCached with speech models', () => {
+  let dir: string;
+  let cacheDir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'distill-cache-media-'));
+    cacheDir = join(dir, 'cache');
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  function transcriber(state: { model: string }) {
+    return fakeDistiller(async (path?: never) => ({ name: 'x', markdown: `transcript by ${state.model}`, tokens: { raw: 10, out: 5 } }) as never);
+  }
+
+  it('does not serve a transcript made by another model', async () => {
+    const file = join(dir, 'talk.mp3');
+    await writeFile(file, 'audio');
+    const state = { model: 'whisper-small-int8' };
+    const distiller = transcriber(state);
+    const mediaTag = () => state.model;
+    const a = await convertCached(file, { distiller, cacheDir, version: '1.0.0', mediaTag });
+    expect(await readFile(a.mdPath, 'utf8')).toContain('transcript by whisper-small-int8');
+    state.model = 'whisper-turbo-int8';
+    const b = await convertCached(file, { distiller, cacheDir, version: '1.0.0', mediaTag });
+    expect(b.cached).toBe(false);
+    expect(b.mdPath).not.toBe(a.mdPath);
+    expect(await readFile(b.mdPath, 'utf8')).toContain('transcript by whisper-turbo-int8');
+    state.model = 'whisper-small-int8';
+    expect((await convertCached(file, { distiller, cacheDir, version: '1.0.0', mediaTag })).cached).toBe(true);
+    expect(distiller.distillFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('includes the forced language in the tag for video too', async () => {
+    const file = join(dir, 'talk.mp4');
+    await writeFile(file, 'video');
+    const distiller = fakeDistiller();
+    const a = await convertCached(file, { distiller, cacheDir, version: '1.0.0', mediaTag: () => 'whisper-small-int8' });
+    const b = await convertCached(file, { distiller, cacheDir, version: '1.0.0', mediaTag: () => 'whisper-small-int8:ja' });
+    expect(b.mdPath).not.toBe(a.mdPath);
+  });
+
+  it('keeps the keys of documents unchanged whatever the tag', async () => {
+    const file = join(dir, 'report.pdf');
+    await writeFile(file, 'pdf');
+    const distiller = fakeDistiller();
+    const plain = await convertCached(file, { distiller, cacheDir, version: '1.0.0' });
+    const tagged = await convertCached(file, { distiller, cacheDir, version: '1.0.0', mediaTag: () => 'whisper-small-int8' });
+    expect(tagged.mdPath).toBe(plain.mdPath);
+    expect(tagged.cached).toBe(true);
+  });
+});

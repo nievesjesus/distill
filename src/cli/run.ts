@@ -32,6 +32,7 @@ import { createUpdateChecker, detectInstallMethod } from '../node/update-check';
 import type { UpdateChecker } from '../node/update-check';
 import { detectKind } from '../core/kind';
 import { createMediaGate } from '../node/asr/gate';
+import { resolveAsrSelection } from '../node/asr/transcribe';
 import { cacheDirFromEnv } from '../node/cache-dir';
 import { ASR_RUNTIME_APPROX_BYTES, asrDownloadBytes, createAsrInstaller, getAsrStatus, selectAsrModel } from '../node/asr-install';
 import { ASR_MODELS, ASR_MODEL_NAMES, DEFAULT_ASR_MODEL } from '../node/asr/models';
@@ -290,6 +291,15 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
       return selectAsrModel({ cacheDir, env });
     } catch {
       return DEFAULT_ASR_MODEL;
+    }
+  };
+
+  const asrCacheTag = (): string => {
+    try {
+      const selection = resolveAsrSelection({ cacheDir, env });
+      return `${selection.spec.id}${selection.language ? `:${selection.language}` : ''}`;
+    } catch {
+      return 'invalid';
     }
   };
 
@@ -615,6 +625,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
           resolvePath,
           savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1',
           ...(options.ignoreRobotsTxt ? { ignoreRobotsTxt: true } : {}),
+          mediaTag: asrCacheTag,
           recordUsage: (kind, savings) => recordUsage({ source: 'mcp', kind, savings }, { cacheDir, env }),
           ...(maxResultTokens === undefined ? {} : { maxResultTokens }),
         });
@@ -696,6 +707,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
   const convertViaCache = (getDistiller: () => Promise<Distiller>, absPath: string) =>
     convertCached(absPath, {
       getDistiller,
+      mediaTag: asrCacheTag,
       cacheDir,
       version: readVersion(),
       liteparseVersion: readLiteparseVersion(),
@@ -732,7 +744,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<void> {
             stderr(`distill hook: ${describeError(error)}`);
             throw error;
           }
-        }, { homeDir, cacheDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), asrInstalled: () => getAsrStatus({ cacheDir, env, model: activeAsrModel() }).installed, mediaGate: createMediaGate({ cacheDir, env }), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
+        }, { homeDir, cacheDir, projectDir: env.CLAUDE_PROJECT_DIR, plugin: options.plugin === true, savingsNote: env.DISTILL_NO_SAVINGS_NOTE !== '1', indexMinTokens: indexMinTokens(env.DISTILL_INDEX_MIN_TOKENS), asrInstalled: () => getAsrStatus({ cacheDir, env, model: activeAsrModel() }).installed, asrHint: () => { const model = activeAsrModel(); return { model, megabytes: Math.round(asrDownloadBytes(model) / 1_000_000) }; }, mediaGate: createMediaGate({ cacheDir, env }), recordUsage: (path, savings) => recordUsage({ source: 'hook', kind: extname(path).slice(1).toUpperCase() || 'unknown', savings }, { cacheDir, env }) });
         if (result !== null) stdout(JSON.stringify(result));
       } catch (error) {
         stderr(`distill hook: ${error instanceof Error ? error.message : String(error)}`);

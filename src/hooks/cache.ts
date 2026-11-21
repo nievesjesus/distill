@@ -7,6 +7,7 @@ import { type SavingsEstimate, estimateSavings } from '../core/savings';
 import { wrapLongLines } from '../core/wrap';
 import type { Distiller } from '../node/distill';
 import { DistillError } from '../node/errors';
+import { detectKind } from '../core/kind';
 import { DEFAULT_MAX_BYTES, maxBytesFor } from '../node/limits';
 
 export interface CacheDeps {
@@ -15,6 +16,7 @@ export interface CacheDeps {
   version: string;
   liteparseVersion: string;
   maxBytes?: number;
+  mediaTag?: () => string;
 }
 
 export interface CachedConversion {
@@ -35,8 +37,9 @@ function isEmptyMarkdown(markdown: string): boolean {
   return markdown.replace(FENCE_LINE, '').trim() === '';
 }
 
-async function cacheKey(version: string, liteparseVersion: string, path: string): Promise<string> {
+async function cacheKey(version: string, liteparseVersion: string, path: string, mediaTag?: string): Promise<string> {
   const hash = createHash('sha256').update(version).update('\0').update(liteparseVersion).update('\0').update(ACTIVE_BOOSTERS).update('\0').update(FORMAT_VERSION).update('\0');
+  if (mediaTag !== undefined) hash.update('asr:').update(mediaTag).update('\0');
   for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
   return hash.digest('hex').slice(0, KEY_LENGTH);
 }
@@ -86,7 +89,9 @@ export async function convertCached(path: string, deps: CacheDeps): Promise<Cach
   if (info.size > maxBytes) throw new DistillError('too_large', `File exceeds the ${maxBytes} byte limit`);
 
   const outDir = join(deps.cacheDir, 'out');
-  const key = await cacheKey(deps.version, deps.liteparseVersion, path);
+  const kind = detectKind(path);
+  const mediaTag = (kind === 'AUDIO' || kind === 'VIDEO') && deps.mediaTag ? deps.mediaTag() : undefined;
+  const key = await cacheKey(deps.version, deps.liteparseVersion, path, mediaTag);
   const mdPath = join(outDir, `${key}.md`);
   const emptyPath = join(outDir, `${key}.empty`);
   const savingsPath = join(outDir, `${key}.savings.json`);

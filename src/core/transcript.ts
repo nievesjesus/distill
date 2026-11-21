@@ -20,7 +20,7 @@ export interface FormatOptions {
 
 export const TRANSCRIPT_ENGINE = 'local ASR (Parakeet TDT 0.6B v3)';
 
-const CJK_CHAR = String.raw`[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}　-〿＀-￯]`;
+const CJK_CHAR = String.raw`[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯]`;
 const CJK_ANY = new RegExp(CJK_CHAR, 'u');
 const CJK_END = new RegExp(`${CJK_CHAR}$`, 'u');
 const CJK_START = new RegExp(`^${CJK_CHAR}`, 'u');

@@ -1,3 +1,4 @@
+import { detectKind } from '../core/kind';
 import { stat } from 'node:fs/promises';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -107,6 +108,7 @@ export interface McpDeps {
   ignoreRobotsTxt?: boolean;
   now?: () => number;
   recordUsage?: (kind: string, savings: SavingsEstimate) => void;
+  mediaTag?: () => string;
 }
 
 interface Page {
@@ -187,6 +189,8 @@ export function createMcpServer(deps: McpDeps): McpServer {
       const info = await statFile(resolved);
       const key: unknown[] = [resolved, info.size, info.mtimeMs, [...(args.boosters ?? [])].sort(), args.lingua ?? null];
       if (args.timestamps !== undefined || args.frames !== undefined) key.push(args.timestamps ?? null, args.frames ?? null);
+      const kind = detectKind(resolved);
+      if ((kind === 'AUDIO' || kind === 'VIDEO') && deps.mediaTag) key.push(deps.mediaTag());
       return JSON.stringify(key);
     } catch {
       return null;

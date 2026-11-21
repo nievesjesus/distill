@@ -41,6 +41,7 @@ interface ConnectDeps {
   maxResultTokens?: number;
   stat?: (p: string) => Promise<{ size: number; mtimeMs: number }>;
   recordUsage?: (kind: string, savings: unknown) => void;
+  mediaTag?: () => string;
 }
 
 const LINE = 'row alpha beta gamma\n';
@@ -72,6 +73,7 @@ async function connect(deps: ConnectDeps = {}) {
     ...(deps.maxResultTokens === undefined ? {} : { maxResultTokens: deps.maxResultTokens }),
     ...(deps.stat === undefined ? {} : { stat: deps.stat }),
     ...(deps.recordUsage === undefined ? {} : { recordUsage: deps.recordUsage }),
+    ...(deps.mediaTag === undefined ? {} : { mediaTag: deps.mediaTag }),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test', version: '0.0.0' });
@@ -245,6 +247,27 @@ describe('createMcpServer', () => {
       await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4', timestamps: 'none' } });
       await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp4', frames: 'none' } });
       expect(calls).toHaveLength(3);
+    });
+
+    it('does not reuse a transcript made by another speech model, but keeps document keys', async () => {
+      const calls: { path: string; opts: any }[] = [];
+      let tag = 'whisper-small-int8';
+      const client = await connect({ distiller: mediaDistiller(calls), stat: fixedStat, mediaTag: () => tag });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(calls).toHaveLength(1);
+      tag = 'whisper-turbo-int8';
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(calls).toHaveLength(2);
+      tag = 'whisper-turbo-int8:ja';
+      await client.callTool({ name: 'distill_file', arguments: { path: '/x/talk.mp3' } });
+      expect(calls).toHaveLength(3);
+      const docs: { path: string; opts: unknown }[] = [];
+      const docClient = await connect({ distiller: fakeDistiller(docs), stat: fixedStat, mediaTag: () => tag });
+      await docClient.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      tag = 'other';
+      await docClient.callTool({ name: 'distill_file', arguments: { path: '/x/a.pdf' } });
+      expect(docs).toHaveLength(1);
     });
 
     it('rejects an unknown timestamps or frames value', async () => {

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, utimesSync, readFileSync, readdirSy
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { collectSlides, dHash, hamming, keyframeArgs, parseShowinfo, sameFrame, slidesFromOcr, thumbArgs } from '../../../src/node/asr/frames';
 
 const flat = (value: number) => Array.from({ length: 72 }, () => value);
@@ -343,8 +343,9 @@ describe('collectSlides', () => {
   it('kills ffmpeg and raises aborted when the signal fires, cleaning up', async () => {
     const child = new FakeChild();
     const controller = new AbortController();
-    const run = collectSlides('/m/v.mp4', { ffmpeg: '/bin/ffmpeg', duration: 40, ocr: ocrFromFile().fn, spawn: (() => child) as any, tmpRoot: root, signal: controller.signal });
-    await new Promise((r) => setTimeout(r, 5));
+    const spawned = vi.fn(() => child);
+    const run = collectSlides('/m/v.mp4', { ffmpeg: '/bin/ffmpeg', duration: 40, ocr: ocrFromFile().fn, spawn: spawned as any, tmpRoot: root, signal: controller.signal });
+    await vi.waitFor(() => expect(spawned).toHaveBeenCalled());
     controller.abort();
     await expect(run).rejects.toMatchObject({ code: 'aborted' });
     expect(child.killed).toBe(true);

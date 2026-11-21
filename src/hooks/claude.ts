@@ -20,6 +20,7 @@ export interface ClaudeHookDeps {
   recordUsage?: (path: string, savings: SavingsEstimate) => void;
   indexMinTokens?: number;
   asrInstalled?: () => boolean;
+  asrHint?: () => { model: string; megabytes: number };
   mediaGate?: (absPath: string) => Promise<'convert' | { defer: string }>;
 }
 
@@ -89,8 +90,10 @@ function sliceOfPages(markdown: string, physical: string[]): PageSlice | null {
   return { from, to, text: lines.slice(from - 1, to).join('\n'), figures, count: physical.length };
 }
 
-function asrMissingContext(name: string, original: string): string {
-  return `distill can transcribe ${name} locally to save tokens, but speech recognition is not installed, so this read was not converted. To enable it, run \`distill-llm asr install\` once (about 700 MB), then read ${original} again.`;
+function asrMissingContext(name: string, original: string, hint?: { model: string; megabytes: number }): string {
+  const command = hint ? `distill-llm asr install --model ${hint.model}` : 'distill-llm asr install';
+  const size = hint ? hint.megabytes : 700;
+  return `distill can transcribe ${name} locally to save tokens, but speech recognition is not installed, so this read was not converted. To enable it, run \`${command}\` once (about ${size} MB), then read ${original} again.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -214,7 +217,7 @@ export async function handleClaudePreToolUse(
     if (deps.plugin === true && (await anyOwnHook(files))) return null;
     const mediaKind = detectKind(original);
     if ((mediaKind === 'AUDIO' || mediaKind === 'VIDEO') && deps.asrInstalled?.() === false) {
-      return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: asrMissingContext(basename(original), original) } };
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: asrMissingContext(basename(original), original, deps.asrHint?.()) } };
     }
     const isMedia = mediaKind === 'AUDIO' || mediaKind === 'VIDEO';
     if (isMedia && deps.mediaGate !== undefined) {

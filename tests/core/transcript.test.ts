@@ -267,6 +267,13 @@ describe('CJK text', () => {
     expect(formatTranscript([seg(0, 2, '你好。'), seg(70, 72, '再见。')], { timestamps: 'coarse' })).toBe('[00:00] 你好。\n\n[01:10] 再见。');
   });
 
+  it('keeps the spaces of Korean text', () => {
+    expect(formatTranscript([seg(0, 2, '안녕하세요 여러분입니다'), seg(2.5, 4, '저는 오늘 왔습니다')], { timestamps: 'none' })).toBe('안녕하세요 여러분입니다 저는 오늘 왔습니다');
+    expect(one('좋아요,그래요')).toBe('좋아요, 그래요');
+    expect(one('네 네 네')).toBe('네');
+    expect(formatTranscript([seg(0, 2, '합니다'), seg(2.5, 4, '저는')], { timestamps: 'none' })).toBe('합니다 저는');
+  });
+
   it('leaves fillers alone when no language is given', () => {
     expect(one('um 你好 uh 世界')).toBe('um 你好 uh 世界');
   });

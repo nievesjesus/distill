@@ -65,6 +65,18 @@ describe('audio and video reads', () => {
     expect(result.hookSpecificOutput.additionalContext).toContain('call.mp3');
   });
 
+  it('names the selected model and its size in the install hint', async () => {
+    const file = media('call.mp3');
+    const convert = vi.fn(async () => ({ path: '/c.md' }));
+    const result = (await handleClaudePreToolUse(payload({ file_path: file }), convert, deps({ asrInstalled: () => false, asrHint: () => ({ model: 'whisper-small', megabytes: 376 }) }))) as {
+      hookSpecificOutput: Record<string, unknown>;
+    };
+    const text = String(result.hookSpecificOutput.additionalContext);
+    expect(text).toContain('distill-llm asr install --model whisper-small');
+    expect(text).toContain('376 MB');
+    expect(text).not.toContain('700 MB');
+  });
+
   it('converts to a transcript once speech recognition is installed, with an SRT-based note', async () => {
     const file = media('talk.mp4');
     const savings = estimateSavings({ kind: 'VIDEO', pages: 1, tokens: { raw: 2000, out: 1200 } });
