@@ -235,7 +235,7 @@ Multi-page PDFs carry a `<!-- page N -->` marker before each page (it uses the p
 
 `distill-llm outline <file> [--json]` prints the index without the content: one line per heading (levels 1 to 3), or per page when the document has no headings, with its line range, page and token count. Line numbers refer to the converted Markdown. With `--json` you get `{ kind, pages, lines, tokens, entries }`.
 
-`distill-llm asr install [--yes]`, `asr status [--json]` and `asr uninstall` manage the local speech recognition used for [audio and video](#audio-and-video). `distill-llm grep <query> <file|url>` searches a document; see [Search](#search).
+`distill-llm asr install [--model parakeet|whisper-turbo|whisper-small] [--yes]`, `asr status [--json]` and `asr uninstall [--model <name>]` manage the local speech recognition used for [audio and video](#audio-and-video). `distill-llm grep <query> <file|url>` searches a document; see [Search](#search).
 
 `distill-llm stats [--json] [--price <usd>]` shows how many tokens distill has saved on this machine: all time, last 30 days and last 7 days, by source (hook, MCP, CLI) and by kind. `--price` values the saved tokens at that many dollars per million input tokens. There is no built-in price table.
 
@@ -327,17 +327,30 @@ LLMLingua-2 is optional and experimental. It needs Apple Silicon, Windows x64 or
 Recordings are transcribed on your machine. Nothing is uploaded and no cloud speech service is involved: audio never leaves the computer.
 
 ```bash
-distill-llm asr install                 # one time: about 35 MB runtime + 670 MB models
+distill-llm asr install                 # one time: about 35 MB runtime + 670 MB Parakeet model
 distill-llm convert --stdout meeting.mp4
+
+distill-llm asr install --model whisper-turbo       # other languages: about 1,040 MB
+distill-llm convert --stdout --asr-model whisper-small --language ja clip.mp3
 ```
 
 - **Formats.** Audio: MP3, WAV, M4A, AAC, FLAC, OGG, OPUS, AIFF/AIF. Video: MP4, MOV, MKV, WEBM, AVI, M4V. Up to 2 GB per file in the CLI, the hook and the MCP server (the web app's upload limit stays 100 MB). [ffmpeg](https://ffmpeg.org/) is required for everything except WAV; distill finds it on your `PATH` or through `DISTILL_FFMPEG` (`brew install ffmpeg`, `apt install ffmpeg` or `winget install Gyan.FFmpeg`).
 - **Install.** `distill-llm asr install` downloads the runtime ([sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)) and the models into the cache folder (`DISTILL_CACHE_DIR` is respected). On Apple Silicon it took 34 s and 706 MB on disk. `distill-llm asr status` shows what is installed and `distill-llm asr uninstall` removes it. Transcribing needs about 2 GB of memory at peak per file, so distill runs one transcription at a time and queues the rest; set `DISTILL_ASR_CONCURRENCY` (a positive integer) to run more in parallel if you have the memory.
-- **Languages.** NVIDIA Parakeet TDT 0.6B v3 covers 25 European languages, including English and Spanish. Voice activity detection is Silero VAD.
+- **Models.** Each user downloads only the model they choose. Installing a model makes it the default, and several can live side by side. Voice activity detection is Silero VAD, shared by all of them.
+
+  | Model | Languages | Download | Relative speed | License |
+  | --- | --- | --- | --- | --- |
+  | `parakeet` (default) | 25 European | ~670 MB | fastest | CC-BY-4.0 |
+  | `whisper-turbo` | ~99 | ~1,040 MB | ~8× slower than Parakeet on CPU | MIT |
+  | `whisper-small` | ~99 | ~375 MB | ~6–7× slower | MIT |
+
+  Parakeet covers English and Spanish among its 25 European languages. For other languages install a Whisper model. Whisper uses more memory (about 2.3 GB at peak for `whisper-turbo`), and `distill-llm hook` only converts recordings up to 10 min with Parakeet, 2 min with `whisper-small` and 90 s with `whisper-turbo`; longer ones go through the MCP tool or the CLI.
+- **Choosing a model.** The order is the `DISTILL_ASR_MODEL` environment variable, then `--asr-model <name>` on `convert` and `grep`, then the default saved by `asr install`, then `parakeet`. If the chosen model is not installed, the error names the exact `distill-llm asr install --model <name>` command. The MCP tools have no model parameter; `distill_capabilities` lists the installed models and the default. `asr uninstall --model <name>` removes one model (the default falls back to another installed one); `asr uninstall` alone removes the runtime and every model.
+- **Whisper language.** Whisper detects the language itself. To avoid noisy per-segment guesses, distill takes the majority language of the first five segments and fixes it for the rest of the file. Force it with `--language <iso>` (two or three lowercase letters, for example `es`) or `DISTILL_ASR_LANGUAGE`; Parakeet ignores both. The header comment names the real model and the detected language. Filler-word removal stays limited to English and Spanish; other languages only get paragraphs, timestamps and spacing.
 - **Transcript.** Compact paragraphs with a `[mm:ss]` at most about once a minute (`--timestamps none|coarse|segment`), a short header comment, glued punctuation fixed and filler words removed conservatively (English and Spanish).
 - **Video.** Key frames are OCR'd and only on-screen text that is new is added, as `> [slide mm:ss]` blocks (`--frames none` skips it). A video with no speech still gets its slides.
 - **Cache.** Transcripts are cached by the file's sha256, so asking again is instant. A long recording takes a while the first time.
-- **Agents.** `distill_file` accepts audio and video (with `timestamps` and `frames`) and `distill_capabilities` reports whether speech recognition is installed. In Claude Code the plugin's skill runs `distill-llm convert --stdout <file>` (Claude's Read tool refuses these files before hooks run), or Claude calls `distill_file`. Once you have a transcript, [search](#search) works on it like on any document.
+- **Agents.** `distill_file` accepts audio and video (with `timestamps` and `frames`) and `distill_capabilities` reports whether speech recognition is installed, which models and which default. In Claude Code the plugin's skill runs `distill-llm convert --stdout <file>` (Claude's Read tool refuses these files before hooks run), or Claude calls `distill_file`. Once you have a transcript, [search](#search) works on it like on any document.
 
 ### Tokens
 
@@ -457,6 +470,7 @@ The speech models are not bundled with distill. `distill-llm asr install` downlo
 
 - [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), by NVIDIA, licensed [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). distill uses the int8 export, unmodified apart from that conversion.
 - The int8 ONNX export and the [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) runtime (`sherpa-onnx-node`), by k2-fsa, licensed Apache-2.0.
+- [OpenAI Whisper](https://github.com/openai/whisper) (large-v3-turbo and small), by OpenAI, licensed MIT. distill uses the sherpa-onnx int8 exports (k2-fsa, Apache-2.0 tooling), which you only download if you run `asr install --model whisper-turbo` or `--model whisper-small`.
 - [Silero VAD](https://github.com/snakers4/silero-vad), licensed MIT.
 
 If distill saves you tokens, a ⭐ helps other people find it.
