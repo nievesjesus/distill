@@ -6,8 +6,7 @@ import { BOOSTER_ORDER } from '../core/boosters/pipeline';
 import { buildOutline, renderOutline } from '../core/outline';
 import { closestHeadings, findSection } from './sections';
 import { type SavingsEstimate, estimateSavings, estimateSearchSavings, savingsNote, sumSavings } from '../core/savings';
-import { SearchQueryError, renderHits } from '../core/search';
-import { searchMarkdownBounded } from '../node/search-bounded';
+import { SearchQueryError, renderHits, searchMarkdown, type SearchResult } from '../core/search';
 import { countTokens } from '../core/tokens';
 import type { DistillResult, Health, LocalBoosterId } from '../core/types';
 import type { DistillOptions, Distiller } from '../node/distill';
@@ -476,13 +475,13 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'distill_search',
     {
       title: 'Search inside a document',
-      description: `Find where a word, number or phrase appears in one document without reading it: use it instead of reading a long document whole, and instead of shelling out to pdftotext or grep. Takes a local \`path\` (same formats as distill_file) or a \`url\` (same as distill_url); the document is converted once and the cached Markdown is searched. Matching is case-insensitive, ignores line wraps and extra whitespace, and finds numbers split across lines; set \`regex\` for a JavaScript regular expression (at most 200 characters; a regex that runs longer than 2 s is stopped with bad_request). Each hit has the line, the physical page number (1-based position in the PDF, not the printed label; absent for documents without pages), the nearest heading above it and a few lines of context; neighbouring matches are merged into one hit. Next step after a hit: read around it with distill_file using \`section\` (the hit's heading) or \`offset\`/\`limit\` (from the hit's line), or look at the original page with distill_page_image. Read-only: never modifies or uploads anything. A \`path\` stays on this machine; only a \`url\` reaches the internet (public pages only, with the safety rules of distill_url), which is why the tool is marked as open-world. Fails like distill_file or distill_url (password_protected, needs_libreoffice, forbidden, too_large over ${maxSize}, parse_failed, fetch_failed) or with bad_request (neither or both of path and url, an invalid, over-long or too slow regex).`,
+      description: `Find where a word, number or phrase appears in one document without reading it: use it instead of reading a long document whole, and instead of shelling out to pdftotext or grep. Takes a local \`path\` (same formats as distill_file) or a \`url\` (same as distill_url); the document is converted once and the cached Markdown is searched. Matching is case-insensitive, ignores line wraps and extra whitespace, and finds numbers split across lines; set \`regex\` for a JavaScript regular expression (at most 200 characters; a regex that runs longer than 2 s is stopped with bad_request). Each hit has the line, the physical page number (1-based position in the PDF, not the printed label; absent for documents without pages), the nearest heading above it and a few lines of context; neighbouring matches are merged into one hit. Next step after a hit: read around it with distill_file using \`section\` (the hit's heading) or \`offset\`/\`limit\` (from the hit's line), or look at the original page with distill_page_image. Read-only: never modifies or uploads anything. A \`path\` stays on this machine; only a \`url\` reaches the internet (public pages only, with the safety rules of distill_url), which is why the tool is marked as open-world. Fails like distill_file or distill_url (password_protected, needs_libreoffice, forbidden, too_large over ${maxSize}, parse_failed, fetch_failed) or with bad_request (neither or both of path and url, an invalid or over-long regex, or one using lookarounds or backreferences).`,
       annotations: READ_ONLY_WEB,
       inputSchema: {
         path: z.string().min(1).optional().describe(`${PATH_HINT}. Pass either path or url`),
         url: z.string().min(1).optional().describe('Absolute http or https URL of a page. Pass either path or url'),
         query: z.string().min(1).describe('Text to find. Plain text by default: case-insensitive, whitespace-insensitive, matches across line wraps'),
-        regex: z.boolean().optional().describe('Treat query as a JavaScript regular expression (case-insensitive, at most 200 characters; stopped with bad_request if it runs longer than 2 s)'),
+        regex: z.boolean().optional().describe('Treat query as an RE2 regular expression (case-insensitive, at most 200 characters; JavaScript-like syntax but no lookarounds or backreferences, always linear time)'),
         context: z.number().int().min(0).max(20).optional().describe('Lines of context before and after each match (default 2)'),
         maxHits: z.number().int().min(1).max(200).optional().describe('Maximum number of hits to return (default 20); total says how many there are'),
       },
@@ -499,9 +498,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
         if (args.path !== undefined && args.url !== undefined) throw new DistillError('bad_request', 'Pass either path or url, not both');
         if (args.path === undefined && args.url === undefined) throw new DistillError('bad_request', 'Pass path or url');
         const { result, key } = args.url !== undefined ? await distillUrlOne(args.url, {}) : await distillOne(args.path as string, {}, extra?.signal);
-        let found: Awaited<ReturnType<typeof searchMarkdownBounded>>;
+        let found: SearchResult;
         try {
-          found = await searchMarkdownBounded(result.markdown, args.query, {
+          found = searchMarkdown(result.markdown, args.query, {
             ...(args.regex === undefined ? {} : { regex: args.regex }),
             ...(args.context === undefined ? {} : { context: args.context }),
             ...(args.maxHits === undefined ? {} : { maxHits: args.maxHits }),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderHits, searchMarkdown } from '../../src/core/search';
+import { SearchQueryError, renderHits, searchMarkdown } from '../../src/core/search';
 
 const DOC = [
   '# Intro',
@@ -117,6 +117,41 @@ describe('searchMarkdown', () => {
     expect(() => searchMarkdown('x', 'a'.repeat(201), { regex: true })).toThrow(/too long/i);
     expect(() => searchMarkdown('x', '(', { regex: true })).toThrow(/invalid/i);
     expect(() => searchMarkdown('x', '   ')).toThrow(/empty/i);
+  });
+
+  it('finds a regex match after non-ASCII text on the right line', () => {
+    const doc = ['intro', 'caf\u00e9 \u{1F600} then Invoice 42 is due', 'outro'].join('\n');
+    const found = searchMarkdown(doc, 'invoice \\d+', { regex: true, context: 0 });
+    expect(found.total).toBe(1);
+    expect(found.hits[0].line).toBe(2);
+    expect(found.hits[0].text).toContain('Invoice 42');
+  });
+
+  it('is case-insensitive by default in regex mode and honours caseSensitive', () => {
+    expect(searchMarkdown('Hello World\n', 'hello w', { regex: true }).total).toBe(1);
+    expect(searchMarkdown('Hello World\n', 'hello w', { regex: true, caseSensitive: true }).total).toBe(0);
+    expect(searchMarkdown('Hello World\n', 'Hello W', { regex: true, caseSensitive: true }).total).toBe(1);
+  });
+
+  it('supports digit escapes and character classes', () => {
+    const doc = ['Results for Q3 2024 were strong.', 'Q9 2024 is not a quarter.'].join('\n');
+    const found = searchMarkdown(doc, 'Q[1-4] 20\\d\\d', { regex: true, context: 0 });
+    expect(found.total).toBe(1);
+    expect(found.hits[0].line).toBe(1);
+  });
+
+  it('rejects syntax RE2 does not support as a SearchQueryError', () => {
+    expect(() => searchMarkdown('x', '(', { regex: true })).toThrow(SearchQueryError);
+    expect(() => searchMarkdown('x', '[a-', { regex: true })).toThrow(SearchQueryError);
+    expect(() => searchMarkdown('x', 'a(?=x)', { regex: true })).toThrow(SearchQueryError);
+    expect(() => searchMarkdown('x', '(a)\\1', { regex: true })).toThrow(/invalid regex/i);
+  });
+
+  it('runs a catastrophic regex in linear time', () => {
+    const started = Date.now();
+    const found = searchMarkdown(`${'a'.repeat(5000)}!`, '(a+)+$', { regex: true });
+    expect(found.total).toBe(0);
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it('survives regexes that match the empty string', () => {

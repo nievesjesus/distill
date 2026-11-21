@@ -1,3 +1,4 @@
+import { RE2JS, RE2JSException } from 're2js';
 import { headingsOf, pageMarkersIn } from './outline';
 
 export interface SearchOptions {
@@ -83,19 +84,43 @@ function looseSource(query: string): string {
   return query.replace(/\s+/g, ' ').trim().split(' ').map(escapeRegex).join('\\s+');
 }
 
-function compile(query: string, opts: SearchOptions): RegExp {
-  const flags = opts.caseSensitive ? 'g' : 'gi';
+type Finder = (text: string, from: number) => { index: number; length: number } | null;
+
+function nativeFinder(source: string, flags: string): Finder {
+  const pattern = new RegExp(source, `${flags}g`);
+  return (text, from) => {
+    pattern.lastIndex = from;
+    const found = pattern.exec(text);
+    return found ? { index: found.index, length: found[0].length } : null;
+  };
+}
+
+function re2Finder(query: string, caseSensitive: boolean): Finder {
+  if (query.length > MAX_REGEX_LENGTH) throw new SearchQueryError(`The regex is too long (${query.length} characters, the limit is ${MAX_REGEX_LENGTH})`);
+  let compiled: RE2JS;
+  try {
+    compiled = RE2JS.compile(query, caseSensitive ? 0 : RE2JS.CASE_INSENSITIVE);
+  } catch (error) {
+    if (error instanceof RE2JSException) throw new SearchQueryError(`Invalid regex: ${error.message}`);
+    throw error;
+  }
+  return (text, from) => {
+    if (from > text.length) return null;
+    const matcher = compiled.matcher(text);
+    return matcher.find(from) ? { index: matcher.start(), length: matcher.end() - matcher.start() } : null;
+  };
+}
+
+function compile(query: string, opts: SearchOptions): { all: Finder; loose: Finder } {
+  const caseSensitive = opts.caseSensitive === true;
   if (opts.regex) {
-    if (query.length > MAX_REGEX_LENGTH) throw new SearchQueryError(`The regex is too long (${query.length} characters, the limit is ${MAX_REGEX_LENGTH})`);
-    try {
-      return new RegExp(query, flags);
-    } catch (error) {
-      throw new SearchQueryError(`Invalid regex: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    const finder = re2Finder(query, caseSensitive);
+    return { all: finder, loose: finder };
   }
   const normalized = query.replace(/\s+/g, ' ').trim();
   if (normalized === '') throw new SearchQueryError('The query is empty');
-  return new RegExp(escapeRegex(normalized), flags);
+  const flags = caseSensitive ? '' : 'i';
+  return { all: nativeFinder(escapeRegex(normalized), flags), loose: nativeFinder(looseSource(query), flags) };
 }
 
 function cap(text: string, anchor: number, matchLength: number): string {
@@ -107,21 +132,23 @@ function cap(text: string, anchor: number, matchLength: number): string {
   return `${adjusted > 0 ? '…' : ''}${text.slice(adjusted, end)}${end < text.length ? '…' : ''}`;
 }
 
-function locate(text: string, lineOffset: number, loose: RegExp): { at: number; length: number } {
-  const found = loose.exec(text.slice(lineOffset));
-  return found ? { at: lineOffset + found.index, length: found[0].length } : { at: lineOffset, length: 0 };
+function locate(text: string, lineOffset: number, loose: Finder): { at: number; length: number } {
+  const found = loose(text, lineOffset);
+  return found ? { at: found.index, length: found.length } : { at: lineOffset, length: 0 };
 }
 
-function windowsOf(flat: Flat, pattern: RegExp, context: number, totalLines: number): Window[] {
+function windowsOf(flat: Flat, find: Finder, context: number, totalLines: number): Window[] {
   const windows: Window[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(flat.text)) !== null) {
-    if (match[0] === '') {
-      pattern.lastIndex += 1;
+  let position = 0;
+  let match: { index: number; length: number } | null;
+  while ((match = find(flat.text, position)) !== null) {
+    if (match.length === 0) {
+      position = match.index + 1;
       continue;
     }
+    position = match.index + match.length;
     const first = lineAt(flat, match.index);
-    const last = lineAt(flat, match.index + match[0].length - 1);
+    const last = lineAt(flat, match.index + match.length - 1);
     const from = Math.max(1, first - context);
     const to = Math.min(totalLines, last + context);
     const current = windows[windows.length - 1];
@@ -132,14 +159,11 @@ function windowsOf(flat: Flat, pattern: RegExp, context: number, totalLines: num
 }
 
 export function searchMarkdown(markdown: string, query: string, opts: SearchOptions = {}): SearchResult {
-  const pattern = compile(query, opts);
-  const loose = opts.regex
-    ? new RegExp(pattern.source, pattern.flags.replace('g', ''))
-    : new RegExp(looseSource(query), opts.caseSensitive ? '' : 'i');
+  const { all, loose } = compile(query, opts);
   const context = Math.max(0, Math.floor(opts.context ?? DEFAULT_CONTEXT));
   const maxHits = Math.max(1, Math.floor(opts.maxHits ?? DEFAULT_MAX_HITS));
   const lines = markdown.split('\n');
-  const windows = windowsOf(flatten(lines), pattern, context, lines.length);
+  const windows = windowsOf(flatten(lines), all, context, lines.length);
   const markers = pageMarkersIn(markdown);
   const headings = headingsOf(markdown);
   const hits = windows.slice(0, maxHits).map((window): SearchHit => {

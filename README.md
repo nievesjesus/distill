@@ -372,7 +372,7 @@ distill-llm grep "termination clause" contract.pdf --context 3 --max 10
 distill-llm grep --regex "Q[1-4] 20\d\d" report.pdf --json
 ```
 
-Each hit prints as `p.<page> L<line>: text`; `--json` prints `{ hits, total, truncated }`, where each hit has `line`, `text` and, when known, `page` and `section` (the nearest heading). Options: `--regex`, `--context <n>` (default 2), `--max <n>` (default 20). Matching ignores case and line wraps. It also takes a URL, and works on audio and video transcripts. A regex that runs longer than 2 s is stopped (`bad_request` in MCP, exit 2 in the CLI). Then read around the hit with `distill_file` (`section` or `offset`). See [MCP server](#mcp-server) for the tool's parameters.
+Each hit prints as `p.<page> L<line>: text`; `--json` prints `{ hits, total, truncated }`, where each hit has `line`, `text` and, when known, `page` and `section` (the nearest heading). Options: `--regex`, `--context <n>` (default 2), `--max <n>` (default 20). Matching ignores case and line wraps. It also takes a URL, and works on audio and video transcripts. `--regex` uses RE2 syntax: like JavaScript's, but no lookarounds or backreferences, and it always runs in linear time. Then read around the hit with `distill_file` (`section` or `offset`). See [MCP server](#mcp-server) for the tool's parameters.
 
 ## Supported formats
 
@@ -472,5 +472,6 @@ The speech models are not bundled with distill. `distill-llm asr install` downlo
 - The int8 ONNX export and the [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) runtime (`sherpa-onnx-node`), by k2-fsa, licensed Apache-2.0.
 - [OpenAI Whisper](https://github.com/openai/whisper) (large-v3-turbo and small), by OpenAI, licensed MIT. distill uses the sherpa-onnx int8 exports (k2-fsa, Apache-2.0 tooling), which you only download if you run `asr install --model whisper-turbo` or `--model whisper-small`.
 - [Silero VAD](https://github.com/snakers4/silero-vad), licensed MIT.
+- [re2js](https://github.com/le0pard/re2js), a linear-time RE2 port, licensed MIT. Unlike the items above it is a regular npm dependency: it runs the patterns of `--regex` searches.
 
 If distill saves you tokens, a ⭐ helps other people find it.
