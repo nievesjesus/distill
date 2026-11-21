@@ -172,7 +172,7 @@ class FakeChild extends EventEmitter {
 
 describe('ffmpeg path', () => {
   it('builds the exact argument list', () => {
-    expect(ffmpegArgs('/a b/c.m4a')).toEqual(['-nostdin', '-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file,pipe', '-i', '/a b/c.m4a', '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', 'pipe:1']);
+    expect(ffmpegArgs('/a b/c.m4a')).toEqual(['-nostdin', '-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file,pipe', '-i', resolve('/a b/c.m4a'), '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', 'pipe:1']);
   });
 
   it('passes an absolute input so a leading dash is never an option', () => {

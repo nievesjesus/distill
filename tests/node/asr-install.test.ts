@@ -452,7 +452,7 @@ describe('asr installer', () => {
     it('ignores a relative or missing DISTILL_FFMPEG and falls back to PATH', () => {
       const bin = join(root, 'bin');
       mkdirSync(bin);
-      const onPath = join(bin, 'ffmpeg');
+      const onPath = join(bin, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
       writeFileSync(onPath, '#!/bin/sh\n');
       chmodSync(onPath, 0o755);
       expect(resolveFfmpeg({ DISTILL_FFMPEG: 'ffmpeg', PATH: bin })).toBe(onPath);
