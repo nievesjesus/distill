@@ -8,7 +8,7 @@ export const CONVERTIBLE_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'ppt', 'ppt
 export function isCandidate(payload) {
   if (typeof payload !== 'object' || payload === null || payload.tool_name !== 'Read') return false;
   const input = payload.tool_input;
-  if (typeof input !== 'object' || input === null || input.pages !== undefined) return false;
+  if (typeof input !== 'object' || input === null) return false;
   if (typeof input.file_path !== 'string') return false;
   return CONVERTIBLE_EXTENSIONS.has(extname(input.file_path).slice(1).toLowerCase());
 }
