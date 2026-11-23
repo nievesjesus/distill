@@ -88,7 +88,9 @@ describe('hook.mjs', () => {
     expect(isCandidate(read({ file_path: '/a/b.pdf' }))).toBe(true);
     expect(isCandidate(read({ file_path: '/a/b.PDF' }))).toBe(true);
     expect(isCandidate(read({ file_path: '/a/b.pdf' }, 'Bash'))).toBe(false);
-    expect(isCandidate(read({ file_path: '/a/b.pdf', pages: '1-2' }))).toBe(false);
+    expect(isCandidate(read({ file_path: '/a/b.pdf', pages: '1-2' }))).toBe(true);
+    expect(isCandidate(read({ file_path: '/a/b.pdf', pages: '3' }))).toBe(true);
+    expect(isCandidate(read({ file_path: '/a/b.png', pages: '1-2' }))).toBe(false);
     expect(isCandidate(read({}))).toBe(false);
     expect(isCandidate(read({ file_path: 5 }))).toBe(false);
     expect(isCandidate(read({ file_path: '/a/b.png' }))).toBe(false);
